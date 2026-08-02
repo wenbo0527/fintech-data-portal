@@ -61,6 +61,12 @@ export const customerRoutes: RouteRecordRaw[] = [
     meta: { title: '虚拟事件组合' }
   },
   {
+    path: 'customer/virtual-event-combine',
+    name: 'VirtualEventCombine',
+    component: () => import('@/pages/customer/event-center/virtual-event-combine.vue'),
+    meta: { title: '虚拟事件组合' }
+  },
+  {
     path: 'customer/sample-stats',
     name: 'SampleStats',
     component: () => import('@/pages/customer/event-center/sample-stats.vue'),

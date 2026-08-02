@@ -7,7 +7,7 @@
       </div>
       <a-menu
         mode="horizontal"
-        :selected-keys="[activeTopMenu]"
+        :selected-keys="topSelectedKeys"
         @menu-item-click="handleTopMenuClick"
         class="top-menu"
       >
@@ -30,10 +30,10 @@
         breakpoint="xl"
       >
         <a-menu
-          :selected-keys="[activeSideMenu]"
-          :default-open-keys="defaultOpenKeys"
+          :selected-keys="sideSelectedKeys"
           @menu-item-click="handleSideMenuClick"
           :auto-open="true"
+          :default-open-keys="defaultOpenKeys"
         >
           <template v-for="item in currentSideMenus" :key="item.key">
             <a-sub-menu v-if="item.children" :key="item.key">
@@ -56,7 +56,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
 const router = useRouter()
@@ -74,6 +74,11 @@ const topMenuMap: Record<string, { key: string; path: string }> = {
 
 const activeTopMenu = ref('benefit')
 const activeSideMenu = ref('')
+// 两个 a-menu 的 selected-keys / default-open-keys 必须用 ref 而非 computed，
+// 否则 vue template 计算时会反复重新计算 prop 引用，导致 arco-design 内部 watch 触发回环
+// 修复 Maximum recursive updates exceeded in component <Layout>
+const topSelectedKeys = ref<string[]>(['benefit'])
+const sideSelectedKeys = ref<string[]>([])
 const defaultOpenKeys = ref<string[]>([])
 
 // ── 各应用侧边栏菜单配置 ──────────────────────────────────
@@ -224,26 +229,68 @@ const topMenuDefaultPath: Record<string, string> = {
 
 const currentSideMenus = computed(() => allMenus[activeTopMenu.value] || [])
 
+// 顶部 a-menu 的 selected-keys 由 activeTopMenu 直接同步（赋值前比对）
+function syncTopSelectedKeys(key: string) {
+  if (topSelectedKeys.value[0] === key) return
+  topSelectedKeys.value = [key]
+}
+
+// 侧边栏 a-menu 的 selected-keys 由 activeSideMenu 直接同步（赋值前比对）
+function syncSideSelectedKeys(key: string) {
+  if (sideSelectedKeys.value[0] === key) return
+  sideSelectedKeys.value = [key]
+}
+
+// 计算默认展开项（仅在路径变化时调用）
+function computeDefaultOpenKeys(path: string): string[] {
+  const menus = allMenus[activeTopMenu.value] || []
+  return menus
+    .filter(m => m.children?.some(c =>
+      path === c.key ||
+      path.startsWith(c.key + '/')
+    ))
+    .map(m => m.key)
+}
+
+// 数组相等比较（避免无变化触发 a-menu 更新）
+function arraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
 function updateMenuState(path: string) {
   // 1. 判断顶部应用 (P0-侧边-#3 路径前缀优先级: 边界匹配, 避免 /benefit 误匹配 /benefitX)
+  let nextTop = activeTopMenu.value
   for (const [prefix, info] of Object.entries(topMenuMap)) {
-    // 边界匹配: 完全相等 OR 以 prefix + '/' 开头
     if (path === prefix || path.startsWith(prefix + '/')) {
-      activeTopMenu.value = info.key
+      nextTop = info.key
       break
     }
   }
+  if (nextTop !== activeTopMenu.value) {
+    activeTopMenu.value = nextTop
+    syncTopSelectedKeys(nextTop)
+  }
 
   // 2. 判断侧边栏选中
-  activeSideMenu.value = path
-  defaultOpenKeys.value = currentSideMenus.value
-    .filter(m => m.children?.some(c => path.startsWith(c.key.split('/').slice(0, -1).join('/') + '/') || c.key === path || path.startsWith(c.key)))
-    .map(m => m.key)
+  if (activeSideMenu.value !== path) {
+    activeSideMenu.value = path
+    syncSideSelectedKeys(path)
+  }
+
+  // 3. 计算默认展开项（仅在变化时赋值，避免 arco-design a-menu 内部回环）
+  const next = computeDefaultOpenKeys(path)
+  if (!arraysEqual(defaultOpenKeys.value, next)) {
+    defaultOpenKeys.value = next
+  }
 }
 
 // 顶部菜单点击
 function handleTopMenuClick(key: string) {
+  if (activeTopMenu.value === key) return
   activeTopMenu.value = key
+  syncTopSelectedKeys(key)
   const target = topMenuDefaultPath[key] || '/'
   // 子应用 base 兼容:去前导 '/' 让 vue-router 自动加 base('/mkt/')
   const path = target.startsWith('/') ? target.substring(1) : target
@@ -259,9 +306,20 @@ function handleSideMenuClick(key: string) {
   router.push(path)
 }
 
+// mount 后才启用 watch，避免组件初始化阶段触发 reactive 死循环
+// （修复 Maximum recursive updates exceeded in component <Layout>）
+let _mounted = false
+onMounted(() => {
+  _mounted = true
+  // mount 后首次同步菜单状态（在下一个 micro-task 之后）
+  nextTick(() => updateMenuState(route.path))
+})
+
 watch(() => route.path, (path) => {
-  updateMenuState(path)
-}, { immediate: true })
+  // 防重入：仅 mount 后才响应；用 nextTick 包装避免同步写入触发 arco-design 内部回环
+  if (!_mounted) return
+  nextTick(() => updateMenuState(path))
+}, { flush: 'post' })
 </script>
 
 <style scoped>

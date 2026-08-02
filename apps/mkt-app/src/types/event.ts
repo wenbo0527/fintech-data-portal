@@ -27,6 +27,9 @@ export interface VirtualEventData {
   createTime: string;
   description: string;
   realEventId: string | null;
+  // 是否组合事件（OR/AND of multiple events）
+  combineType?: 'OR' | 'AND';
+  combineEvents?: Array<{ id: string; name: string }>;
   version: number;
   versions: VirtualEventVersion[];
   expireAt?: string;
@@ -228,6 +231,11 @@ export interface MessageDetail {
   content: Record<string, any>; // 消息内容
   properties?: MessageProperty[]; // 消息属性（可选）
   format: 'json' | 'xml' | 'text' | 'binary'; // 消息格式
+  // 该消息触发的虚拟事件（VIRT***）。真实事件来源的消息也可能由虚拟事件触发
+  triggeredVirtualEvent?: {
+    id: string;     // VIRT***
+    name: string;   // 触发事件名称（用于表格显示）
+  } | null;
 }
 
 // 消息属性

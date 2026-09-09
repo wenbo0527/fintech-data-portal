@@ -101,7 +101,9 @@ function collectIgnores(rawArgs) {
   const ignores = []
   for (const a of rawArgs) {
     const m = /^--ignore=(.+)$/.exec(a)
-    if (m) ignores.push(new RegExp(m[1]))
+    if (m) {
+      ignores.push(new RegExp(m[1]))
+    }
   }
   return ignores
 }
@@ -112,7 +114,9 @@ async function listFiles(dir, prefix, ext) {
   try {
     entries = await fs.readdir(dir, { withFileTypes: true })
   } catch (err) {
-    if (err.code === 'ENOENT') return []
+    if (err.code === 'ENOENT') {
+      return []
+    }
     throw err
   }
   return entries
@@ -162,8 +166,12 @@ async function run({ mode, source, target, prefix, sourceExt, targetExt, ignores
   log('info', `[${tag}] 源文件: ${sourceFiles.length}, 目标文件: ${targetFiles.length}` + (ignores.length ? `, 忽略 ${ignores.length} 条规则` : ''))
   console.log()
 
-  if (onlyInSource.length > 0) log('warn', `源新增,目标缺失: ${onlyInSource.join(', ')}`)
-  if (onlyInTarget.length > 0) log('warn', `源已移除,目标仍存在: ${onlyInTarget.join(', ')}`)
+  if (onlyInSource.length > 0) {
+    log('warn', `源新增,目标缺失: ${onlyInSource.join(', ')}`)
+  }
+  if (onlyInTarget.length > 0) {
+    log('warn', `源已移除,目标仍存在: ${onlyInTarget.join(', ')}`)
+  }
 
   const diffs = []
   for (const name of inBoth) {
@@ -171,9 +179,13 @@ async function run({ mode, source, target, prefix, sourceExt, targetExt, ignores
       readText(path.join(sourceDir, name)),
       readText(path.join(targetDir, name)),
     ])
-    if (normalize(a) !== normalize(b)) diffs.push(name)
+    if (normalize(a) !== normalize(b)) {
+      diffs.push(name)
+    }
   }
-  if (diffs.length > 0) log('warn', `内容不一致: ${diffs.join(', ')}`)
+  if (diffs.length > 0) {
+    log('warn', `内容不一致: ${diffs.join(', ')}`)
+  }
 
   if (onlyInSource.length === 0 && onlyInTarget.length === 0 && diffs.length === 0) {
     log('ok', '源与目标内容完全一致,无需同步')
@@ -195,7 +207,9 @@ async function run({ mode, source, target, prefix, sourceExt, targetExt, ignores
       writeCount++
       log('ok', `已同步: ${name}`)
     }
-    if (writeCount === 0) log('ok', '没有需要写入的文件')
+    if (writeCount === 0) {
+      log('ok', '没有需要写入的文件')
+    }
 
     if (onlyInTarget.length > 0) {
       log(
@@ -214,7 +228,9 @@ async function run({ mode, source, target, prefix, sourceExt, targetExt, ignores
       removeCount++
       log('ok', `已删除: ${name}`)
     }
-    if (removeCount === 0) log('ok', '没有需要清理的文件')
+    if (removeCount === 0) {
+      log('ok', '没有需要清理的文件')
+    }
     return 0
   }
 
@@ -242,7 +258,7 @@ function help() {
 `)
 }
 
-;(async () => {
+(async () => {
   const raw = process.argv.slice(2)
   if (raw.includes('--help') || raw.includes('-h')) {
     help()
@@ -254,9 +270,13 @@ function help() {
 
   // 参数校验
   const required = ['source', 'target', 'prefix']
-  const missing = required.filter(k => !flags[k])
+  const missing = required.filter((k) => {
+    return !flags[k]
+  })
   if (missing.length > 0) {
-    log('err', `缺少必填参数: ${missing.map(k => '--' + k).join(', ')}`)
+    log('err', `缺少必填参数: ${missing.map((k) => {
+      return '--' + k
+    }).join(', ')}`)
     help()
     process.exit(1)
   }

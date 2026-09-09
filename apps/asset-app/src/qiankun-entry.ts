@@ -25,7 +25,8 @@ function mount() {
 }
 
 function unmount() {
-  console.log('[Asset] 应用卸载')
+  // qiankun 子应用卸载生命周期，子应用 mount 与 unmount 必须成对
+  // 此处无清理逻辑（Pinia/ArcoVue 状态随 app 销毁）
 }
 
 if (!isQiankun) {

@@ -59,11 +59,9 @@ export function useMissingTicket(): UseMissingTicketReturn {
     showMissingTicketModal.value = true
   }
 
-  const handleMissingTicketConfirm = (payload: MissingTicketConfirmPayload) => {
-    // 前端展示项目：mock 提交，打印到控制台即可
-    if (typeof console !== 'undefined' && console.log) {
-      console.log('[MissingTicket] submit (mock):', payload)
-    }
+  const handleMissingTicketConfirm = (_payload: MissingTicketConfirmPayload) => {
+    // 前端展示项目：mock 提交，无后端真实写入
+    // 调用方可在调用 useMissingTicket 时覆盖此行为
     showMissingTicketModal.value = false
   }
 

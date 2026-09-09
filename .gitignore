@@ -35,10 +35,14 @@ coverage/
 test-results/
 playwright-report/
 playwright/.cache/
-reports/
+/reports/
 python-reports/
 jscpd-all/
 jscpd-risk/
+
+# 仓库内设计/治理报告（保留跟踪）
+!docs/reports/
+!docs/reports/**
 
 # Editor / IDE
 .vscode/*
@@ -86,11 +90,15 @@ log-server.js
 migration-report.json
 test-results.json
 
-# Reports / Plans (中文报告散落)
+# Reports / Plans (中文报告散落，限根目录；docs/reports/ 由白名单保留)
 *报告*.md
 *方案*.md
 *完成报告*.md
 *修复报告*.md
+
+# 仓库内设计/治理报告（白名单，跟踪 docs/reports/）
+!docs/reports/
+!docs/reports/**
 *修复方案*.md
 *排查方案*.md
 *问题评估*.md

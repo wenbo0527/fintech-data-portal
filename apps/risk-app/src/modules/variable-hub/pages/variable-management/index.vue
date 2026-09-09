@@ -74,10 +74,10 @@
 
       <a-card v-if="activeTab === 'features'" class="filter-card">
         <a-form :model="filterForm" layout="inline">
-          <a-form-item label="业务品类">
+          <a-form-item label="品类">
             <a-select
               v-model="filterForm.riskCategory"
-              placeholder="全部业务品类"
+              placeholder="全部品类"
               allow-clear
               @change="handleSearch"
             >
@@ -86,22 +86,10 @@
               </a-option>
             </a-select>
           </a-form-item>
-          <a-form-item label="数据来源">
-            <a-select
-              v-model="filterForm.sourceFilter"
-              placeholder="全部数据来源"
-              allow-clear
-              @change="handleSearch"
-            >
-              <a-option v-for="opt in VARIABLE_SOURCE_FILTER_OPTIONS" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </a-option>
-            </a-select>
-          </a-form-item>
-          <a-form-item label="特征类型">
+          <a-form-item label="数据类型">
             <a-select
               v-model="filterForm.type"
-              placeholder="全部特征类型"
+              placeholder="全部数据类型"
               allow-clear
               @change="handleSearch"
             >
@@ -213,14 +201,56 @@
         <a-modal
           v-model:visible="incrementalModalVisible"
           title="导入更新特征"
-          width="600px"
+          width="960px"
+          :ok-text="incrementalRecords.length ? `确认导入（${incrementalRecords.length}条）` : '确认导入'"
+          :ok-button-props="{ disabled: incrementalRecords.length === 0 }"
           @ok="confirmIncrementalUpload"
           @cancel="incrementalModalVisible = false"
         >
-          <a-upload :auto-upload="false" :limit="1" :accept="'.xlsx,.xls'" @change="handleIncrementalFileChange">
-            <a-button>选择Excel文件</a-button>
-          </a-upload>
-          <div style="margin-top: 12px">已解析记录数：{{ incrementalFileCount }}</div>
+          <a-space>
+            <a-upload
+              :auto-upload="false"
+              :limit="1"
+              :accept="'.xlsx,.xls'"
+              @change="handleIncrementalFileChange"
+            >
+              <template #upload-button>
+                <a-button type="primary">
+                  <template #icon><icon-upload /></template>
+                  选择 Excel 文件
+                </a-button>
+              </template>
+            </a-upload>
+            <a-button @click="loadMockIncrementalData">
+              <template #icon><icon-experiment /></template>
+              使用示例文件
+            </a-button>
+          </a-space>
+          <div v-if="incrementalFileCount > 0" style="margin-top: 16px">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px">
+              <span style="font-weight: 600; font-size: 14px">
+                解析预览（共 {{ incrementalFileCount }} 条）
+              </span>
+              <a-button type="text" size="small" @click="clearIncrementalPreview">重新选择</a-button>
+            </div>
+            <a-table
+              :data="incrementalRecords"
+              :columns="incrementalPreviewColumns"
+              :pagination="{ pageSize: 8, total: incrementalRecords.length, showTotal: true }"
+              :scroll="{ x: 1200 }"
+              size="small"
+              :bordered="{ cell: true }"
+              row-key="code"
+            >
+              <template #status="{ record }">
+                <a-tag
+                  :color="record.status === 'online' ? 'green' : record.status === 'offline' ? 'gray' : 'blue'"
+                  size="small"
+                >{{ record.status }}</a-tag>
+              </template>
+            </a-table>
+          </div>
+          <a-empty v-else description="请选择 Excel 文件后查看预览" style="margin-top: 24px" />
         </a-modal>
 
     <!-- ============ 列表页通用 Action 抽屉（提交OA/发起验收/验收驳回）============ -->
@@ -618,6 +648,10 @@
             </span>
           </a-space>
           <a-space>
+            <a-button v-if="selectedDerivationIds.length > 0" type="primary" @click="openBulkRegister">
+              <template #icon><icon-check-square /></template>
+              批量注册（{{ selectedDerivationIds.length }} 条）
+            </a-button>
             <a-button @click="openBulkImport">
               <template #icon><icon-upload /></template>
               批量导入
@@ -636,6 +670,7 @@
           <a-form-item label="状态">
             <a-select v-model="derivationFilter.status" allow-clear placeholder="全部状态" @change="refreshDerivations">
               <a-option value="requirement_accepted">需求受理</a-option>
+              <a-option value="registered">已注册</a-option>
               <a-option value="rejected">需求驳回</a-option>
             </a-select>
           </a-form-item>
@@ -648,22 +683,21 @@
           :data="derivationList"
           :columns="derivationColumns"
           :pagination="derivationPagination"
+          :row-selection="derivationRowSelection"
           row-key="id"
+          @selection-change="onDerivationSelectionChange"
           @page-change="(p) => { derivationPagination.current = p }"
         >
           <template #idCell="{ record }">
-            <a-link @click="openDerivationDetail(record)">{{ record.id }}</a-link>
+            <a-link @click="goDerivationDetail(record)">{{ record.id }}</a-link>
+          </template>
+          <template #derivationCategoryCell="{ record }">
+            <a-tag color="arcoblue" size="small">{{ getRiskCategoryLabel(record.category) }}</a-tag>
           </template>
           <template #statusCell="{ record }">
-            <a-tag :color="getDerivationStatusColor(record.status)">
-              {{ getDerivationStatusLabel(record.status) }}
+            <a-tag :color="getDerivationStatusColor(record)">
+              {{ getDerivationStatusLabel(record) }}
             </a-tag>
-          </template>
-          <template #syncLevelCell="{ record }">
-            <a-tag v-if="record.syncLevel" :color="{ S: 'red', A: 'orange', B: 'blue', C: 'gray' }[record.syncLevel] || 'gray'">
-              {{ record.syncLevel }}级
-            </a-tag>
-            <span v-else class="placeholder">—</span>
           </template>
           <template #featureIdCell="{ record }">
             <a-link v-if="record.featureId" @click="goFeatureDetail(record.featureId)">{{ record.featureId }}</a-link>
@@ -671,128 +705,20 @@
           </template>
           <template #actions="{ record }">
             <a-space>
-              <a-button type="text" size="small" @click="openDerivationDetail(record)">详情</a-button>
-              <a-button
-                v-if="record.status === 'requirement_accepted' && !record.featureId"
-                type="primary"
-                size="small"
-                @click="goRegister(record)"
-              >去注册</a-button>
-              <a-button
-                v-if="record.status === 'requirement_accepted' && !record.featureId"
-                type="text"
-                size="small"
-                status="danger"
-                @click="openRejectModal(record)"
-              >驳回</a-button>
-              <a-button
-                v-if="record.featureId"
-                type="text"
-                size="small"
-                @click="goFeatureDetail(record.featureId)"
-              >查看特征</a-button>
+              <!-- 所有状态：详情 -->
+              <a-button type="text" size="small" @click="goDerivationDetail(record)">详情</a-button>
+              <!-- 已注册：查看特征 + 驳回 -->
+              <a-button v-if="isRegistered(record)" type="text" size="small" @click="goFeatureDetail(record.featureId)">查看特征</a-button>
+              <a-button v-if="isRegistered(record)" type="text" size="small" status="danger" @click="openRejectModal(record)">驳回</a-button>
+              <!-- 需求受理（未注册）：去注册 + 驳回 -->
+              <a-button v-if="isAccepted(record)" type="primary" size="small" @click="goRegister(record)">去注册</a-button>
+              <a-button v-if="isAccepted(record)" type="text" size="small" status="danger" @click="openRejectModal(record)">驳回</a-button>
+              <!-- 已驳回：重新受理 -->
+              <a-button v-if="isRejected(record)" type="primary" size="small" @click="reopenDerivation(record)">重新受理</a-button>
             </a-space>
           </template>
         </a-table>
       </a-card>
-
-      <!-- 需求详情抽屉 -->
-      <a-drawer
-        :visible="derivationDetailVisible"
-        :width="820"
-        :title="derivationDetail ? `需求详情 · ${derivationDetail.id}` : '需求详情'"
-        @cancel="derivationDetailVisible = false"
-      >
-        <template v-if="derivationDetail">
-          <!-- 状态横幅 -->
-          <div class="detail-status-banner">
-            <a-tag :color="derivationDetailStatusColor" size="large">
-              {{ getDerivationStatusLabel(derivationDetail.status) }}
-            </a-tag>
-            <span class="detail-status-name">{{ derivationDetail.name }}</span>
-            <span class="detail-status-id">{{ derivationDetail.id }}</span>
-          </div>
-
-          <!-- 1. 需求信息 -->
-          <a-card size="small" :bordered="true" class="detail-card">
-            <template #title>需求信息</template>
-            <a-descriptions :column="2" :data="derivationDetailBaseDesc" />
-          </a-card>
-
-          <!-- 2. 人员信息 -->
-          <a-card size="small" :bordered="true" class="detail-card">
-            <template #title>人员信息</template>
-            <a-descriptions :column="2" :data="derivationDetailPeopleDesc" />
-          </a-card>
-
-          <!-- 3. 需求内容 -->
-          <a-card size="small" :bordered="true" class="detail-card">
-            <template #title>需求内容</template>
-            <a-descriptions :column="1" :data="derivationDetailContentDesc" />
-          </a-card>
-
-          <!-- 4. 上传的 Excel 预览 -->
-          <a-card
-            v-if="derivationDetail.attachment || derivationDetail.excelData"
-            size="small"
-            :bordered="true"
-            class="detail-card"
-          >
-            <template #title>
-              <span>上传的 Excel</span>
-              <a-link v-if="derivationDetail.attachment" style="margin-left: 12px; font-size: 12px" @click="previewAttachment(derivationDetail.attachment)">
-                <icon-download />
-                {{ derivationDetail.attachment.name }}
-                <span class="attachment-meta">
-                  （{{ formatAttachmentSize(derivationDetail.attachment.size) }}，{{ derivationDetail.attachment.uploadedAt }}）
-                </span>
-              </a-link>
-            </template>
-            <a-table
-              v-if="derivationDetail.excelData && derivationDetail.excelData.length"
-              :data="derivationDetail.excelData"
-              :columns="excelPreviewColumns"
-              :pagination="{ pageSize: 5, simple: true }"
-              :scroll="{ x: 1800 }"
-              size="small"
-            >
-              <template #variableEnName="{ record }">
-                <span style="font-family: monospace">{{ record.variableEnName }}</span>
-              </template>
-              <template #expectedEffect="{ record }">
-                <span style="color: var(--color-text-2)">{{ record.expectedEffect || '—' }}</span>
-              </template>
-            </a-table>
-            <a-empty v-else description="无 Excel 行数据" style="padding: 12px 0" />
-          </a-card>
-
-          <!-- 5. 特征属性 -->
-          <a-card size="small" :bordered="true" class="detail-card">
-            <template #title>特征属性</template>
-            <a-descriptions :column="2" :data="derivationDetailFeatureDesc" />
-            <a-divider style="margin: 8px 0" />
-            <a-descriptions :column="1" :data="derivationDetailLogicDesc" />
-          </a-card>
-
-          <!-- 6. 来源与分类 -->
-          <a-card size="small" :bordered="true" class="detail-card">
-            <template #title>来源与分类</template>
-            <a-descriptions :column="2" :data="derivationDetailSourceDesc" />
-          </a-card>
-
-          <!-- 7. 注册信息（仅已注册时展示） -->
-          <a-card v-if="derivationDetailIsRegistered" size="small" :bordered="true" class="detail-card">
-            <template #title>注册信息（B1）</template>
-            <a-descriptions :column="2" :data="derivationDetailRegisterDesc" />
-          </a-card>
-
-          <!-- 8. 状态时间轴 -->
-          <a-card size="small" :bordered="true" class="detail-card">
-            <template #title>状态时间轴</template>
-            <a-descriptions :column="1" :data="derivationDetailTimeline" />
-          </a-card>
-        </template>
-      </a-drawer>
 
       <!-- 新建需求弹窗 -->
       <DerivationCreateModal
@@ -806,6 +732,8 @@
       <BulkImportDerivationModal
         v-if="bulkImportVisible"
         :visible="bulkImportVisible"
+        :source="bulkImportSource"
+        :demand-records="bulkRegisterRecords"
         @ok="onBulkImport"
         @cancel="bulkImportVisible = false"
       />
@@ -870,7 +798,7 @@ import { variableStatus } from '@/modules/variable-hub/constants/statusMap'
 import DmtPageHeader from '@/modules/variable-hub/components/PageHeader.vue'
 import DmtStatGroup from '@/modules/variable-hub/components/StatGroup.vue'
 import { ExploreStore } from '@/modules/variable-hub/mock/explore/explore-store'
-import { RISK_CATEGORY_OPTIONS, MIDLOAN_L1_CATEGORIES, VARIABLE_SOURCE_FILTER_OPTIONS, LIST_TYPES } from '@/modules/variable-hub/constants/riskCategoryMap'
+import { RISK_CATEGORY_OPTIONS, MIDLOAN_L1_CATEGORIES } from '@/modules/variable-hub/constants/riskCategoryMap'
 import { midloanStatusLabel, midloanStatusColor, allowedActionsByStatus, canEdit, getEditLockReason, tableActionsByStatus, OFFLINE_ANALYSIS_FILTER_OPTIONS, API_CALL_FILTER_OPTIONS, getStatusCategory, getOfflineAnalysisDisplay, getApiCallDisplay } from '@/modules/variable-hub/constants/midloanStatusMap'
 import { riskCategoryLabel, riskCategoryColor } from '@/modules/variable-hub/constants/riskCategoryMap'
 import DerivationStore from '@/modules/variable-hub/mock/risk-feature/derivations'
@@ -892,7 +820,23 @@ const handleDerivationAction = () => {
     derivationActionHandled = true
     nextTick(() => {
       derivationCreateVisible.value = true
-      // modal 弹出后再清理 query
+      nextTick(() => {
+        router.replace({ path: route.path, query: {} })
+      })
+    })
+  }
+  // 从需求详情页「去注册」跳转：预填需求信息打开注册抽屉
+  if (route.query.action === 'register' && route.query.id && !derivationActionHandled) {
+    derivationActionHandled = true
+    nextTick(() => {
+      const rec = DerivationStore.get(String(route.query.id))
+      if (rec) {
+        registerDrawerRequirementData.value = rec
+        registerDrawerSource.value = 'derivation'
+        registerDrawerVisible.value = true
+        // 切换到需求列表 Tab
+        activeTab.value = 'derivations'
+      }
       nextTick(() => {
         router.replace({ path: route.path, query: {} })
       })
@@ -936,7 +880,6 @@ const midloanStats = computed(() => {
 const filterForm = reactive({
   keyword: '',
   riskCategory: '',
-  sourceFilter: '',
   type: '',
   offlineAnalysisStatus: '',
   apiCallStatus: '',
@@ -958,17 +901,6 @@ const variableList = computed(() => {
         return item.category === 'midloan_behavior' || item.category === 'behavior'
       }
       return item.category === filterForm.riskCategory
-    })
-  }
-  // 特征来源筛选（2026-08-10 需求5：按内数/外数/行为/实时分类）
-  if (filterForm.sourceFilter) {
-    const sf = filterForm.sourceFilter
-    list = list.filter((item) => {
-      if (sf === 'internal') return item.sourceType === 'internal'
-      if (sf === 'external') return item.sourceType === 'external'
-      if (sf === 'behavior') return item.category === 'behavior' || item.category === 'midloan_behavior'
-      if (sf === 'realtime') return item.dataFreshness === 'realtime'
-      return true
     })
   }
   // 一级分类过滤
@@ -1598,6 +1530,18 @@ const incrementalModalVisible = ref(false)
 const incrementalFileCount = ref(0)
 const incrementalRecords = ref([])
 
+const incrementalPreviewColumns = [
+  { title: '特征名称', dataIndex: 'name', width: 140, ellipsis: true, tooltip: true },
+  { title: '特征编码', dataIndex: 'code', width: 140, ellipsis: true, tooltip: true },
+  { title: '类型', dataIndex: 'type', width: 100 },
+  { title: '状态', dataIndex: 'status', slotName: 'status', width: 90 },
+  { title: '数据源', dataIndex: 'dataSource', width: 120, ellipsis: true, tooltip: true },
+  { title: '来源字段', dataIndex: 'sourceField', width: 120, ellipsis: true, tooltip: true },
+  { title: '更新频率', dataIndex: 'updateFrequency', width: 100 },
+  { title: '定义说明', dataIndex: 'definition', width: 200, ellipsis: true, tooltip: true },
+  { title: '描述', dataIndex: 'description', width: 200, ellipsis: true, tooltip: true }
+]
+
 const batchTopicVisible = ref(false)
 const batchTopicForm = reactive({
   name: '',
@@ -1737,7 +1681,6 @@ const handleReset = () => {
   filterForm.apiCallStatus = ''
   filterForm.l1Category = ''
   filterForm.l2Category = ''
-  filterForm.sourceFilter = ''
   variableStore.resetFilters()
   clearSelection()
   handleSearch()
@@ -2163,6 +2106,115 @@ const handleIncrementalFileChange = async (info) => {
   }
 }
 
+const clearIncrementalPreview = () => {
+  incrementalRecords.value = []
+  incrementalFileCount.value = 0
+}
+
+const loadMockIncrementalData = () => {
+  const mockData = [
+    {
+      name: '近30天消费金额',
+      code: 'consume_amt_30d',
+      type: '数值型',
+      status: 'online',
+      dataSource: '交易流水表',
+      usageCount: 12,
+      sourceField: 'txn_amount',
+      updateFrequency: '日',
+      definition: '近30天客户的累计消费金额，含线上线下渠道',
+      description: '用于贷中风险评分模型，反映客户近期消费能力'
+    },
+    {
+      name: '近7天登录次数',
+      code: 'login_cnt_7d',
+      type: '数值型',
+      status: 'online',
+      dataSource: 'APP行为日志',
+      usageCount: 8,
+      sourceField: 'login_count',
+      updateFrequency: '日',
+      definition: '近7天客户通过APP的累计登录次数',
+      description: '活跃度指标，用于客户流失预警'
+    },
+    {
+      name: '最大逾期天数',
+      code: 'max_overdue_days',
+      type: '数值型',
+      status: 'offline',
+      dataSource: '还款记录表',
+      usageCount: 5,
+      sourceField: 'overdue_days',
+      updateFrequency: '月',
+      definition: '客户历史最大逾期天数',
+      description: '核心信用风险特征，逾期天数越长风险越高'
+    },
+    {
+      name: '夜间交易占比',
+      code: 'night_txn_ratio',
+      type: '比率型',
+      status: 'draft',
+      dataSource: '交易流水表',
+      usageCount: 3,
+      sourceField: 'txn_hour',
+      updateFrequency: '日',
+      definition: '22:00-06:00时段交易笔数占总交易笔数的比例',
+      description: '夜间交易占比异常可能存在欺诈风险'
+    },
+    {
+      name: '近90天授信使用率',
+      code: 'credit_usage_90d',
+      type: '比率型',
+      status: 'online',
+      dataSource: '授信额度表',
+      usageCount: 7,
+      sourceField: 'used_amount',
+      updateFrequency: '月',
+      definition: '近90天平均已用额度占总授信额度的比例',
+      description: '额度使用率过高提示客户资金紧张'
+    },
+    {
+      name: '还款行为稳定性指数',
+      code: 'repay_stability_idx',
+      type: '数值型',
+      status: 'draft',
+      dataSource: '还款记录表',
+      usageCount: 2,
+      sourceField: 'repay_amount',
+      updateFrequency: '月',
+      definition: '基于近6个月还款金额变异系数计算，值越低还款越稳定',
+      description: '还款稳定性低预示收入波动较大'
+    },
+    {
+      name: '跨平台交易笔数',
+      code: 'cross_platform_cnt',
+      type: '数值型',
+      status: 'online',
+      dataSource: '交易流水表',
+      usageCount: 4,
+      sourceField: 'platform_id',
+      updateFrequency: '日',
+      definition: '近30天涉及不同交易平台的交易笔数',
+      description: '跨平台交易频繁可能存在多头借贷'
+    },
+    {
+      name: '账户活跃天数',
+      code: 'active_days_30d',
+      type: '数值型',
+      status: 'online',
+      dataSource: 'APP行为日志',
+      usageCount: 6,
+      sourceField: 'active_flag',
+      updateFrequency: '日',
+      definition: '近30天内有交易或登录行为的天数',
+      description: '账户活跃度综合指标'
+    }
+  ]
+  incrementalRecords.value = mockData
+  incrementalFileCount.value = mockData.length
+  Message.success('已加载示例数据，请确认后导入')
+}
+
 const confirmIncrementalUpload = async () => {
   try {
     const res = await incrementalImportVariables(incrementalRecords.value)
@@ -2186,10 +2238,26 @@ onMounted(() => {
 // ============ 需求列表 Tab 数据 ============
 const derivationStatusMap = {
   requirement_accepted: { label: '需求受理', color: 'blue' },
+  registered:           { label: '已注册', color: 'green' },
   rejected:             { label: '需求驳回', color: 'red' }
 }
-const getDerivationStatusLabel = (s) => derivationStatusMap[s]?.label || s
-const getDerivationStatusColor = (s) => derivationStatusMap[s]?.color || 'gray'
+// 计算展示状态：requirement_accepted + featureId → registered
+function getDerivationDisplayStatus(record) {
+  if (record.status === 'requirement_accepted' && record.featureId) return 'registered'
+  return record.status
+}
+const getDerivationStatusLabel = (record) => {
+  const s = typeof record === 'string' ? record : getDerivationDisplayStatus(record)
+  return derivationStatusMap[s]?.label || s
+}
+const getDerivationStatusColor = (record) => {
+  const s = typeof record === 'string' ? record : getDerivationDisplayStatus(record)
+  return derivationStatusMap[s]?.color || 'gray'
+}
+// 辅助判断函数
+const isRegistered = (record) => getDerivationDisplayStatus(record) === 'registered'
+const isAccepted = (record) => record.status === 'requirement_accepted' && !record.featureId
+const isRejected = (record) => record.status === 'rejected'
 
 const derivationFilter = reactive({ keyword: '', status: '' })
 const derivationList = ref([])
@@ -2197,22 +2265,65 @@ const derivationPagination = reactive({ current: 1, pageSize: 10, total: 0, show
 
 const derivationColumns = [
   { title: '需求ID', dataIndex: 'id', slotName: 'idCell', width: 170 },
-  { title: '需求名称', dataIndex: 'name', width: 220 },
-  { title: '业务场景', dataIndex: 'businessScene', width: 80 },
-  { title: '特征名', dataIndex: 'featureCnName', width: 200, ellipsis: true },
+  { title: '需求名称', dataIndex: 'name', width: 220, ellipsis: true, tooltip: true },
+  { title: '特征类型', dataIndex: 'category', slotName: 'derivationCategoryCell', width: 110 },
+  { title: '特征名称', dataIndex: 'featureCnName', width: 200, ellipsis: true, tooltip: true },
   { title: '状态', dataIndex: 'status', slotName: 'statusCell', width: 100 },
   { title: '关联特征ID', dataIndex: 'featureId', slotName: 'featureIdCell', width: 180 },
-  { title: '提出人', dataIndex: 'proposer', width: 100 },
   { title: '处理人', dataIndex: 'handler', width: 120 },
-  { title: '业务同步等级', dataIndex: 'syncLevel', slotName: 'syncLevelCell', width: 120 },
-  { title: '创建时间', dataIndex: 'createdAt', width: 170 },
-  { title: '操作', dataIndex: 'actions', slotName: 'actions', width: 200, fixed: 'right' }
+  { title: '操作', dataIndex: 'actions', slotName: 'actions', width: 240, fixed: 'right' }
 ]
 
 function refreshDerivations() {
-  const list = DerivationStore.list(derivationFilter)
+  // registered 是派生态：requirement_accepted + featureId，store 中无此 status
+  const filterCopy = { ...derivationFilter }
+  if (filterCopy.status === 'registered') {
+    filterCopy.status = 'requirement_accepted'
+  }
+  let list = DerivationStore.list(filterCopy)
+  if (derivationFilter.status === 'registered') {
+    list = list.filter((d) => d.featureId)
+  }
   derivationList.value = list
   derivationPagination.total = list.length
+}
+
+// ============ 多选与批量注册 ============
+const selectedDerivationIds = ref([])
+const derivationRowSelection = computed(() => ({
+  type: 'checkbox',
+  showCheckedAll: true,
+  selectedRowKeys: selectedDerivationIds.value
+}))
+function onDerivationSelectionChange(keys) {
+  selectedDerivationIds.value = keys || []
+}
+
+// 批量注册：打开 BulkImportDerivationModal source=demand 模式
+const bulkImportSource = ref('standalone')
+const bulkRegisterRecords = ref([])
+function openBulkRegister() {
+  const records = (derivationList.value || []).filter((d) =>
+    selectedDerivationIds.value.includes(d.id)
+  )
+  if (records.length === 0) {
+    Message.warning('请先选择需求')
+    return
+  }
+  bulkRegisterRecords.value = records
+  bulkImportSource.value = 'demand'
+  bulkImportVisible.value = true
+}
+
+// 重新受理：仅驳回状态可重新受理
+function reopenDerivation(record) {
+  const rec = DerivationStore.reopen(record.id)
+  if (rec) {
+    Message.success(`需求 ${rec.id} 已重新受理`)
+    refreshDerivations()
+  } else {
+    Message.error('重新受理失败，仅已驳回状态的需求可重新受理')
+  }
 }
 
 function resetDerivationFilter() {
@@ -2236,7 +2347,8 @@ function derivationRegisterPatch(payload) {
     featureEnName: payload.name,
     featureCnName: payload.featureCnName,
     fieldType: payload.fieldType,
-    processingLogic: payload.processingLogic,
+    businessLogic: payload.businessLogic || payload.processingLogic || '',
+    codeLogic: payload.codeLogic || '',
     defaultValue: payload.defaultValue || '',
     requirementDescription: payload.description || '',
     l1Category: payload.l1Category,
@@ -2299,6 +2411,8 @@ function openDerivationCreate() {
 // 批量导入（A1 R19）
 const bulkImportVisible = ref(false)
 function openBulkImport() {
+  bulkImportSource.value = 'standalone'
+  bulkRegisterRecords.value = []
   bulkImportVisible.value = true
 }
 function onBulkImport(rows) {
@@ -2306,6 +2420,47 @@ function onBulkImport(rows) {
     Message.warning('没有可导入的数据')
     return
   }
+
+  // demand 模式：批量注册特征
+  if (bulkImportSource.value === 'demand') {
+    let successCount = 0
+    let failedCount = 0
+    rows.forEach((row) => {
+      try {
+        const target = DerivationStore.get(row.derivationId)
+        if (!target) { failedCount++; return }
+        // 复用已有台账资产或新建草稿
+        const list = variableStore.variableList || []
+        let asset = list.find((v) => v.derivationId === target.id || v.midloanFeatureId === target.id)
+        if (!asset) {
+          asset = VariableDraftStore.addDraft({ ...row, derivationId: target.id })
+        }
+        const rec = DerivationStore.register(target.id, {
+          ...derivationRegisterPatch(row),
+          featureId: asset.id
+        })
+        if (rec) {
+          successCount++
+        } else {
+          failedCount++
+        }
+      } catch (err) {
+        failedCount++
+      }
+    })
+    bulkImportVisible.value = false
+    selectedDerivationIds.value = []
+    if (successCount > 0) {
+      Message.success(`批量注册成功 ${successCount} 条${failedCount > 0 ? `，失败 ${failedCount} 条` : ''}`)
+    } else {
+      Message.error('批量注册失败')
+    }
+    refreshDerivations()
+    fetchVariableList()
+    return
+  }
+
+  // standalone 模式：批量导入需求
   let successCount = 0
   let failedCount = 0
   rows.forEach((row) => {
@@ -2349,140 +2504,9 @@ function onDerivationCreated(payloads) {
   refreshDerivations()
 }
 
-// 详情抽屉
-const derivationDetailVisible = ref(false)
-const derivationDetail = ref(null)
-
-// 状态颜色映射
-const derivationStatusColorMap = {
-  requirement_accepted: 'green',
-  rejected: 'red'
-}
-const derivationDetailStatusColor = computed(() => {
-  if (!derivationDetail.value) return 'gray'
-  return derivationStatusColorMap[derivationDetail.value.status] || 'gray'
-})
-
-// 名单类型码值 → 中文（与 VariableRegisterDrawer 共用 LIST_TYPES 字典）
-function listTypeLabel(val) {
-  if (!val) return '—'
-  const hit = LIST_TYPES.find((item) => item.value === val)
-  return hit ? hit.label : val
-}
-
-// 1. 需求信息（2 列）
-const derivationDetailBaseDesc = computed(() => derivationDetail.value ? [
-  { label: '需求ID', value: derivationDetail.value.id || '—' },
-  { label: '需求名称', value: derivationDetail.value.name || '—' },
-  { label: '业务场景', value: derivationDetail.value.businessScene || '—' },
-  { label: '品类', value: '贷中行为' },
-  { label: '业务同步等级', value: derivationDetail.value.syncLevel ? derivationDetail.value.syncLevel + '级' : '—' },
-  { label: '创建时间', value: derivationDetail.value.createdAt || '—' }
-] : [])
-
-// 2. 人员信息（2 列）
-const derivationDetailPeopleDesc = computed(() => derivationDetail.value ? [
-  { label: '提出人', value: derivationDetail.value.proposer || '—' },
-  { label: '处理人', value: derivationDetail.value.handler || '—' },
-  { label: '开发人员', value: derivationDetail.value.developer || '—' },
-  { label: '数据源', value: derivationDetail.value.dataSource || '—' }
-] : [])
-
-// 3. 需求内容（1 列，长文本）
-const derivationDetailContentDesc = computed(() => derivationDetail.value ? [
-  { label: '需求描述', value: derivationDetail.value.requirementDescription || '—' },
-  { label: '预期效果', value: derivationDetail.value.expectedEffect || '—' }
-] : [])
-
-// 4. 特征属性（2 列）
-const derivationDetailFeatureDesc = computed(() => derivationDetail.value ? [
-  { label: '特征英文名', value: derivationDetail.value.featureEnName || '—' },
-  { label: '中文名', value: derivationDetail.value.featureCnName || '—' },
-  { label: '字段类型', value: derivationDetail.value.fieldType || '—' },
-  { label: '默认值', value: derivationDetail.value.defaultValue || '—' },
-  { label: '数据时效', value: derivationDetail.value.dataFreshness || '—' },
-  { label: '原特征英文名', value: derivationDetail.value.originFeatureEnName || '—' }
-] : [])
-
-// 4b. 加工逻辑（1 列，长文本）
-const derivationDetailLogicDesc = computed(() => derivationDetail.value ? [
-  { label: '加工逻辑', value: derivationDetail.value.processingLogic || '—' }
-] : [])
-
-// 5. 来源与分类（2 列）
-const derivationDetailSourceDesc = computed(() => derivationDetail.value ? [
-  { label: '一级分类', value: derivationDetail.value.l1Category || '—' },
-  { label: '二级分类', value: derivationDetail.value.l2Category || '—' },
-  { label: '标准化前来源表', value: derivationDetail.value.sourceTableBefore || '—' },
-  { label: '标准化后来源表', value: derivationDetail.value.sourceTableAfter || '—' }
-] : [])
-
-// 6. 注册信息（2 列，仅注册后展示）
-const derivationDetailRegisterDesc = computed(() => derivationDetail.value ? [
-  { label: '数据底表名称', value: derivationDetail.value.dataTableName || '暂未补充' },
-  { label: '数仓任务ID', value: derivationDetail.value.dwTaskId || '—' },
-  { label: '产品范围', value: derivationDetail.value.productScope || '—' },
-  { label: '名单类型', value: listTypeLabel(derivationDetail.value.listType) },
-  { label: '批次', value: derivationDetail.value.batch || '—' },
-  { label: '验收人', value: derivationDetail.value.acceptor || '—' },
-  { label: '备注', value: derivationDetail.value.remark || '—' },
-  { label: '关联特征ID', value: derivationDetail.value.featureId || '尚未注册' }
-] : [])
-
-// 是否已注册
-const derivationDetailIsRegistered = computed(() => {
-  return derivationDetail.value && (derivationDetail.value.featureId || derivationDetail.value.dataTableName)
-})
-const derivationDetailTimeline = computed(() => {
-  if (!derivationDetail.value) return []
-  const items = [
-    { label: '创建时间', value: derivationDetail.value.createdAt + '  提出人：' + derivationDetail.value.proposer },
-    { label: '最近更新', value: derivationDetail.value.updatedAt },
-    { label: '当前状态', value: getDerivationStatusLabel(derivationDetail.value.status) }
-  ]
-  if (derivationDetail.value.status === 'rejected') {
-    items.push({ label: '驳回时间', value: derivationDetail.value.rejectedAt || '—' })
-    items.push({ label: '驳回原因', value: derivationDetail.value.rejectReason || '—' })
-  }
-  if (derivationDetail.value.featureId) {
-    items.push({ label: '注册时间', value: derivationDetail.value.registeredAt || '—' })
-  }
-  return items
-})
-
-function openDerivationDetail(record) {
-  derivationDetail.value = DerivationStore.get(record.id)
-  derivationDetailVisible.value = true
-}
-
-// Excel 预览表格列定义
-const excelPreviewColumns = [
-  { title: '特征英文名', slotName: 'variableEnName', width: 200, ellipsis: true, tooltip: true },
-  { title: '中文名', dataIndex: 'variableCnName', width: 160, ellipsis: true, tooltip: true },
-  { title: '字段类型', dataIndex: 'fieldType', width: 100 },
-  { title: '特征含义', dataIndex: 'variableMeaning', width: 180, ellipsis: true, tooltip: true },
-  { title: '取数逻辑', dataIndex: 'processingLogic', width: 220, ellipsis: true, tooltip: true },
-  { title: '维度', dataIndex: 'dimension', width: 100 },
-  { title: '时效性', dataIndex: 'dataFreshness', width: 100 },
-  { title: '默认值', dataIndex: 'defaultValue', width: 80 },
-  { title: '需求人', dataIndex: 'proposer', width: 110, ellipsis: true, tooltip: true },
-  { title: '回溯时间段', dataIndex: 'backtrackPeriod', width: 160, ellipsis: true, tooltip: true },
-  { title: '逾期上线时间', dataIndex: 'expectedLaunchDate', width: 120 },
-  { title: '效果字段', slotName: 'expectedEffect', width: 180, ellipsis: true, tooltip: true }
-]
-
-// 需求附件预览
-function formatAttachmentSize(bytes) {
-  if (!bytes) return '—'
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(2)} MB`
-}
-
-function previewAttachment(attachment) {
-  if (attachment?.name) {
-    Message.info(`附件：${attachment.name}（mock 环境，暂不支持下载）`)
-  }
+// 跳转需求详情页（路由 /variable-management/requirement/:id）
+function goDerivationDetail(record) {
+  router.push({ name: 'DerivationDetail', params: { id: record.id } })
 }
 
 // ============ 需求驳回 ============

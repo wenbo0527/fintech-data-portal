@@ -18,8 +18,10 @@ export interface RegisterFormPayload {
   featureCnName: string
   /** 字段类型（必填，Integer/Double/Boolean/String）*/
   fieldType: 'Integer' | 'Double' | 'Boolean' | 'String'
-  /** 加工逻辑（必填，长文本）*/
-  processingLogic: string
+  /** 业务逻辑（必填，长文本，描述业务含义与统计口径）*/
+  businessLogic: string
+  /** 代码逻辑（必填，长文本，描述 SQL/代码实现）*/
+  codeLogic: string
   /** 默认值（非必填）*/
   defaultValue?: string
   /** 特征粒度：identity_only（仅身份证号）/ identity_plus_product（身份证号+产品号）*/
@@ -226,7 +228,7 @@ export const VariableDraftStore = {
       status: 'registered', // B1 R21：提交后状态=已注册
       midloanStatus: 'registered',
       midloanFeatureId: id,
-      description: payload.processingLogic,
+      description: payload.businessLogic,
       dataSource: payload.sourceType === 'external' ? 'external' : payload.sourceType === 'credit' ? 'credit' : 'internal',
       dataSourceName: payload.sourceType === 'external' ? '外部数据源（外数）' : payload.sourceType === 'credit' ? '合作机构' : '数仓（内数）',
       creator,
@@ -235,7 +237,8 @@ export const VariableDraftStore = {
       sourceType: payload.sourceType || 'internal',
       category: payload.category || 'midloan_behavior',
       fieldType: payload.fieldType,
-      processingLogic: payload.processingLogic,
+      businessLogic: payload.businessLogic,
+      codeLogic: payload.codeLogic,
       defaultValue: payload.defaultValue || '',
       featureGranularity: payload.featureGranularity || 'identity_only',
       l1Category: payload.l1Category,

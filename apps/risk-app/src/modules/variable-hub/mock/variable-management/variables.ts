@@ -65,6 +65,8 @@ export interface VariableAssetMock {
   derivationId?: string
   fieldType?: string
   processingLogic?: string
+  businessLogic?: string
+  codeLogic?: string
   defaultValue?: string
   l1Category?: string
   l2Category?: string

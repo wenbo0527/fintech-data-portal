@@ -577,6 +577,18 @@ export const DerivationStore = {
     persist()
     return d
   },
+  /** 重新受理：仅驳回状态可重新受理，恢复为需求受理 */
+  reopen(id: string) {
+    const d = store.find(x => x.id === id)
+    if (!d) return null
+    if (d.status !== 'rejected') return null
+    d.status = 'requirement_accepted'
+    d.rejectReason = undefined
+    d.rejectedAt = undefined
+    d.updatedAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
+    persist()
+    return d
+  },
   /** 补充数据底表 */
   supplementDataTable(id: string, tableName: string) {
     const d = store.find(x => x.id === id)

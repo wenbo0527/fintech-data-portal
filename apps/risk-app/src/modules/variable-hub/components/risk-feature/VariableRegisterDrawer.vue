@@ -99,33 +99,34 @@
           </a-col>
         </a-row>
 
-        <a-form-item label="加工逻辑" required>
+        <a-form-item label="业务逻辑" required>
           <a-textarea
-            v-model="form.processingLogic"
-            :rows="3"
-            placeholder="描述特征的衍生/计算规则，例如：从 dwd_trade_detail 过滤 amount >= 5000 的成功记录，按 user_id 维度统计 30 天滚动窗口"
+            v-model="form.businessLogic"
+            :rows="6"
+            :max-length="2000"
+            show-word-limit
+            placeholder="描述业务含义与统计口径，例如：统计用户近30日内金额≥5000元的成功交易笔数。支持较长文本输入。"
+            style="min-height: 140px"
           />
         </a-form-item>
 
-        <a-form-item label="特征粒度" required>
-          <a-radio-group v-model="form.featureGranularity">
-            <a-radio value="identity_only">身份证号</a-radio>
-            <a-radio value="identity_plus_product">身份证号 + 产品号</a-radio>
-          </a-radio-group>
-          <template #extra>
-            <span style="color: var(--color-text-3); font-size: 12px;">区分特征入参维度：仅身份证号 或 身份证号+产品号</span>
-          </template>
-        </a-form-item>
-
-        <a-form-item label="特征分类">
-          <a-radio-group v-model="form.category">
-            <a-radio value="midloan_behavior">贷中行为（一期固定）</a-radio>
-          </a-radio-group>
+        <a-form-item label="代码逻辑" required>
+          <SqlEditor
+            v-model="form.codeLogic"
+            height="240px"
+            placeholder="输入 SQL 代码，例如：SELECT count(*) FROM dwd_trade_detail WHERE amount >= 5000 AND status = 'SUCCESS' AND dt >= date_sub(current_date, 30) GROUP BY user_id"
+          />
         </a-form-item>
       </a-card>
 
       <!-- ============ 区块 2：特征分类信息 ============ -->
       <a-card title="特征分类信息" :bordered="false" size="small" class="reg-block">
+        <a-form-item label="特征分类">
+          <a-radio-group v-model="form.category" disabled>
+            <a-radio value="midloan_behavior">贷中行为（一期固定）</a-radio>
+          </a-radio-group>
+        </a-form-item>
+
         <a-row :gutter="12">
           <a-col :span="12">
             <a-form-item label="一级分类" required>
@@ -203,10 +204,31 @@
         <a-form-item label="数仓任务ID（非必填）">
           <a-input v-model="form.dwTaskId" placeholder="例如：DW-TASK-XXXXXX（数仓回调写入或研发手动补充）" />
         </a-form-item>
+
+        <a-divider style="margin: 12px 0">Excel 评估报告附件（非必填）</a-divider>
+
+        <a-upload
+          :custom-request="customUpload"
+          :before-upload="beforeUpload"
+          :show-file-list="false"
+          accept=".xlsx,.xls,.csv"
+        >
+          <a-button>
+            <icon-upload /> 选择 Excel 文件
+          </a-button>
+          <span class="upload-hint" style="margin-left: 8px; color: var(--color-text-3); font-size: 12px">
+            支持 .xlsx / .xls / .csv，单文件不超过 10MB
+          </span>
+        </a-upload>
+        <div v-if="form.excelAttachment" style="margin-top: 8px; color: var(--color-text-2); font-size: 12px">
+          <icon-file /> {{ form.excelAttachment.name }}
+          （{{ formatSize(form.excelAttachment.size) }}，{{ form.excelAttachment.uploadedAt }}）
+          <a-link style="margin-left: 8px" @click="form.excelAttachment = undefined">移除</a-link>
+        </div>
       </a-card>
 
-      <!-- ============ 区块 4：协作信息 ============ -->
-      <a-card title="协作信息" :bordered="false" size="small" class="reg-block">
+      <!-- ============ 区块 4：协作与备注 ============ -->
+      <a-card title="协作与备注" :bordered="false" size="small" class="reg-block">
         <a-row :gutter="12">
           <a-col :span="12">
             <a-form-item label="创建人（自动带入）">
@@ -265,26 +287,15 @@
           />
         </a-form-item>
 
-        <a-divider style="margin: 12px 0">Excel 评估报告附件（非必填）</a-divider>
-
-        <a-upload
-          :custom-request="customUpload"
-          :before-upload="beforeUpload"
-          :show-file-list="false"
-          accept=".xlsx,.xls,.csv"
-        >
-          <a-button>
-            <icon-upload /> 选择 Excel 文件
-          </a-button>
-          <span class="upload-hint" style="margin-left: 8px; color: var(--color-text-3); font-size: 12px">
-            支持 .xlsx / .xls / .csv，单文件不超过 10MB
-          </span>
-        </a-upload>
-        <div v-if="form.excelAttachment" style="margin-top: 8px; color: var(--color-text-2); font-size: 12px">
-          <icon-file /> {{ form.excelAttachment.name }}
-          （{{ formatSize(form.excelAttachment.size) }}，{{ form.excelAttachment.uploadedAt }}）
-          <a-link style="margin-left: 8px" @click="form.excelAttachment = undefined">移除</a-link>
-        </div>
+        <a-form-item label="特征粒度">
+          <a-radio-group v-model="form.featureGranularity">
+            <a-radio value="identity_only">身份证号</a-radio>
+            <a-radio value="identity_plus_product">身份证号 + 产品号</a-radio>
+          </a-radio-group>
+          <template #extra>
+            <span style="color: var(--color-text-3); font-size: 12px;">区分特征入参维度：仅身份证号 或 身份证号+产品号</span>
+          </template>
+        </a-form-item>
       </a-card>
     </a-form>
 
@@ -303,6 +314,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
+import SqlEditor from '@/components/common/SqlEditor.vue'
 import {
   FIELD_TYPE_OPTIONS,
   DATA_FRESHNESS_OPTIONS,
@@ -392,7 +404,8 @@ const requirementPreviewItems = computed(() => {
     { label: '需求名称', value: r.requirementName || r.name || '-' },
     { label: '业务场景', value: r.businessScenario || r.description || '-' },
     { label: '预期效果', value: r.expectedEffect || '（未填写）' },
-    { label: '加工逻辑', value: r.processingLogic || '（未填写）' },
+    { label: '业务逻辑', value: r.businessLogic || r.processingLogic || '（未填写）' },
+    { label: '代码逻辑', value: r.codeLogic || '（未填写）' },
     { label: '默认值', value: r.defaultValue || '（未填写）' },
     { label: '特征粒度', value: r.featureGranularity === 'identity_plus_product' ? '身份证号 + 产品号' : '身份证号' },
     { label: '提出人', value: r.requirementProposer || r.creator || '-' }
@@ -413,7 +426,8 @@ function createEmptyForm(): RegisterFormPayload {
     name: '',
     featureCnName: '',
     fieldType: 'Integer',
-    processingLogic: '',
+    businessLogic: '',
+    codeLogic: '',
     defaultValue: '',
     description: '',
     featureGranularity: 'identity_only',
@@ -515,7 +529,8 @@ function validateAll(): boolean {
     return false
   }
   if (!form.fieldType) { Message.error('请选择字段类型'); return false }
-  if (!form.processingLogic || !form.processingLogic.trim()) { Message.error('请填写加工逻辑'); return false }
+  if (!form.businessLogic || !form.businessLogic.trim()) { Message.error('请填写业务逻辑'); return false }
+  if (!form.codeLogic || !form.codeLogic.trim()) { Message.error('请填写代码逻辑'); return false }
   if (!form.l1Category) { Message.error('请选择一级分类'); return false }
   if (!form.l2Category) { Message.error('请选择二级分类'); return false }
   if (!form.developer) { Message.error('请选择开发人员'); return false }
@@ -616,7 +631,8 @@ function prefillFromDerivation(d: any) {
   form.name = d.featureEnName || ''
   form.featureCnName = d.featureCnName || d.name || ''
   form.fieldType = matchFieldType(d.fieldType)
-  form.processingLogic = d.processingLogic || form.processingLogic
+  form.businessLogic = d.businessLogic || d.processingLogic || form.businessLogic
+  form.codeLogic = d.codeLogic || form.codeLogic
   form.defaultValue = d.defaultValue ?? form.defaultValue
   form.description = d.requirementDescription || d.expectedEffect || ''
   form.l1Category = d.l1Category || form.l1Category
@@ -640,7 +656,8 @@ function prefillFromDerivation(d: any) {
 /** 台账审核模式（状态机 submit_requirement）：A1 需求提案 → B1 表单 */
 function prefillFromRequirementProposal(r: any) {
   form.featureCnName = r.requirementName || r.name || r.featureCnName || ''
-  form.processingLogic = r.processingLogic || form.processingLogic
+  form.businessLogic = r.businessLogic || r.processingLogic || form.businessLogic
+  form.codeLogic = r.codeLogic || form.codeLogic
   form.defaultValue = r.defaultValue || form.defaultValue
   form.featureGranularity = r.featureGranularity || 'identity_only'
   form.description = r.businessScenario || r.description || ''

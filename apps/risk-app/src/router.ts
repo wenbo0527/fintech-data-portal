@@ -49,6 +49,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '特征详情' }
       },
       {
+        path: '/variable-management/requirement/:id',
+        name: 'DerivationDetail',
+        component: () => import('./modules/variable-hub/pages/variable-management/requirement-detail.vue'),
+        meta: { title: '需求详情' }
+      },
+      {
         path: '/explore/topics',
         name: 'ExploreTopics',
         component: () => import('./modules/variable-hub/pages/explore/topics/index.vue'),

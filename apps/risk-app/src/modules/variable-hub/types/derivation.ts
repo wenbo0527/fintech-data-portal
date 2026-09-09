@@ -10,22 +10,34 @@
  * - 已注册 (registered)：注册完成后
  */
 
+/** 需求展示状态（registered 为派生状态：requirement_accepted + featureId 时显示为已注册） */
+export type DerivationDisplayStatus = 'requirement_accepted' | 'registered' | 'rejected'
+
 export type DerivationStatus = 'requirement_accepted' | 'rejected'
 
-export const DERIVATION_STATUS_LABELS: Record<DerivationStatus, string> = {
+export const DERIVATION_STATUS_LABELS: Record<DerivationDisplayStatus, string> = {
   requirement_accepted: '需求受理',
+  registered: '已注册',
   rejected: '需求驳回'
 }
 
-export const DERIVATION_STATUS_COLORS: Record<DerivationStatus, string> = {
+export const DERIVATION_STATUS_COLORS: Record<DerivationDisplayStatus, string> = {
   requirement_accepted: 'blue',
+  registered: 'green',
   rejected: 'red'
 }
 
-export const DERIVATION_STATUS_ORDER: DerivationStatus[] = [
+export const DERIVATION_STATUS_ORDER: DerivationDisplayStatus[] = [
   'requirement_accepted',
+  'registered',
   'rejected'
 ]
+
+/** 从记录计算展示状态：requirement_accepted + featureId → registered */
+export function getDisplayStatus(record: { status: string; featureId?: string }): DerivationDisplayStatus {
+  if (record.status === 'requirement_accepted' && record.featureId) return 'registered'
+  return record.status as DerivationDisplayStatus
+}
 
 export interface DerivationRecord {
   id: string
@@ -38,6 +50,8 @@ export interface DerivationRecord {
   featureCnName?: string
   fieldType?: string
   processingLogic?: string
+  businessLogic?: string
+  codeLogic?: string
   defaultValue?: string
   l1Category?: string
   l2Category?: string

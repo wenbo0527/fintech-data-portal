@@ -104,11 +104,17 @@ function runDev(name, cwd, script = 'dev', extraEnv = {}) {
 
 async function main() {
   const root = process.cwd()
+  // 已归档子应用（ARCHIVED 2026-09-09），能力已并入 data-community-app：
+  //   - admin-app（原 5182）
+  //   - asset-app（原 5179）
+  //   - dfd-app  （原 5181）
+  //   - dmt-app  （原 5184）
+  // 如需重新启用，对应端口请见各应用 ARCHIVED.md。
   const apps = [
     { name: 'horizontal-canvas', cwd: `${root}/apps/horizontal-canvas`, url: 'http://127.0.0.1:5175/', port: 5175 },
     { name: 'risk-app', cwd: `${root}/apps/risk-app`, url: 'http://127.0.0.1:5176/', port: 5176 },
     { name: 'touch', cwd: `${root}/apps/touch`, url: 'http://127.0.0.1:5181/', port: 5181 },
-    { name: 'dmt-app', cwd: `${root}/apps/dmt-app`, url: 'http://127.0.0.1:5184/', port: 5184, env: { DMT_PORT: '5184' } }
+    { name: 'data-community-app', cwd: `${root}/apps/data-community-app`, url: 'http://127.0.0.1:5185/', port: 5185 }
   ]
   const mainApp = { name: 'main-app', cwd: root, url: 'http://127.0.0.1:5173/', port: 5173 }
   

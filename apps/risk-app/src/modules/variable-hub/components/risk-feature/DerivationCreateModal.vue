@@ -30,13 +30,23 @@
       </div>
 
       <a-form layout="vertical">
-        <a-form-item label="特征名称" required>
+        <a-form-item label="需求名称" required>
           <a-input
             v-model="row.variableName"
             :max-length="50"
             show-word-limit
             size="large"
-            placeholder="≤50字，输入特征名称"
+            placeholder="≤50字，输入需求名称（作为本次提交的标识）"
+          />
+        </a-form-item>
+
+        <a-form-item label="特征名称" required>
+          <a-input
+            v-model="row.featureCnName"
+            :max-length="50"
+            show-word-limit
+            size="large"
+            placeholder="≤50字，输入特征中文名"
           />
         </a-form-item>
 
@@ -49,6 +59,20 @@
             size="large"
             placeholder="详细描述需求内容、背景及具体要求"
           />
+        </a-form-item>
+
+        <a-form-item label="处理人">
+          <a-select
+            v-model="row.handler"
+            placeholder="选择处理人（非必填）"
+            allow-clear
+            size="large"
+          >
+            <a-option value="小李">小李</a-option>
+            <a-option value="小王">小王</a-option>
+            <a-option value="培培">培培</a-option>
+            <a-option value="张三">张三</a-option>
+          </a-select>
         </a-form-item>
 
         <a-form-item label="附件">
@@ -99,7 +123,9 @@ const todayYmd = computed(() => new Date().toISOString().slice(0, 10).replace(/-
 function createEmptyRow() {
   return {
     variableName: '',
+    featureCnName: '',
     requirementDescription: '',
+    handler: '',
     attachment: null
   }
 }
@@ -152,7 +178,12 @@ function onOk() {
   }
   const invalid = rows.findIndex((r) => !r.variableName || !r.variableName.trim())
   if (invalid >= 0) {
-    Message.warning(`第 ${invalid + 1} 条：特征名称必填`)
+    Message.warning(`第 ${invalid + 1} 条：需求名称必填`)
+    return
+  }
+  const invalidFeature = rows.findIndex((r) => !r.featureCnName || !r.featureCnName.trim())
+  if (invalidFeature >= 0) {
+    Message.warning(`第 ${invalidFeature + 1} 条：特征名称必填`)
     return
   }
 
@@ -160,7 +191,9 @@ function onOk() {
   try {
     const payloads = rows.map((r) => ({
       name: r.variableName,
+      featureCnName: r.featureCnName,
       requirementDescription: r.requirementDescription,
+      handler: r.handler || '',
       attachment: r.attachment,
       // 保留默认值，确保 store 正常工作
       businessScene: '贷中',

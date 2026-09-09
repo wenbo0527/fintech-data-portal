@@ -1,7 +1,8 @@
 {
   "name": "admin-app",
   "version": "1.0.0",
-  "description": "通用域子应用 - admin-app",
+  "description": "通用域子应用 - admin-app（已归档，能力已并入 data-community-app）",
+  "deprecated": "本子应用代码已归档，业务能力已合并至 apps/data-community-app/（端口 5185）。详见 ARCHIVED.md。",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5182",

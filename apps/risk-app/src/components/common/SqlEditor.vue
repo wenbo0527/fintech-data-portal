@@ -4,7 +4,6 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
-import loader from '@monaco-editor/loader'
 
 interface Props {
   modelValue: string
@@ -13,36 +12,72 @@ interface Props {
   placeholder?: string
 }
 
-interface Emits {
-  (e: 'update:modelValue', value: string): void
-  (e: 'change', value: string): void
-}
-
 const props = withDefaults(defineProps<Props>(), {
   height: '240px',
   readonly: false,
   placeholder: ''
 })
 
-const emit = defineEmits<Emits>()
+const emit = defineEmits<{
+  (e: 'update:modelValue', value: string): void
+  (e: 'change', value: string): void
+}>()
 
 const editorContainer = ref<HTMLElement>()
 let editor: any = null
 const containerStyle = ref<Record<string, string>>({ height: props.height, width: '100%' })
 let runtimeMonaco: any = null
 
-// CDN 加载 Monaco
-loader.config({
-  paths: {
-    vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs'
-  }
-})
+const MONACO_CDN = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs'
+
+/**
+ * 从 CDN 加载 Monaco Editor（避免 @monaco-editor/loader 的 AMD define 全局污染）
+ * 原理：手动注入 loader.js → 用 AMD require 加载 editor.main → 完成后禁用 define.amd
+ */
+const loadMonaco = (): Promise<any> => {
+  // 已加载则直接返回
+  if ((window as any).monaco) return Promise.resolve((window as any).monaco)
+
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script')
+    script.src = `${MONACO_CDN}/loader.js`
+    script.onload = () => {
+      const amdRequire = (window as any).require
+      if (!amdRequire) {
+        reject(new Error('Monaco AMD loader 未就绪'))
+        return
+      }
+      amdRequire.config({ paths: { vs: MONACO_CDN } })
+      amdRequire(['vs/editor/editor.main'], () => {
+        const monaco = (window as any).monaco
+        // Monaco 加载完成后，禁用 define.amd 标志
+        // UMD 模块检测 AMD 的条件是 typeof define === 'function' && define.amd
+        // 将 define.amd 置为 undefined 可阻止 Vite 预打包的 ESM 模块误走 AMD 分支
+        if (typeof (window as any).define === 'function') {
+          try {
+            ;(window as any).define.amd = undefined
+          } catch {
+            // define.amd 不可写时，尝试用 defineProperty 覆盖
+            try {
+              Object.defineProperty((window as any).define, 'amd', { value: undefined, writable: true })
+            } catch {
+              console.warn('[SqlEditor] 无法禁用 AMD define.amd')
+            }
+          }
+        }
+        resolve(monaco)
+      })
+    }
+    script.onerror = () => reject(new Error('Monaco CDN 加载失败'))
+    document.head.appendChild(script)
+  })
+}
 
 const initEditor = async () => {
   if (!editorContainer.value) return
 
   try {
-    const monacoInstance = await loader.init()
+    const monacoInstance = await loadMonaco()
     runtimeMonaco = monacoInstance
 
     const defaultOptions = {
@@ -79,6 +114,7 @@ const initEditor = async () => {
     })
   } catch (error) {
     // CDN 加载失败时降级为 textarea
+    console.warn('[SqlEditor] Monaco 加载失败，降级为 textarea', error)
     if (editorContainer.value) {
       const ta = document.createElement('textarea')
       ta.value = props.modelValue

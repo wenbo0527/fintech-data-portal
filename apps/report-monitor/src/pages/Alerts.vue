@@ -218,11 +218,11 @@ const formatTime = (timestamp: string) => {
 }
 
 const acknowledgeAlert = (alertId: string) => {
-  store.acknowledgeAlert(alertId)
+  store.updateAlert(alertId, { state: 'acknowledged' })
 }
 
 const closeAlert = (alertId: string) => {
-  store.closeAlert(alertId)
+  store.updateAlert(alertId, { state: 'closed' })
 }
 
 const viewDetails = (alert: Alert) => {

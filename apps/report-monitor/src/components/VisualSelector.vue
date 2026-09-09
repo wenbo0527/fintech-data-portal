@@ -141,7 +141,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import {
-  IconCursor,
+  IconSort,
   IconDelete
 } from '@arco-design/web-vue/es/icon'
 

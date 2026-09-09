@@ -1,0 +1,29 @@
+/* subapp-tokens.css - 子应用公共样式变量 */
+/* 注：原文件位于 archive/legacy-src/styles/subapp-tokens.css
+   mkt-app vite fs.allow 不包含 archive 目录，
+   在此处保留一份副本，避免跨目录构建失败。
+   修改时请同步两边。 */
+
+:root {
+  /* 主色系 */
+  --subapp-primary: #165dff;
+  --subapp-primary-hover: #4080ff;
+
+  /* 文字色 */
+  --subapp-text-primary: #1d2129;
+  --subapp-text-secondary: #4e5969;
+  --subapp-text-tertiary: #86909c;
+  --subapp-text-quaternary: #b2b5c0;
+
+  /* 背景/边框 */
+  --subapp-bg: #ffffff;
+  --subapp-bg-secondary: #f2f3f5;
+  --subapp-border: #f0f0f0;
+  --subapp-border-light: #e5e6eb;
+
+  /* 状态色 */
+  --subapp-success: #00b42a;
+  --subapp-warning: #ff7d00;
+  --subapp-danger: #f53f3f;
+  --subapp-info: #1890ff;
+}

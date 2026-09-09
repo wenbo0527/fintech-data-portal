@@ -34,7 +34,8 @@ export class MonitorService {
       status: 'running',
       duration: 0,
       errors: [],
-      metrics: {}
+      metrics: {},
+      createdAt: new Date().toISOString()
     };
 
     try {

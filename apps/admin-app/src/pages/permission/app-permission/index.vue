@@ -216,7 +216,7 @@
 <script setup>
 import { ref, reactive, computed } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import { useUserStore } from '@/stores/user.js'
+import { useUserStore } from '@/stores/user'
 const userStore = useUserStore()
 
 const searchKey = ref('')

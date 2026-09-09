@@ -103,21 +103,29 @@ export class SchedulerService {
       
       while (attempts <= maxRetries) {
         try {
-          run = await this.monitor.runCheck(schedule.targetId);
-          
+          // 通过 storage 获取 target/rules 后执行监控（避免未知 runCheck 方法）
+          const [allTargets, allRules] = await Promise.all([
+            this.storage.getTargets(),
+            this.storage.getRules()
+          ]);
+          const target = allTargets.find(t => t.id === schedule.targetId);
+          if (!target) throw new Error(`Target ${schedule.targetId} not found`);
+          const rules = allRules.filter(r => r.targetId === schedule.targetId);
+          run = await this.monitor.runMonitor(target, rules);
+
           // Update job status
           await this.storage.updateJob(jobId, {
             status: 'completed',
             completedAt: new Date().toISOString(),
             runId: run.id
           });
-          
+
           console.log(`Scheduled job ${schedule.id} completed successfully`);
           return;
         } catch (error) {
           attempts++;
           console.error(`Scheduled job ${schedule.id} attempt ${attempts} failed:`, error);
-          
+
           if (attempts <= maxRetries) {
             // Apply retry delay
             const delay = this.calculateRetryDelay(schedule.retryPolicy, attempts);
@@ -130,20 +138,24 @@ export class SchedulerService {
               completedAt: new Date().toISOString(),
               error: error instanceof Error ? error.message : 'Unknown error'
             });
-            
-            // Create alert for failed scheduled job
-            await this.alert.createAlert({
+
+            // 构造失败的 MonitorRun 交给 AlertService（createAlert 需要 MonitorRun + targetName）
+            const failedRun: MonitorRun = {
               id: crypto.randomUUID(),
               targetId: schedule.targetId,
-              scheduleId: schedule.id,
-              level: 'error',
-              message: `Scheduled monitoring job failed after ${maxRetries + 1} attempts: ${error instanceof Error ? error.message : 'Unknown error'}`,
-              state: 'open',
-              createdAt: new Date().toISOString(),
-              acknowledgedAt: null,
-              resolvedAt: null
-            });
-            
+              status: 'failed',
+              duration: 0,
+              errors: [{
+                ruleId: '',
+                type: 'scheduler',
+                message: `Scheduled monitoring job failed after ${maxRetries + 1} attempts: ${error instanceof Error ? error.message : 'Unknown error'}`
+              }],
+              metrics: {},
+              createdAt: new Date().toISOString()
+            };
+            const targetName = (await this.storage.getTargets()).find(t => t.id === schedule.targetId)?.name ?? schedule.targetId;
+            await this.alert.createAlert(failedRun, targetName);
+
             console.error(`Scheduled job ${schedule.id} failed after ${maxRetries + 1} attempts`);
             return;
           }
@@ -151,19 +163,23 @@ export class SchedulerService {
       }
     } catch (error) {
       console.error(`Failed to execute scheduled job ${schedule.id}:`, error);
-      
-      // Create alert for execution failure
-      await this.alert.createAlert({
+
+      // 构造失败的 MonitorRun 交给 AlertService
+      const failedRun: MonitorRun = {
         id: crypto.randomUUID(),
         targetId: schedule.targetId,
-        scheduleId: schedule.id,
-        level: 'error',
-        message: `Failed to execute scheduled monitoring job: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        state: 'open',
-        createdAt: new Date().toISOString(),
-        acknowledgedAt: null,
-        resolvedAt: null
-      });
+        status: 'failed',
+        duration: 0,
+        errors: [{
+          ruleId: '',
+          type: 'scheduler',
+          message: `Failed to execute scheduled monitoring job: ${error instanceof Error ? error.message : 'Unknown error'}`
+        }],
+        metrics: {},
+        createdAt: new Date().toISOString()
+      };
+      const targetName = (await this.storage.getTargets()).find(t => t.id === schedule.targetId)?.name ?? schedule.targetId;
+      await this.alert.createAlert(failedRun, targetName);
     }
   }
 

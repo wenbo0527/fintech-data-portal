@@ -745,9 +745,18 @@ importers:
 
   packages/shared-utils:
     dependencies:
+      '@arco-design/web-vue':
+        specifier: '>=2.55.0'
+        version: 2.57.0(vue@3.5.19(typescript@5.3.3))
       dayjs:
         specifier: '>=1.11.0'
         version: 1.11.19
+      file-saver:
+        specifier: '>=2.0.5'
+        version: 2.0.5
+      xlsx:
+        specifier: '>=0.18.0'
+        version: 0.18.5
     devDependencies:
       typescript:
         specifier: 5.3.3

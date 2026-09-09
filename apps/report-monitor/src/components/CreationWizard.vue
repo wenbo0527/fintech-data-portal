@@ -40,7 +40,7 @@
               <div><strong>名称:</strong> {{ selectedTargetData?.name }}</div>
               <div><strong>URL:</strong> {{ selectedTargetData?.url }}</div>
               <div><strong>认证方式:</strong> {{ getAuthTypeLabel(selectedTargetData?.authType) }}</div>
-              <div><strong>描述:</strong> {{ selectedTargetData?.description || '无' }}</div>
+              <div><strong>更新时间:</strong> {{ selectedTargetData?.updatedAt || '-' }}</div>
             </div>
           </div>
         </div>
@@ -345,7 +345,17 @@ const exploring = ref(false)
 const explorationData = ref<any>(null)
 const selectedRecommendations = ref<any[]>([])
 const configuredRules = ref<any[]>([])
-const scheduleConfig = ref({
+const scheduleConfig = ref<{
+  frequency: string
+  cron: string
+  timezone: string
+  maxConcurrency: number
+  retryPolicy: {
+    maxRetries: number
+    backoff: 'fixed' | 'exponential'
+    delay: number
+  }
+}>({
   frequency: '1hour',
   cron: '',
   timezone: 'Asia/Shanghai',

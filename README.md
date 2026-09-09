@@ -277,6 +277,7 @@ PR 必须通过 CI 6 阶段质量门：
 | [docs/README.md](docs/README.md) | 文档索引（新人入职 10 分钟路径） |
 | [docs/architecture/overview.md](docs/architecture/overview.md) | 项目架构总览 |
 | [docs/governance/BRANCH_NAMING.md](docs/governance/BRANCH_NAMING.md) | 分支命名规范 |
+| [docs/governance/CLASSIFY_MOCKS_SYNC.md](docs/governance/CLASSIFY_MOCKS_SYNC.md) | dmt-app classify-* mock 同步规约 |
 | [docs/migration/JS-TS-MIGRATION.md](docs/migration/JS-TS-MIGRATION.md) | JS/TS 迁移现状 |
 | [docs/prd/](docs/prd/) | 产品需求文档（4 模块） |
 | [archive/legacy-src/DEPRECATED.md](archive/legacy-src/DEPRECATED.md) | 旧主应用冻结声明 |

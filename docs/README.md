@@ -69,6 +69,7 @@ README.md                            # 架构治理说明（从 架构治理/REA
 BRANCH_CLEANUP.md                    # 分支清理策略
 BRANCH_NAMING.md                     # 分支命名规范
 BRANCH_RETIREMENT_PLAN.md            # 已执行归档记录（2026-09-08）
+CLASSIFY_MOCKS_SYNC.md               # dmt-app classify-* mock 同步规约
 ```
 
 ### guides/

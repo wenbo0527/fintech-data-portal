@@ -24,6 +24,7 @@
     "test:responsive": "node scripts/responsive-test.js",
     "migration:check": "node scripts/migration-check.js",
     "migration:validate": "npm run lint:check && npm run typecheck && npm run migration:check",
+    "sync:app-mocks": "node scripts/sync-app-mocks.mjs",
     "audit": "npm audit --audit-level high",
     "depcheck": "depcheck",
     "clean": "rimraf dist node_modules/.cache"

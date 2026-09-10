@@ -109,20 +109,12 @@
                   <a-space direction="vertical" style="width: 100%">
                     <a-space wrap>
                        <a-button size="mini" @click="forceRefreshProducts">刷新外数列表</a-button>
-                       <!-- PRD I04: 批量上传入口（接口号匹配，自动勾选） -->
-                       <a-upload
-                         :auto-upload="false"
-                         :show-file-list="false"
-                         accept=".xlsx,.xls,.csv"
-                         :before-upload="onBatchUpload"
-                       >
-                         <a-button size="mini" type="primary">
-                           <template #icon><IconUpload /></template>
-                           批量上传
-                         </a-button>
-                       </a-upload>
-                       <a-button size="mini" @click="downloadBatchTemplate">下载模板</a-button>
-                       <span style="font-size: 12px; color: var(--subapp-text-tertiary)">当前外数总数: {{ products.length }}（按接口号自动匹配勾选）</span>
+                       <!-- PRD I04: 批量上传入口（弹窗：下载模板 / Mock 数据 / 上传） -->
+                       <a-button size="mini" type="primary" @click="batchModalVisible = true">
+                         <template #icon><IconUpload /></template>
+                         批量上传
+                       </a-button>
+                       <span style="font-size: 12px; color: var(--subapp-text-tertiary)">当前外数总数: {{ products.length }}（支持 Excel/CSV，按接口号或名称匹配：命中自动勾选并写入价格，未匹配自动新增外数）</span>
                     </a-space>
                     <!-- PRD D1: 穿梭框（Transfer）+ 接口号搜索 + 已关联不可取消 -->
                     <a-transfer
@@ -238,13 +230,104 @@
       </a-col>
     </a-row>
   </div>
+
+  <!-- PRD I04: 批量上传弹窗（三步引导：下载模板 / 上传文件 / Mock 演示） -->
+  <a-modal
+    v-model:visible="batchModalVisible"
+    title="批量上传外数"
+    :width="680"
+    :footer="false"
+    unmount-on-close
+    class="batch-modal"
+  >
+    <div class="bm-body">
+      <!-- 步骤一：下载模板 -->
+      <section class="bm-step">
+        <header class="bm-step-head">
+          <span class="bm-step-no">1</span>
+          <div class="bm-step-title">
+            <strong>下载模板</strong>
+            <small>按模板填写外数清单，列顺序不限</small>
+          </div>
+          <a-link class="bm-step-action" @click="downloadBatchTemplate">
+            <template #icon><IconDownload /></template>
+            下载模板
+          </a-link>
+        </header>
+        <div class="bm-cols">
+          <a-tag v-for="c in batchTemplateHeader" :key="c" size="small" :color="batchRequiredCols.includes(c) ? 'orangered' : undefined" :bordered="false">
+            {{ c }}
+          </a-tag>
+          <span class="bm-cols-hint">
+            <span class="bm-dot bm-dot-required"></span>必填其一
+            <span class="bm-dot"></span>选填
+          </span>
+        </div>
+        <a-table
+          :columns="batchTemplateColumns"
+          :data="batchTemplateExampleRows"
+          :pagination="false"
+          size="mini"
+          :bordered="{ cell: true }"
+          :scroll="{ x: '100%' }"
+          class="bm-sample"
+        />
+      </section>
+
+      <a-divider class="bm-divider" :margin="18" />
+
+      <!-- 步骤二：上传文件 -->
+      <section class="bm-step">
+        <header class="bm-step-head">
+          <span class="bm-step-no">2</span>
+          <div class="bm-step-title">
+            <strong>上传文件</strong>
+            <small>拖拽或点击选择，解析后自动写入</small>
+          </div>
+        </header>
+        <a-upload
+          class="bm-upload"
+          drag
+          :auto-upload="false"
+          :show-file-list="false"
+          accept=".xlsx,.xls,.csv"
+          :before-upload="onBatchUpload"
+        >
+          <div class="bm-upload-content">
+            <IconUpload class="bm-upload-icon" />
+            <p class="bm-upload-text">拖拽文件到此处，或<span class="bm-upload-highlight">点击选择</span></p>
+            <p class="bm-upload-hint">支持 .xlsx / .xls / .csv</p>
+          </div>
+        </a-upload>
+        <ul class="bm-rules">
+          <li>命中<em>接口号</em>或<em>产品名称</em>：自动勾选并写入计费方式、单价等</li>
+          <li>未命中：自动新增外数到穿梭框并选中</li>
+        </ul>
+      </section>
+
+      <a-divider class="bm-divider" :margin="18" />
+
+      <!-- 步骤三：Mock 演示 -->
+      <section class="bm-demo">
+        <div class="bm-demo-text">
+          <IconThunderbolt class="bm-demo-icon" />
+          <div>
+            <strong>没有准备好文件？</strong>
+            <small>一键填充示例数据，预览解析与自动写入效果</small>
+          </div>
+        </div>
+        <a-button size="small" type="outline" @click="applyMockBatchData">填充 Mock 数据</a-button>
+      </section>
+    </div>
+  </a-modal>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
-import { IconUpload } from '@arco-design/web-vue/es/icon'
+import { IconUpload, IconDownload, IconThunderbolt } from '@arco-design/web-vue/es/icon'
+import * as XLSX from 'xlsx'
 import { useContractStore } from '@/modules/budget/stores/contract'
 import { useExternalDataStore } from '@/modules/external-data/stores/external-data'
 import { partnerOrgNames } from '@/modules/budget/api/supplierDictionary'
@@ -742,57 +825,208 @@ onMounted(async () => {
 })
 const beforeUpload = (file: any) => { const okType = ['application/pdf','application/msword'].includes(file.type) || /\.docx?$|\.pdf$/i.test(file.name); const okSize = file.size <= 10 * 1024 * 1024; if (!okType) { Message.error('仅支持 PDF / Word 文件'); return false } if (!okSize) { Message.error('文件大小应不超过 10MB'); return false } return true }
 
-// PRD I04: 批量上传解析（按接口号 trim 后去重匹配）
+// PRD I04: 批量上传解析（支持 CSV / Excel）
+// 表头列 → 字段映射规则（按优先级匹配，先匹配者占位，避免"合同中外数名称"被"名称"抢占）
+const BATCH_FIELD_RULES: Array<[string, RegExp]> = [
+  ['interfaceNo', /接口号|interface\s*no/i],
+  ['contractName', /合同中外数名称|合同内名称|合同名称|contract\s*name/i],
+  ['billingMode', /计费方式|billing\s*mode/i],
+  ['billingType', /计费类型|billing\s*type/i],
+  ['basePrice', /基础单价|单价|base\s*price/i],
+  ['supplier', /合作机构|供应商|supplier/i],
+  ['name', /产品名称|外数名称|product\s*name|^name$|名称/i],
+  ['remark', /备注|remark/i]
+]
+const BILLING_TYPE_MAP: Record<string, string> = {
+  '固定单价计费': 'fixed', '固定': 'fixed', 'fixed': 'fixed',
+  '阶梯条件计费': 'tiered', '阶梯': 'tiered', 'tiered': 'tiered',
+  '特殊计费': 'special', '特殊': 'special', 'special': 'special'
+}
+
+// 将 CSV 文本解析为二维数组（支持引号包裹字段）
+const csvToMatrix = (text: string): string[][] => {
+  return text.split(/\r?\n/).filter(l => l.length).map((line) => {
+    const out: string[] = []
+    let cur = '', inq = false
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i]
+      if (inq) {
+        if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++ }
+        else if (ch === '"') inq = false
+        else cur += ch
+      } else {
+        if (ch === '"') inq = true
+        else if (ch === ',') { out.push(cur); cur = '' }
+        else cur += ch
+      }
+    }
+    out.push(cur)
+    return out
+  })
+}
+
+// 二维表 → 以字段名为 key 的记录数组（依据首行表头自动定位列）
+const matrixToRecords = (matrix: string[][]): Record<string, string>[] => {
+  const header = (matrix[0] || []).map(h => String(h ?? '').trim())
+  const colField: Record<number, string> = {}
+  const used = new Set<string>()
+  header.forEach((h, idx) => {
+    for (const [field, re] of BATCH_FIELD_RULES) {
+      if (!used.has(field) && re.test(h)) { colField[idx] = field; used.add(field); break }
+    }
+  })
+  const records: Record<string, string>[] = []
+  for (let i = 1; i < matrix.length; i++) {
+    const row = matrix[i] || []
+    if (!row.some(c => String(c ?? '').trim().length)) continue
+    const obj: Record<string, string> = {}
+    Object.keys(colField).forEach((idxStr) => { obj[colField[Number(idxStr)]] = String(row[Number(idxStr)] ?? '').trim() })
+    records.push(obj)
+  }
+  return records
+}
+
+// 应用解析结果：匹配已有外数自动勾选并写入价格，未匹配的新增外数并选中
+const applyBatchRecords = (records: Record<string, string>[]) => {
+  if (!records.length) { Message.warning('未解析到有效数据，请确认文件内容'); return }
+  const hasKeyCol = records.some(r => r.interfaceNo || r.name)
+  if (!hasKeyCol) { Message.error('缺少「接口号」或「产品名称」列，请参考模板'); return }
+
+  const nextSelection = selectedExternalIds.value.map(String)
+  const pending: Array<{ id: string; r: Record<string, string> }> = []
+  let addedCount = 0
+  let createdCount = 0
+  let skipped = 0
+
+  records.forEach((r, idx) => {
+    const ifNo = String(r.interfaceNo || '').trim()
+    const nm = String(r.name || '').trim()
+    if (!ifNo && !nm) { skipped++; return }
+    let product: any = null
+    if (ifNo) product = products.value.find((x: any) => String(x.interfaceNo || '').trim() === ifNo)
+    if (!product && nm) product = products.value.find((x: any) => String(x.name || '').trim() === nm)
+    if (!product) {
+      // 未匹配 → 新增为外数产品并写入穿梭框
+      const newId = `EXT-${Date.now()}-${idx}`
+      product = {
+        id: newId,
+        name: nm || ifNo || `外数-${idx + 1}`,
+        supplier: r.supplier || form.supplier || '',
+        channel: '在线查询',
+        interfaceNo: ifNo,
+        unitPrice: r.basePrice ? Number(r.basePrice) : undefined
+      }
+      externalStore.products.push(product)
+      createdCount++
+    } else if (!nextSelection.some(s => s === String(product.id))) {
+      addedCount++
+    }
+    const id = String(product.id)
+    if (!nextSelection.some(s => s === id)) nextSelection.push(id)
+    pending.push({ id, r })
+  })
+
+  if (!pending.length) { Message.warning('文件中没有可处理的外数行'); return }
+  selectedExternalIds.value = Array.from(new Set(nextSelection))
+  // 初始化配置对象（watcher 亦会执行 ensureConfigFor，二者幂等）
+  selectedExternalIds.value.forEach(id => ensureConfigFor(String(id)))
+  // 在 watcher 完成后覆盖解析到的字段（合同名称、计费方式、计费类型、基础单价、备注）
+  nextTick(() => {
+    pending.forEach(({ id, r }) => {
+      const cfg = externalConfigs[id] || (externalConfigs[id] = {})
+      if (r.contractName) cfg.contractName = r.contractName
+      else if (!cfg.contractName && r.name) cfg.contractName = r.name
+      if (r.billingMode) cfg.billingMode = r.billingMode
+      if (r.billingType) {
+        const bt = BILLING_TYPE_MAP[r.billingType.trim()] || BILLING_TYPE_MAP[r.billingType.trim().toLowerCase()]
+        if (bt) { cfg.billingType = bt; onBillingTypeChange(id) }
+      }
+      if (r.basePrice && !Number.isNaN(Number(r.basePrice))) cfg.basePrice = Number(r.basePrice)
+      if (r.remark) cfg.remark = r.remark
+    })
+  })
+
+  const parts: string[] = []
+  if (addedCount) parts.push(`自动勾选 ${addedCount} 个已有外数`)
+  if (createdCount) parts.push(`新增 ${createdCount} 个外数`)
+  parts.push(`写入 ${pending.length} 条名称/价格`)
+  Message.success(`解析完成：${parts.join('，')}${skipped ? `，跳过 ${skipped} 行` : ''}`)
+  batchModalVisible.value = false
+}
+
+// PRD I04: 批量上传解析（按接口号/名称匹配，自动写入价格，未匹配的新增外数）
 const onBatchUpload = (file: any) => {
-  const okType = /\.xlsx?$|\.csv$/i.test(file.name || '')
-  if (!okType) { Message.error('仅支持 Excel / CSV 文件'); return false }
-  // mock 解析：解析为接口号列表（此处以文件名为占位逻辑）
+  const name = String(file.name || '')
+  if (!/\.xlsx?$|\.csv$/i.test(name)) { Message.error('仅支持 Excel / CSV 文件'); return false }
+  const isCSV = /\.csv$/i.test(name)
   const reader = new FileReader()
   reader.onload = () => {
-    const text = String(reader.result || '')
-    const lines = text.split(/\r?\n/).filter(Boolean)
-    if (lines.length <= 1) { Message.warning('未解析到有效数据，请确认文件内容'); return }
-    const header = (lines[0] || '').split(',').map(h => h.trim())
-    const interfaceIdx = header.findIndex(h => /接口号|interfaceNo/i.test(h))
-    if (interfaceIdx < 0) { Message.error('缺少「接口号」列，请参考模板'); return }
-    const inputInterfaces = new Set<string>()
-    for (let i = 1; i < lines.length; i++) {
-      const cells = (lines[i] || '').split(',')
-      const v = String(cells[interfaceIdx] || '').trim()
-      if (v) inputInterfaces.add(v)
-    }
-    const matched: Array<string | number> = []
-    const unmatched: string[] = []
-    inputInterfaces.forEach(ifNo => {
-      const p = products.value.find((x: any) => String(x.interfaceNo || '').trim() === ifNo)
-      if (p) {
-        const id = String(p.id)
-        if (!selectedExternalIds.value.some(s => String(s) === id)) matched.push(id)
-      } else {
-        unmatched.push(ifNo)
+    try {
+      let matrix: string[][] = []
+      if (isCSV) matrix = csvToMatrix(String(reader.result || '').replace(/^\ufeff/, ''))
+      else {
+        const wb = XLSX.read(reader.result as ArrayBuffer, { type: 'array' })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        matrix = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: '' }) as string[][]
       }
-    })
-    // 合并勾选
-    const next = Array.from(new Set([...selectedExternalIds.value, ...matched]))
-    if (next.length !== selectedExternalIds.value.length) {
-      selectedExternalIds.value = next
+      applyBatchRecords(matrixToRecords(matrix))
+    } catch (err) {
+      console.error('外数批量解析失败', err)
+      Message.error('文件解析失败，请检查格式')
     }
-    Message.success(`解析完成：成功 ${matched.length} 条，未匹配 ${unmatched.length} 条${unmatched.length ? '（' + unmatched.slice(0,5).join(',') + (unmatched.length>5?'...':'') + '）' : ''}`)
   }
-  reader.readAsText(file as File)
+  reader.onerror = () => Message.error('文件读取失败')
+  if (isCSV) reader.readAsText(file as File)
+  else reader.readAsArrayBuffer(file as File)
   return false
 }
 
-// PRD I04: 下载批量上传模板
+// PRD I04: 批量上传弹窗状态与模板列（供下载、Mock、弹窗预览共用）
+const batchModalVisible = ref(false)
+const batchTemplateHeader = ['接口号', '产品名称', '合作机构', '计费方式', '计费类型', '基础单价', '合同中外数名称', '备注']
+// 必填其一的列（用于弹窗标签高亮）
+const batchRequiredCols = ['接口号', '产品名称']
+const batchTemplateExample: Record<string, string> = {
+  接口号: 'IF-0003', 产品名称: '学历认证', 合作机构: '海纳', 计费方式: '查询计费',
+  计费类型: '固定单价计费', 基础单价: '0.35', 合同中外数名称: '学历认证（合同名）', 备注: '示例行，使用后请删除'
+}
+const batchTemplateColumns = batchTemplateHeader.map((h) => ({ title: h, dataIndex: h, ellipsis: true, tooltip: true, width: 120 }))
+const batchTemplateExampleRows = [batchTemplateExample]
+
+// PRD I04: 下载批量上传模板（含价格列，便于上传时自动写入）
 const downloadBatchTemplate = () => {
-  const header = ['接口号', '产品名称', '合作机构', '备注']
-  const example = ['IF-001', '学籍身份核验', '学信网', '示例行，使用后请删除']
-  const csv = [header.join(','), example.join(',')].join('\n')
+  const example = batchTemplateHeader.map((h) => batchTemplateExample[h] ?? '')
+  const escape = (v: string) => /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+  const csv = [batchTemplateHeader, example].map((row) => row.map(escape).join(',')).join('\n')
   const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url; a.download = '外数批量上传模板.csv'; a.click(); URL.revokeObjectURL(url)
-  Message.success('模板已下载，请按接口号列填写后上传')
+  Message.success('模板已下载，支持按接口号/名称匹配，填写价格列可自动写入')
+}
+
+// PRD I04: 一键填充 Mock 数据（演示：命中已有外数写价 + 未匹配新增），无需真实文件
+const applyMockBatchData = () => {
+  if (!products.value.length) { Message.warning('外数列表为空，请先刷新外数列表'); return }
+  const supplier = form.supplier || products.value[0]?.supplier || ''
+  // 命中：取前 3 个已有接口号，写入价格
+  const matched = products.value.slice(0, 3).map((p: any, i) => ({
+    interfaceNo: String(p.interfaceNo || ''),
+    name: String(p.name || ''),
+    supplier: String(p.supplier || supplier),
+    billingMode: i % 2 === 0 ? '查询计费' : '查得计费',
+    billingType: i % 3 === 2 ? '阶梯条件计费' : '固定单价计费',
+    basePrice: String((Number(p.unitPrice) || 0.5).toFixed(2)),
+    contractName: `${p.name}（合同名）`,
+    remark: 'Mock 命中已有外数'
+  }))
+  // 未匹配：构造不存在的外数，演示自动新增
+  const newRows = [
+    { interfaceNo: `IF-NEW-${String(Date.now()).slice(-4)}`, name: 'Mock 新增外数A', supplier, billingMode: '查询计费', billingType: '固定单价计费', basePrice: '0.60', contractName: 'Mock 新增外数A（合同名）', remark: 'Mock 未匹配 → 自动新增' },
+    { interfaceNo: `IF-NEW-${String(Date.now() + 1).slice(-4)}`, name: 'Mock 新增外数B', supplier, billingMode: '查得计费', billingType: '特殊计费', basePrice: '', contractName: 'Mock 新增外数B（合同名）', remark: 'Mock 未匹配 → 自动新增' }
+  ]
+  applyBatchRecords([...matched, ...newRows] as Record<string, string>[])
+  batchModalVisible.value = false
 }
 </script>
 
@@ -808,4 +1042,60 @@ const downloadBatchTemplate = () => {
 .upload-highlight { color: var(--color-primary); font-weight: 600; }
 .upload-hint { color: var(--color-text-3); font-size: 12px; }
 .step-actions { margin-top: 8px; text-align: right; }
+
+/* ---- PRD I04: 批量上传弹窗 ---- */
+.bm-body { display: flex; flex-direction: column; padding-top: 4px; }
+.bm-step-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.bm-step-no {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; flex: none;
+  border-radius: 50%; font-size: 12px; font-weight: 600; line-height: 1;
+  color: rgb(var(--primary-6)); background: var(--color-primary-light-1);
+}
+.bm-step-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.bm-step-title strong { font-size: 14px; color: var(--color-text-1); }
+.bm-step-title small { font-size: 12px; color: var(--color-text-3); font-weight: 400; }
+.bm-step-action { margin-left: auto; flex: none; }
+.bm-divider { border-color: var(--color-border-1); }
+
+/* 模板列标签 */
+.bm-cols { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.bm-cols :deep(.arco-tag) { border-radius: 4px; padding: 0 8px; background: var(--color-fill-2); color: var(--color-text-2); }
+.bm-cols :deep(.arco-tag-color-orangered) { background: var(--color-danger-light-1); color: rgb(var(--danger-6)); }
+.bm-cols-hint { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; font-size: 12px; color: var(--color-text-3); }
+.bm-dot { display: inline-block; width: 6px; height: 6px; margin-left: 10px; border-radius: 50%; background: var(--color-text-4); vertical-align: middle; }
+.bm-dot-required { margin-left: 0; background: rgb(var(--danger-6)); }
+.bm-sample { border-radius: 6px; overflow: hidden; }
+
+/* 拖拽上传区 */
+.bm-upload { width: 100%; }
+.bm-upload :deep(.arco-upload),
+.bm-upload :deep(.arco-upload-drag),
+.bm-upload :deep(.arco-upload-wrapper) { width: 100%; }
+.bm-upload :deep(.arco-upload-drag) { border-radius: 8px; background: var(--color-fill-1); transition: border-color .2s ease, background .2s ease, box-shadow .2s ease; }
+.bm-upload :deep(.arco-upload-drag:hover) { border-color: rgb(var(--primary-5)); background: var(--color-primary-light-1); }
+.bm-upload :deep(.arco-upload-drag.arco-upload-drag-hover) { border-color: rgb(var(--primary-6)); background: var(--color-primary-light-1); box-shadow: 0 2px 10px rgba(var(--primary-6), .12); }
+.bm-upload-content { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 18px 0; }
+.bm-upload-icon { font-size: 28px; color: rgb(var(--primary-6)); }
+.bm-upload-text { margin: 8px 0 2px; font-size: 13px; color: var(--color-text-1); }
+.bm-upload-highlight { color: rgb(var(--primary-6)); font-weight: 600; }
+.bm-upload-hint { margin: 0; font-size: 12px; color: var(--color-text-3); }
+
+/* 匹配规则说明 */
+.bm-rules { display: flex; flex-direction: column; gap: 4px; margin: 10px 0 0; padding: 0; list-style: none; }
+.bm-rules li { position: relative; padding-left: 12px; font-size: 12px; line-height: 1.6; color: var(--color-text-3); }
+.bm-rules li::before { content: ''; position: absolute; left: 0; top: 8px; width: 4px; height: 4px; border-radius: 50%; background: var(--color-text-4); }
+.bm-rules em { font-style: normal; color: var(--color-text-1); }
+
+/* Mock 演示条 */
+.bm-demo {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 14px; border-radius: 8px;
+  background: var(--color-primary-light-1); border: 1px dashed rgba(var(--primary-3), .8);
+}
+.bm-demo-text { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.bm-demo-text strong { display: block; font-size: 13px; color: var(--color-text-1); }
+.bm-demo-text small { display: block; margin-top: 2px; font-size: 12px; color: var(--color-text-3); }
+.bm-demo-icon { font-size: 20px; color: rgb(var(--primary-6)); flex: none; }
+.bm-demo :deep(.arco-btn) { flex: none; background: transparent; }
 </style>

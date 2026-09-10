@@ -157,17 +157,28 @@
             </div>
           </a-card>
 
-          <!-- ========= HIVE 表与字段（精简：库名/表名/分区/分区字段/更新频率 + 标准化前原始表） ========= -->
+          <!-- ========= HIVE 表与字段（标准化前表/字段 + 标准化后 HIVE 表（= 数据底表）+ 分区 + 更新频率） ========= -->
           <a-card title="HIVE 表与字段" class="detail-card">
-            <a-alert type="info" :show-icon="true" style="margin-bottom: 12px">
+            <a-alert v-if="!hiveInfo.registered" type="warning" :show-icon="true" style="margin-bottom: 12px">
+              <template #title>
+                数据底表（标准化后 HIVE 表）未登记
+                <a-button size="mini" type="primary" style="margin-left: 8px" @click="openSupplementTable">
+                  补充数据底表
+                </a-button>
+              </template>
+              <div>数据开发完成后，需由数仓同学补充「数据底表 + HIVE 表与字段」，补齐后才能进入业务验收。</div>
+            </a-alert>
+            <a-alert v-else type="info" :show-icon="true" style="margin-bottom: 12px">
               <template #title>HBase 数据由 HIVE 提供，下方为底层 HIVE 表注册信息</template>
-              <div>标准化前表名/字段 = 原始上游表（数据源）→ 标准化后表名/字段 = 当前 HIVE 注册表</div>
+              <div>
+                标准化前表名/字段 = 原始上游表（数据源）→ 标准化后 HIVE 表 = 「技术关联信息」中的数据底表（同一份值，不重复登记）
+              </div>
             </a-alert>
             <a-descriptions :column="2" bordered size="small">
               <a-descriptions-item label="标准化前表名（原始上游）">
                 <a-space>
-                  <code class="mono">{{ hiveInfo.sourceDbName }}.{{ hiveInfo.sourceTableName }}</code>
-                  <a-button size="mini" type="text" @click="copyText(hiveInfo.sourceDbName + '.' + hiveInfo.sourceTableName, '标准化前表名')">复制</a-button>
+                  <code class="mono">{{ hiveInfo.sourceTableLabel }}</code>
+                  <a-button size="mini" type="text" @click="copyText(hiveInfo.sourceTableLabel, '标准化前表名')">复制</a-button>
                 </a-space>
               </a-descriptions-item>
               <a-descriptions-item label="标准化前字段名（原始上游）">
@@ -176,11 +187,11 @@
                   <a-button size="mini" type="text" @click="copyText(hiveInfo.sourceFieldName, '标准化前字段名')">复制</a-button>
                 </a-space>
               </a-descriptions-item>
-              <a-descriptions-item label="标准化后 HIVE 数据库名">{{ hiveInfo.databaseName }}</a-descriptions-item>
-              <a-descriptions-item label="标准化后 HIVE 表名">
+              <a-descriptions-item label="标准化后 HIVE 表（即数据底表）" :span="2">
                 <a-space>
                   <code class="mono strong">{{ hiveInfo.tableName }}</code>
-                  <a-button size="mini" type="text" @click="copyText(hiveInfo.tableName, 'HIVE表名')">复制</a-button>
+                  <a-tag color="green" size="small">与「技术关联信息 · 数据底表」同一份值</a-tag>
+                  <a-button size="mini" type="text" @click="copyText(hiveInfo.tableName, '数据底表（HIVE 表）')">复制</a-button>
                 </a-space>
               </a-descriptions-item>
               <a-descriptions-item label="是否分区表">{{ hiveInfo.isPartitioned ? '是' : '否' }}</a-descriptions-item>
@@ -198,11 +209,10 @@
           <a-card title="技术关联信息" class="detail-card">
             <a-descriptions :column="2" bordered size="small">
               <a-descriptions-item label="数据源名称">{{ techLink.dataSourceName }}</a-descriptions-item>
-              <a-descriptions-item label="数据底表 / 映射表">
+              <a-descriptions-item label="数据底表名称（= 标准化后 HIVE 表）">
                 <a-space>
-                  <span :class="{ 'missing-table': !techLink.dataTableName }">
-                    {{ techLink.dataTableName || '未补充（必填）' }}
-                  </span>
+                  <code v-if="techLink.dataTableName" class="mono strong">{{ techLink.dataTableName }}</code>
+                  <span v-else class="missing-table">未补充（必填）</span>
                   <a-button size="mini" type="primary" v-if="!techLink.dataTableName" @click="openSupplementTable">补充</a-button>
                   <a-button size="mini" v-else @click="openSupplementTable">修改</a-button>
                 </a-space>
@@ -387,29 +397,101 @@
       </a-space>
     </a-drawer>
 
-    <!-- ========== 补充数据底表弹窗（B1 R10） ========== -->
+    <!-- ========== 补充数据底表（B1 R10 · 卡片级局部补录，用弹窗承载：技术关联信息 + HIVE 表与字段）========== -->
     <a-modal
       v-model:visible="supplementTableVisible"
-      title="补充数据底表名称"
-      :footer="false"
+      :title="supplementTableForm.tableName ? '修改数据底表与 HIVE 登记信息' : '补充数据底表与 HIVE 登记信息'"
+      :width="800"
+      :ok-loading="supplementTableSubmitting"
+      ok-text="保存并回填"
+      cancel-text="取消"
       @cancel="supplementTableVisible = false"
+      @ok="onSupplementTable"
     >
-      <a-alert type="warning" :show-icon="false" style="margin-bottom: 12px">
-        数据底表名称是内数 API 注册（INT-01）的必填参数，必须按规范填写 ads_xxx / dim_xxx / dws_xxx 等。
+      <a-alert type="warning" :show-icon="false" style="margin-bottom: 16px">
+        数据底表名称是内数 API 注册（INT-01）的必填参数，填「HIVE 库名.表名」（如 risk_dw.ads_xxx）即可，
+        它同时就是标准化后的 HIVE 表，无需重复填写。保存后同步回填详情页「技术关联信息」与「HIVE 表与字段」两张卡片。
       </a-alert>
-      <a-form layout="vertical">
-        <a-form-item label="数据底表名称" required>
-          <a-input v-model="supplementTableForm.tableName" placeholder="例如：ads_midloan_collect_resp_hrs" />
-        </a-form-item>
-        <a-form-item label="说明（可选）">
-          <a-textarea v-model="supplementTableForm.remark" placeholder="可说明补全原因" :rows="2" />
-        </a-form-item>
+      <div class="supp-scroll">
+      <a-form :model="supplementTableForm" layout="vertical" :disabled="supplementTableSubmitting">
+        <a-card title="技术关联信息" size="small" class="supp-block">
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="数据底表名称（HIVE 库.表）" required>
+                <a-input
+                  v-model="supplementTableForm.tableName"
+                  placeholder="例如：risk_dw.ads_midloan_collect_resp_hrs"
+                  allow-clear
+                />
+                <template #extra>即标准化后的 HIVE 表名，库名与表名合并为一份填写</template>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="数据源名称">
+                <a-input v-model="supplementTableForm.dataSourceName" placeholder="例如：数仓（内数）" allow-clear />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="接口号">
+                <a-input v-model="supplementTableForm.apiNo" placeholder="阶段4 上线后回填，可留空" allow-clear />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="响应字段（外数）">
+                <a-input v-model="supplementTableForm.responseField" placeholder="仅外数品类需要填写，与 HIVE 字段无关，可留空" allow-clear />
+              </a-form-item>
+            </a-col>
+            <a-col :span="24">
+              <a-form-item label="补充说明">
+                <a-textarea v-model="supplementTableForm.remark" placeholder="可说明补全原因、口径变更等" :rows="2" />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </a-card>
+
+        <a-card title="HIVE 表与字段" size="small" class="supp-block">
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="标准化前表名（原始上游，库.表）">
+                <a-input v-model="supplementTableForm.hive.sourceTableName" placeholder="例如：ods_nis_login.ods_login_log_di" allow-clear />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="标准化前字段（原始上游）">
+                <a-input v-model="supplementTableForm.hive.sourceFieldName" placeholder="例如：ip_change_cnt_7d" allow-clear />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="更新频率">
+                <a-select v-model="supplementTableForm.hive.updateFrequency" placeholder="请选择更新频率" allow-clear>
+                  <a-option v-for="f in UPDATE_FREQUENCY_OPTIONS" :key="f" :value="f" :label="f" />
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="标准化后 HIVE 表">
+                <a-input :model-value="supplementTableForm.tableName || '—'" disabled />
+                <template #extra>自动取上方「数据底表名称」，不可单独填写</template>
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="是否分区表">
+                <a-switch v-model="supplementTableForm.hive.isPartitioned" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="分区字段">
+                <a-input-tag
+                  v-model="supplementTableForm.hive.partitionFields"
+                  :disabled="!supplementTableForm.hive.isPartitioned"
+                  placeholder="输入后回车添加，例如 ds"
+                  allow-clear
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </a-card>
       </a-form>
-      <div style="text-align: right; margin-top: 16px">
-        <a-space>
-          <a-button @click="supplementTableVisible = false">取消</a-button>
-          <a-button type="primary" :disabled="!supplementTableForm.tableName" @click="onSupplementTable">保存</a-button>
-        </a-space>
       </div>
     </a-modal>
 
@@ -463,10 +545,14 @@
       :variable-data="variableData"
       @submit="onActionSubmit"
     />
-    <!-- ========== 注册特征（审核模式：submit_requirement）============ -->
+    <!-- ========== 注册 / 编辑特征（与台账同一抽屉：审核模式 submit_requirement + 编辑模式）============ -->
     <VariableRegisterDrawer
       v-model:visible="registerDrawerVisible"
       :requirement-data="registerDrawerRequirementData"
+      :mode="registerDrawerMode"
+      :edit-data="registerDrawerEditData"
+      :existing-names="existingFeatureNames"
+      :existing-cn-names="existingFeatureCnNames"
       @submit="handleRegisterSubmit"
     />
     </template>
@@ -483,6 +569,7 @@ import { LineageGraph } from '@app/lineage-graph'
 import { IconArrowLeft, IconEdit, IconCopy, IconDriveFile, IconExperiment } from '@arco-design/web-vue/es/icon'
 import { PROFILE_FIELD_SCHEMAS, LIFECYCLE_SUPPLEMENT_GUIDE } from '@/modules/variable-hub/mock/variable-management/profile-schemas'
 import { VariableDraftStore } from '@/modules/variable-hub/mock/variable-management/variable-draft-store'
+import { variableAssets } from '@/modules/variable-hub/mock/variable-management/variables'
 import { VariableStatusStore } from '@/modules/variable-hub/mock/variable-management/variable-status-store'
 import { ExploreStore } from '@/modules/variable-hub/mock/explore/explore-store'
 import GovernanceActionDrawer from '@/modules/variable-hub/components/GovernanceActionDrawer.vue'
@@ -497,7 +584,7 @@ import ChangeRecordCard from '@/modules/variable-hub/components/risk-feature/Cha
 import EvaluationCard from '@/modules/variable-hub/components/risk-feature/EvaluationCard.vue'
 import StatusStepFlow from '@/modules/variable-hub/components/risk-feature/StatusStepFlow.vue'
 import StatusTimeline11 from '@/modules/variable-hub/components/risk-feature/StatusTimeline11.vue'
-import { allowedActionsByStatus, isRetryableFailedStatus, midloanStatusLabel, midloanStatusColor, getEditLockReason, getLockedFields, getPhaseByStatus, midloanStatusDataForm, getStatusCategory } from '@/modules/variable-hub/constants/midloanStatusMap'
+import { allowedActionsByStatus, isRetryableFailedStatus, midloanStatusLabel, midloanStatusColor, getEditLockReason, getLockedFields, getPhaseByStatus, midloanStatusDataForm, getStatusCategory, canEdit } from '@/modules/variable-hub/constants/midloanStatusMap'
 import MidloanStateEngine, { SyncLogStore, OfflineRecordStore, StatusChangeStore } from '@/modules/variable-hub/mock/risk-feature/stateEngine'
 import DemoConsole from '@/modules/variable-hub/components/risk-feature/DemoConsole.vue'
 import UserContext, { PERMISSIONS } from '@/modules/variable-hub/mock/risk-feature/permissions'
@@ -646,51 +733,31 @@ const longtextProcessingLogic = computed(() => {
 /** 长文本：备注 */
 const longtextRemark = computed(() => profile.value.remark || variableData.value.remark || '')
 
-/** HIVE 表与字段（精简：库名/表名/是否分区/分区字段/更新频率 + 标准化前原始表与字段） */
+/**
+ * HIVE 表与字段（标准化前/后表名与字段、是否分区、分区字段、更新频率）
+ * 数据源：「补充数据底表」表单登记的 v.hiveInfo；未登记时只从 B1 源表字段推断，
+ * 不再用 risk_dw / ods_raw / ['ds'] 等假数据兜底，避免看不出"是否真的补充过"。
+ * 注意：标准化后 HIVE 表 = 技术关联信息里的「数据底表名称」（同一份值，库名与表名合并为一个串）。
+ */
 const hiveInfo = computed(() => {
   const v = variableData.value
-  const p = profile.value
+  const h = v.hiveInfo || {}
+  // 标准化前：原始上游「库.表」，登记值优先，其次 B1「标准化前源表」
+  const sourceTableLabel = joinQualified(h.sourceDbName, h.sourceTableName) || v.sourceTableBefore || '—'
+  // 标准化后：单一事实源 = v.dataTableName；老数据只有拆分值时按 hiveInfo 拼回
+  const stdTable = v.dataTableName || joinQualified(h.databaseName, h.tableName) || v.sourceTableAfter || '—'
 
-  // 标准化后 HIVE 表
-  const existingHive = v.hiveInfo || {}
-  const rawTable = existingHive.tableName || p.sourceTableBigData || p.sourceTable || v.dataTableName || ''
-  let databaseName = existingHive.databaseName
-  let tableName = rawTable
-  if (!databaseName && rawTable && rawTable.includes('.')) {
-    const [db, rest] = rawTable.split(/\.(.+)/)
-    databaseName = db
-    tableName = rest
-  }
-  databaseName = databaseName || (rawTable ? rawTable.split('.')[0] : '') || 'risk_dw'
-
-  const partitionFields = existingHive.partitionFields || ['ds']
-  const isPartitioned = existingHive.isPartitioned != null ? existingHive.isPartitioned : (partitionFields.length > 0)
-
-  // 标准化前（原始上游）表与字段
-  // 优先：existingHive.sourceTable / sourceField（直接上游）；其次：profile.sourceTableRaw + sourceField；最后：p.stdTable + sourceField
-  const rawSrcTable = existingHive.sourceTable || p.sourceTableRaw || p.stdTable || p.sourceTable || ''
-  let sourceDbName = existingHive.sourceDb || p.sourceDb || ''
-  let sourceTableName = rawSrcTable
-  if (!sourceDbName && rawSrcTable && rawSrcTable.includes('.')) {
-    const [db, rest] = rawSrcTable.split(/\.(.+)/)
-    sourceDbName = db
-    sourceTableName = rest
-  }
-  if (!sourceDbName) sourceDbName = sourceTableName ? 'ods_raw' : '—'
-  if (!sourceTableName) sourceTableName = rawSrcTable || v.code || '—'
-  const sourceFieldName = existingHive.sourceField || p.sourceField || v.sourceField || v.code || '—'
+  const partitionFields = (h.partitionFields || []).filter(Boolean)
 
   return {
-    // 标准化前
-    sourceDbName,
-    sourceTableName,
-    sourceFieldName,
-    // 标准化后 HIVE
-    databaseName,
-    tableName: tableName ? `${databaseName}.${tableName}` : `${databaseName}.dwd_demo_table_df`,
-    isPartitioned,
-    partitionFields: isPartitioned ? partitionFields : [],
-    updateFrequency: existingHive.updateFrequency || v.updateFrequency || p.updateFrequency || 'T+1 日更新'
+    /** 是否已完成 HIVE 登记（决定卡片是否展示"未补充"引导）*/
+    registered: stdTable !== '—',
+    sourceTableLabel,
+    sourceFieldName: h.sourceFieldName || v.sourceField || '—',
+    tableName: stdTable,
+    isPartitioned: h.isPartitioned === true,
+    partitionFields: h.isPartitioned === true ? partitionFields : [],
+    updateFrequency: h.updateFrequency || v.updateFrequency || '—'
   }
 })
 
@@ -702,7 +769,7 @@ const techLink = computed(() => {
     dataSourceName: v.dataSourceName || '—',
     dataTableName: v.dataTableName || '',
     apiNo: v.apiNo || p.interfaceName || p.apiNo || '',
-    responseField: p.responseField || ''
+    responseField: v.responseField || p.responseField || ''
   }
 })
 
@@ -1320,9 +1387,22 @@ const handleMoreSelect = (val) => {
   if (val === 'delete') handleDelete()
 }
 
-// 编辑特征
+/**
+ * 编辑特征：与台账「注册特征」完全同一个抽屉（B1 表单 + 同口径校验），
+ * 状态机锁定的字段在抽屉内灰显，保存后就地回写、流程状态不变
+ */
 const handleEdit = () => {
-  Message.info('编辑功能开发中...')
+  const d = variableData.value
+  if (!d || !d.id) return
+  const status = d.midloanStatus || d.status || ''
+  if (!canEdit(status)) {
+    Message.warning(getEditLockReason(status) || '当前状态不可编辑')
+    return
+  }
+  registerDrawerMode.value = 'edit'
+  registerDrawerEditData.value = { ...d }
+  registerDrawerRequirementData.value = null
+  registerDrawerVisible.value = true
 }
 
 // 切换状态
@@ -1432,6 +1512,10 @@ onMounted(() => {
       MidloanStateEngine.initMockStatusHistory(variableId.value)
       refreshStatusChangeList()
       refreshSyncLogs()
+    }
+    // 台账「补充数据底表」跳转过来时自动打开补充抽屉
+    if (route.query.focusField === 'dataTableName') {
+      openSupplementTable()
     }
   })
   fetchUsageScenarios()
@@ -1576,9 +1660,28 @@ const syncLogList = computed(() => {
 // ============ OA 单/验收/上线流程/下线抽屉（文档 C1 R01 / E1 R02 / F1 R02）============
 const actionDrawerVisible = ref(false)
 const currentActionKey = ref('submit_dev_oa')
-// VariableRegisterDrawer（审核模式：submit_requirement 打开 B1 完整注册表单）
+// VariableRegisterDrawer（审核模式：submit_requirement；编辑模式：详情页「编辑」，与台账同一抽屉）
 const registerDrawerVisible = ref(false)
 const registerDrawerRequirementData = ref(null)
+const registerDrawerMode = ref('create')
+const registerDrawerEditData = ref(null)
+
+/** 去重校验名单：与台账同一口径（内置 mock 资产 + localStorage 草稿）*/
+const allFeatureUniverse = computed(() => [...VariableDraftStore.list(), ...variableAssets])
+const existingFeatureNames = computed(() => {
+  const selfId = registerDrawerEditData.value?.id
+  return allFeatureUniverse.value
+    .filter((v) => v.id !== selfId)
+    .map((v) => v.code || v.name || '')
+    .filter(Boolean)
+})
+const existingFeatureCnNames = computed(() => {
+  const selfId = registerDrawerEditData.value?.id
+  return allFeatureUniverse.value
+    .filter((v) => v.id !== selfId)
+    .map((v) => v.featureCnName || v.name || '')
+    .filter(Boolean)
+})
 
 // ============ 状态切换操作 ============
 const onRetry = () => {
@@ -1615,8 +1718,15 @@ const onManualBatchRetry = () => {
 const onAction = (action) => {
   // submit_requirement：打开 VariableRegisterDrawer 审核模式（B1 完整注册表单）
   if (action.key === 'submit_requirement') {
+    registerDrawerMode.value = 'create'
+    registerDrawerEditData.value = null
     registerDrawerRequirementData.value = variableData.value
     registerDrawerVisible.value = true
+    return
+  }
+  // 补充数据底表：走详情页的「补充数据底表」表单（含 HIVE 表与字段 / 技术关联信息）
+  if (action.key === 'supplement_table') {
+    openSupplementTable()
     return
   }
   // 走抽屉的动作（文档 A0 / C1 / E0 / E1 / F0 / 管理员状态修正 / 内数失败补表 / 特征归档）
@@ -1662,8 +1772,21 @@ const onActionSubmit = (payload) => {
   refreshAfterMutation()
 }
 
-// VariableRegisterDrawer 提交回调（审核模式：submit_requirement）
+// VariableRegisterDrawer 提交回调（审核模式 submit_requirement / 编辑模式 isEdit）
 const handleRegisterSubmit = (payload) => {
+  // 编辑模式：与台账同一套写回逻辑（草稿走 localStorage，内置资产走 stateEngine 就地回写）
+  if (payload.isEdit) {
+    const id = payload.variableId || variableId.value
+    if (!id) return
+    const draftUpdated = VariableDraftStore.updateDraft(id, payload)
+    const r = draftUpdated ? { ok: true } : MidloanStateEngine.updateFeatureBasicInfo(id, payload)
+    if (r.ok) Message.success('特征信息已更新')
+    else Message.error(r.reason || '保存失败')
+    registerDrawerVisible.value = false
+    registerDrawerEditData.value = null
+    refreshAfterMutation()
+    return
+  }
   const fid = payload.requirementId || variableId.value
   if (!fid) return
   const r = MidloanStateEngine.handleAction(fid, 'submit_requirement', payload)
@@ -1674,22 +1797,94 @@ const handleRegisterSubmit = (payload) => {
   refreshAfterMutation()
 }
 
-const openSupplementTable = () => {
-  supplementTableForm.tableName = variableData.value?.dataTableName || ''
-  supplementTableForm.remark = ''
+// ============ 补充数据底表（卡片级局部补录 · 弹窗一次登记 技术关联信息 + HIVE 表与字段）============
+const supplementTableVisible = ref(false)
+const supplementTableSubmitting = ref(false)
+const UPDATE_FREQUENCY_OPTIONS = ['实时（秒级）', '准实时（分钟级）', 'T+1 日更新', 'T+2 日更新', '周更新', '月更新']
+
+const supplementTableForm = reactive({
+  tableName: '',
+  dataSourceName: '',
+  apiNo: '',
+  responseField: '',
+  remark: '',
+  hive: {
+    sourceTableName: '',
+    sourceFieldName: '',
+    isPartitioned: true,
+    partitionFields: [],
+    updateFrequency: ''
+  }
+})
+
+/** 「库.表」串：库名缺省时只用表名，避免出现 ".tbl" 这种半截值 */
+function joinQualified(db, tb) {
+  const d = (db || '').trim()
+  const t = (tb || '').trim()
+  if (!d) return t
+  if (!t) return d
+  return `${d}.${t}`
+}
+
+function openSupplementTable() {
+  const v = variableData.value || {}
+  const h = v.hiveInfo || {}
+  // 技术关联信息：回填已登记内容，便于"修改"而非从零填写
+  // 数据底表名称 = 标准化后 HIVE 表（单一事实源），优先取已登记值
+  supplementTableForm.tableName = v.dataTableName || joinQualified(h.databaseName, h.tableName)
+  supplementTableForm.dataSourceName = v.dataSourceName === '—' ? '' : v.dataSourceName || ''
+  supplementTableForm.apiNo = v.apiNo || ''
+  supplementTableForm.responseField = v.responseField || ''
+  supplementTableForm.remark = v.dataTableRemark || ''
+  // HIVE 表与字段：优先取已登记的 hiveInfo，其次从 B1 源表字段推断（不再用假数据兜底）
+  supplementTableForm.hive.sourceTableName = joinQualified(h.sourceDbName, h.sourceTableName) || v.sourceTableBefore || ''
+  supplementTableForm.hive.sourceFieldName = h.sourceFieldName || v.sourceField || ''
+  supplementTableForm.hive.isPartitioned = h.isPartitioned !== false
+  supplementTableForm.hive.partitionFields = [...(h.partitionFields || [])]
+  const freq = h.updateFrequency || v.updateFrequency || ''
+  supplementTableForm.hive.updateFrequency = UPDATE_FREQUENCY_OPTIONS.includes(freq) ? freq : ''
   supplementTableVisible.value = true
 }
 
-const supplementTableVisible = ref(false)
-const supplementTableForm = reactive({ tableName: '', remark: '' })
-
 function onSupplementTable() {
   const fid = variableId.value
-  if (!fid || !supplementTableForm.tableName) return
-  const r = MidloanStateEngine.supplementDataTable(fid, supplementTableForm.tableName, supplementTableForm.remark)
-  if (r.ok) Message.success('已补充数据底表名称')
-  supplementTableVisible.value = false
-  refreshAfterMutation()
+  const tableName = (supplementTableForm.tableName || '').trim()
+  if (!fid) return
+  if (!tableName) {
+    Message.warning('请填写数据底表名称（内数 API 注册必填）')
+    return
+  }
+  const h = supplementTableForm.hive
+  if (h.isPartitioned && !(h.partitionFields || []).length) {
+    Message.warning('已勾选分区表，请至少填写一个分区字段（例如 ds）')
+    return
+  }
+  supplementTableSubmitting.value = true
+  try {
+    const r = MidloanStateEngine.supplementDataTable(fid, {
+      tableName,
+      remark: supplementTableForm.remark,
+      dataSourceName: supplementTableForm.dataSourceName,
+      apiNo: supplementTableForm.apiNo,
+      responseField: supplementTableForm.responseField,
+      hive: {
+        sourceTableName: h.sourceTableName,
+        sourceFieldName: h.sourceFieldName,
+        isPartitioned: h.isPartitioned,
+        partitionFields: h.partitionFields,
+        updateFrequency: h.updateFrequency
+      }
+    })
+    if (r.ok) {
+      Message.success('数据底表与 HIVE 登记信息已保存')
+      supplementTableVisible.value = false
+      refreshAfterMutation()
+    } else {
+      Message.error(r.reason || '保存失败')
+    }
+  } finally {
+    supplementTableSubmitting.value = false
+  }
 }
 
 // 重置 / 演示快捷
@@ -1757,6 +1952,19 @@ setTimeout(() => {
   border-radius: 8px;
   margin-bottom: 16px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.02);
+}
+
+/* 补充数据底表弹窗：内容区自管滚动，避免与页面滚动条打架 */
+.supp-scroll {
+  max-height: calc(100vh - 300px);
+  min-height: 240px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* 补充数据底表弹窗：分组卡片 */
+.supp-block {
+  margin-bottom: 12px;
 }
 
 .breadcrumb {

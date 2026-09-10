@@ -406,10 +406,12 @@
             内数同步失败通常因为数据底表名称缺失。请先补充数据底表，再重新触发同步。
           </p>
         </a-alert>
-        <a-form-item label="数据底表名称" required>
-          <a-input v-model="form.tableName" placeholder="例如：ads_midloan_feature_001" allow-clear />
+        <a-form-item label="数据底表名称（HIVE 库.表）" required>
+          <a-input v-model="form.tableName" placeholder="例如：risk_dw.ads_midloan_feature_001" allow-clear />
           <template #extra>
-            <span style="color: var(--color-text-3); font-size: 12px;">需与数仓已上线的 Hive 表名一致</span>
+            <span style="color: var(--color-text-3); font-size: 12px;">
+              即标准化后的 Hive 表，需与数仓已上线的表一致；库名与表名合并为一个值填写
+            </span>
           </template>
         </a-form-item>
         <a-form-item label="补充说明（可选）">

@@ -844,15 +844,150 @@ export function retrySync(featureId: string, operator = '小李'): { ok: boolean
   return { ok: false, reason: '当前状态不可重试' }
 }
 
-/** B1 R10：补充数据底表名称 */
-export function supplementDataTable(featureId: string, tableName: string): { ok: boolean; reason?: string } {
-  const v = variableAssets.find(x => x.id === featureId)
+/**
+ * B1 R10：补充数据底表（同时回填详情页「HIVE 表与字段」+「技术关联信息」）
+ * payload 兼容两种写法：
+ * - 字符串：仅补充数据底表名（历史调用 / 批量演示）
+ * - 对象：数据底表 + HIVE 库表字段 + 分区 + 更新频率 + 数据源 / 接口号 / 响应字段
+ */
+export interface SupplementDataTablePayload {
+  /** 数据底表名称 = 标准化后 HIVE 表，格式「库.表」（库名可省），内数 API 注册必填 */
+  tableName: string
+  remark?: string
+  /** 技术关联：数据源名称 */
+  dataSourceName?: string
+  /** 技术关联：接口号（阶段4上线后回填，也可提前手工登记）*/
+  apiNo?: string
+  /** 技术关联：响应字段（外数品类）*/
+  responseField?: string
+  /** HIVE 表与字段（标准化后表名不在此登记，恒等于上方数据底表名称）*/
+  hive?: {
+    /** 标准化前原始上游表，格式「库.表」，库名可省 */
+    sourceTableName?: string
+    sourceFieldName?: string
+    isPartitioned?: boolean
+    partitionFields?: string[]
+    updateFrequency?: string
+  }
+}
+
+const clean = (s?: string) => (s || '').trim()
+
+/** 把「库.表」拆成 [库, 表]；无「.」时库名留空 */
+function splitQualified(raw?: string): [string, string] {
+  const s = clean(raw)
+  if (!s || !s.includes('.')) return ['', s]
+  return [s.split('.')[0], s.split(/\.(.+)/)[1]]
+}
+
+export function supplementDataTable(
+  featureId: string,
+  payload: string | SupplementDataTablePayload
+): { ok: boolean; reason?: string } {
+  const v: any = variableAssets.find(x => x.id === featureId)
   if (!v) return { ok: false, reason: '特征不存在' }
-  if (!tableName || !tableName.trim()) {
+
+  const p: SupplementDataTablePayload =
+    typeof payload === 'string' ? { tableName: payload } : payload || { tableName: '' }
+
+  if (!clean(p.tableName)) {
     return { ok: false, reason: '数据底表名称不能为空' }
   }
-  v.dataTableName = tableName.trim()
+  v.dataTableName = clean(p.tableName)
+  if (p.remark !== undefined) v.dataTableRemark = clean(p.remark)
   v.syncFailedReason = ''
+
+  // ============ 技术关联信息 ============
+  if (clean(p.dataSourceName)) v.dataSourceName = clean(p.dataSourceName)
+  if (p.apiNo !== undefined) v.apiNo = clean(p.apiNo)
+  if (p.responseField !== undefined) v.responseField = clean(p.responseField)
+
+  // ============ HIVE 表与字段 ============
+  const h = p.hive
+  if (h) {
+    // 标准化后 HIVE 表 = 数据底表名称（单一事实源），按「库.表」拆库名供 API 注册使用
+    const [dbName, stdTable] = splitQualified(v.dataTableName)
+    const [srcDb, srcTable] = splitQualified(h.sourceTableName)
+
+    const partitionFields = (h.partitionFields || []).map(clean).filter(Boolean)
+    const isPartitioned = h.isPartitioned !== false && partitionFields.length > 0
+
+    v.hiveInfo = {
+      ...(v.hiveInfo || {}),
+      sourceDbName: srcDb,
+      sourceTableName: srcTable,
+      sourceFieldName: clean(h.sourceFieldName),
+      databaseName: dbName,
+      tableName: stdTable,
+      isPartitioned,
+      partitionFields: isPartitioned ? partitionFields : [],
+      updateFrequency: clean(h.updateFrequency)
+    }
+    if (clean(h.updateFrequency)) v.updateFrequency = clean(h.updateFrequency)
+  }
+
+  v.updatedAt = nowStr()
+  return { ok: true }
+}
+
+/**
+ * 编辑特征（与「注册特征」同口径的 B1 基础信息回写）
+ * 用于列表页 / 详情页的编辑入口，写回 mock 资产（纯前端展示，不发请求）
+ */
+export function updateFeatureBasicInfo(
+  featureId: string,
+  payload: Record<string, any>
+): { ok: boolean; reason?: string } {
+  const v: any = variableAssets.find(x => x.id === featureId)
+  if (!v) return { ok: false, reason: '特征不存在' }
+  const curStatus = v.midloanStatus || v.status || ''
+  const now = nowStr()
+  // 英文名 → code，中文名 → name / featureCnName（与台账列表展示口径一致）
+  if (clean(payload.name)) v.code = clean(payload.name)
+  if (clean(payload.featureCnName)) {
+    v.featureCnName = clean(payload.featureCnName)
+    v.name = clean(payload.featureCnName)
+  }
+  const directMap: Record<string, string> = {
+    fieldType: 'fieldType',
+    defaultValue: 'defaultValue',
+    featureGranularity: 'featureGranularity',
+    l1Category: 'l1Category',
+    l2Category: 'l2Category',
+    dataFreshness: 'dataFreshness',
+    sourceTableAfter: 'sourceTableAfter',
+    sourceTableBefore: 'sourceTableBefore',
+    sourceField: 'sourceField',
+    dataTableName: 'dataTableName',
+    dwTaskId: 'dwTaskId',
+    acceptor: 'acceptor',
+    developer: 'developer',
+    description: 'description'
+  }
+  Object.entries(directMap).forEach(([formKey, field]) => {
+    if (payload[formKey] !== undefined) (v as any)[field] = payload[formKey]
+  })
+  // 业务逻辑同时是列表/详情的口径说明（processingLogic 用于详情页技术口径展示）
+  if (payload.businessLogic !== undefined) {
+    v.businessLogic = payload.businessLogic
+    v.description = payload.description || payload.businessLogic
+  }
+  if (payload.codeLogic !== undefined) {
+    v.codeLogic = payload.codeLogic
+    v.processingLogic = payload.codeLogic
+  }
+  v.profile = {
+    ...(v.profile || {}),
+    productScope: payload.productScope ?? v.profile?.productScope,
+    listType: payload.listType ?? v.profile?.listType,
+    batch: payload.batch ?? v.profile?.batch,
+    acceptor: payload.acceptor ?? v.profile?.acceptor,
+    developer: payload.developer ?? v.profile?.developer,
+    remark: payload.remark ?? v.profile?.remark,
+    excelAttachment: payload.excelAttachment ?? v.profile?.excelAttachment
+  }
+  v.updatedAt = now
+  v.status = v.status || curStatus
   return { ok: true }
 }
 
@@ -1332,8 +1467,10 @@ export const MidloanStateEngine = {
   retryDwTask,
   /** 管理员状态修正功能（文档 v2.1 §四） */
   correctStatus,
-  /** B1 R10 补充数据底表名称 */
+  /** B1 R10 补充数据底表（含 HIVE 表与字段 / 技术关联信息） */
   supplementDataTable,
+  /** 编辑特征基础信息（与注册表单同口径回写 mock 资产） */
+  updateFeatureBasicInfo,
   /** 重置单个特征到初始状态 */
   resetFeature,
   /** 初始化 mock 完整状态历史 */
@@ -1366,7 +1503,7 @@ export const MidloanStateEngine = {
         if (!payload?.tableName || !payload.tableName.trim()) {
           return { ok: false, reason: '请填写数据底表名称' }
         }
-        const suppRes = supplementDataTable(featureId, payload.tableName.trim())
+        const suppRes = supplementDataTable(featureId, { ...payload, tableName: payload.tableName.trim() })
         if (!suppRes.ok) return suppRes
         return retrySync(featureId)
       case 'check_duplicate': return checkDuplicate(featureId)

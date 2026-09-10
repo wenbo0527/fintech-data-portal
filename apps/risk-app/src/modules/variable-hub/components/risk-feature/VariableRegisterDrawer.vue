@@ -1,23 +1,39 @@
 <!--
-  特征注册（B1 特征注册表单 · 文档 §三 模块 B）
+  特征注册 / 编辑（B1 特征注册表单 · 文档 §三 模块 B）
   - 4 区块：特征核心属性 / 特征分类信息 / 来源与时效 / 协作信息
   - 支持 Excel 评估报告附件上传（B1 R14）
   - 提交后状态=已注册，生成 MIDLOAN-FEAT-DRAFT-NNNN，详情页可继续走状态机
-  - 三种入口共用本组件（由 source + requirementData 区分）：
-      1) source='ledger' + 无 requirementData：台账「注册特征」，空表单
-      2) source='ledger' + requirementData（台账资产）：状态机 submit_requirement 审核，预填 A1 需求提案
-      3) source='derivation' + requirementData（需求受理单）：需求列表「去注册」，按 DerivationRecord 全量预填
+  - 四种入口共用本组件（由 mode + source + requirementData 区分）：
+      1) mode='create' + source='ledger' + 无 requirementData：台账「注册特征」，空表单
+      2) mode='create' + source='ledger' + requirementData（台账资产）：状态机 submit_requirement 审核，预填 A1 需求提案
+      3) mode='create' + source='derivation' + requirementData（需求受理单）：需求列表「去注册」，按 DerivationRecord 全量预填
+      4) mode='edit' + editData（既有特征）：台账/详情页「编辑」，与新建完全同构的表单 + 同口径校验
+  - 编辑态遵守状态机字段锁定（getLockedFields）：锁定字段灰显只读，避免绕过流程改口径
   - 标题与「新增特征」入口统一为「注册特征」，避免需求方/管理员看到不同文案
 -->
 <template>
   <a-drawer
     :visible="visible"
-    :width="640"
+    :width="drawerWidth"
     :title="drawerTitle"
     :ok-loading="submitting"
     @cancel="handleCancel"
     @ok="handleSubmit"
   >
+    <!-- 编辑态：状态机锁定字段提示 -->
+    <a-alert v-if="isEdit" type="warning" :show-icon="true" style="margin-bottom: 16px">
+      <template #title>
+        <icon-lock v-if="lockedLabels.length" /> 编辑保护 · {{ editLockReason }}
+      </template>
+      <div v-if="lockedLabels.length" style="margin-top: 4px; font-size: 12px">
+        灰显字段在当前状态下不可修改，如需变更请先按流程回退或联系管理员：
+        <a-tag v-for="l in lockedLabels" :key="l" color="gray" size="mini" style="margin-left: 4px">
+          {{ l }}
+        </a-tag>
+      </div>
+      <div v-else style="margin-top: 4px; font-size: 12px">当前状态未锁定任何注册字段，全部字段可修改。</div>
+    </a-alert>
+
     <!-- 审核/注册模式：A1 需求信息预览 -->
     <a-card
       v-if="isReviewMode && requirementData"
@@ -50,7 +66,7 @@
     <a-form :model="form" layout="vertical" :disabled="submitting" ref="formRef">
       <!-- ============ 区块 1：特征核心属性 ============ -->
       <a-card title="特征核心属性" :bordered="false" size="small" class="reg-block">
-        <a-row :gutter="12">
+        <a-row :gutter="16">
           <a-col :span="12">
             <a-form-item
               label="特征英文名"
@@ -63,6 +79,7 @@
                 placeholder="例如：MIDLOAN_BIGTXN_CNT_30D"
                 :max-length="30"
                 show-word-limit
+                :disabled="isFieldLocked('name')"
                 @blur="validateNameOnBlur"
               />
             </a-form-item>
@@ -77,46 +94,69 @@
               <a-input
                 v-model="form.featureCnName"
                 placeholder="例如：近30日大额交易次数"
+                :disabled="isFieldLocked('featureCnName')"
                 @blur="validateCnNameOnBlur"
               />
             </a-form-item>
           </a-col>
         </a-row>
 
-        <a-row :gutter="12">
-          <a-col :span="12">
+        <a-row :gutter="16">
+          <a-col :span="8">
             <a-form-item label="字段类型" required>
-              <a-select v-model="form.fieldType" :options="FIELD_TYPE_OPTIONS" placeholder="请选择" />
+              <a-select
+                v-model="form.fieldType"
+                :options="FIELD_TYPE_OPTIONS"
+                placeholder="请选择"
+                :disabled="isFieldLocked('fieldType')"
+              />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col :span="8">
             <a-form-item label="默认值（非必填）">
               <a-input
                 v-model="form.defaultValue"
                 :placeholder="form.fieldType === 'Boolean' ? '例如：false' : (form.fieldType === 'String' ? '例如：未知' : '例如：0')"
+                :disabled="isFieldLocked('defaultValue')"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="数据时效">
+              <a-select
+                v-model="form.dataFreshness"
+                :options="DATA_FRESHNESS_OPTIONS"
+                placeholder="请选择"
+                allow-clear
               />
             </a-form-item>
           </a-col>
         </a-row>
 
-        <a-form-item label="业务逻辑" required>
-          <a-textarea
-            v-model="form.businessLogic"
-            :rows="6"
-            :max-length="2000"
-            show-word-limit
-            placeholder="描述业务含义与统计口径，例如：统计用户近30日内金额≥5000元的成功交易笔数。支持较长文本输入。"
-            style="min-height: 140px"
-          />
-        </a-form-item>
-
-        <a-form-item label="代码逻辑" required>
-          <SqlEditor
-            v-model="form.codeLogic"
-            height="240px"
-            placeholder="输入 SQL 代码，例如：SELECT count(*) FROM dwd_trade_detail WHERE amount >= 5000 AND status = 'SUCCESS' AND dt >= date_sub(current_date, 30) GROUP BY user_id"
-          />
-        </a-form-item>
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item label="业务逻辑" required>
+              <a-textarea
+                v-model="form.businessLogic"
+                :rows="7"
+                :max-length="2000"
+                show-word-limit
+                placeholder="描述业务含义与统计口径，例如：统计用户近30日内金额≥5000元的成功交易笔数。支持较长文本输入。"
+                :disabled="isFieldLocked('businessLogic')"
+                style="min-height: 160px"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="代码逻辑" required>
+              <SqlEditor
+                v-model="form.codeLogic"
+                height="200px"
+                placeholder="输入 SQL 代码，例如：SELECT count(*) FROM dwd_trade_detail WHERE amount >= 5000 AND status = 'SUCCESS' AND dt >= date_sub(current_date, 30) GROUP BY user_id"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
       </a-card>
 
       <!-- ============ 区块 2：特征分类信息 ============ -->
@@ -127,24 +167,35 @@
           </a-radio-group>
         </a-form-item>
 
-        <a-row :gutter="12">
-          <a-col :span="12">
+        <a-row :gutter="16">
+          <a-col :span="8">
             <a-form-item label="一级分类" required>
               <a-select
                 v-model="form.l1Category"
                 :options="l1Options"
                 placeholder="请选择一级分类"
+                :disabled="isFieldLocked('l1Category')"
                 @change="onL1Change"
               />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col :span="8">
             <a-form-item label="二级分类（与一级联动）" required>
               <a-select
                 v-model="form.l2Category"
                 :options="l2Options"
                 placeholder="请选择二级分类"
-                :disabled="!form.l1Category"
+                :disabled="isFieldLocked('l2Category') || !form.l1Category"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="数据源类型">
+              <a-select
+                v-model="form.sourceType"
+                :options="SOURCE_TYPE_OPTIONS"
+                placeholder="请选择"
+                :disabled="isFieldLocked('sourceType')"
               />
             </a-form-item>
           </a-col>
@@ -153,57 +204,52 @@
 
       <!-- ============ 区块 3：来源与时效 ============ -->
       <a-card title="来源与时效" :bordered="false" size="small" class="reg-block">
-        <a-row :gutter="12">
-          <a-col :span="12">
-            <a-form-item label="数据时效">
-              <a-select
-                v-model="form.dataFreshness"
-                :options="DATA_FRESHNESS_OPTIONS"
-                placeholder="请选择"
-                allow-clear
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="数据源类型">
-              <a-select
-                v-model="form.sourceType"
-                :options="SOURCE_TYPE_OPTIONS"
-                placeholder="请选择"
-              />
-            </a-form-item>
-          </a-col>
-        </a-row>
-
-        <a-row :gutter="12">
+        <a-row :gutter="16">
           <a-col :span="12">
             <a-form-item label="标准化后来源表（非必填）">
-              <a-input v-model="form.sourceTableAfter" placeholder="例如：ads_midloan_bigtxn_30d" />
+              <a-input
+                v-model="form.sourceTableAfter"
+                placeholder="例如：ads_midloan_bigtxn_30d"
+                :disabled="isFieldLocked('sourceTableAfter')"
+              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
             <a-form-item label="标准化前来源表（非必填）">
-              <a-input v-model="form.sourceTableBefore" placeholder="例如：dwd_trade_detail" />
+              <a-input
+                v-model="form.sourceTableBefore"
+                placeholder="例如：dwd_trade_detail"
+                :disabled="isFieldLocked('sourceTableBefore')"
+              />
             </a-form-item>
           </a-col>
         </a-row>
 
-        <a-row :gutter="12">
-          <a-col :span="12">
+        <a-row :gutter="16">
+          <a-col :span="8">
             <a-form-item label="原特征英文名（非必填）">
               <a-input v-model="form.sourceField" placeholder="对应原始字段名" />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col :span="8">
             <a-form-item label="数据底表名称（非必填，可暂空）">
-              <a-input v-model="form.dataTableName" placeholder="由开发人员后续在详情页补充" />
+              <a-input
+                v-model="form.dataTableName"
+                placeholder="由开发人员后续在详情页补充"
+                :disabled="isFieldLocked('dataTableName')"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="8">
+            <a-form-item label="数仓任务ID（非必填）">
+              <a-input
+                v-model="form.dwTaskId"
+                placeholder="例如：DW-TASK-XXXXXX"
+                :disabled="isFieldLocked('dwTaskId')"
+              />
             </a-form-item>
           </a-col>
         </a-row>
-
-        <a-form-item label="数仓任务ID（非必填）">
-          <a-input v-model="form.dwTaskId" placeholder="例如：DW-TASK-XXXXXX（数仓回调写入或研发手动补充）" />
-        </a-form-item>
 
         <a-divider style="margin: 12px 0">Excel 评估报告附件（非必填）</a-divider>
 
@@ -229,13 +275,13 @@
 
       <!-- ============ 区块 4：协作与备注 ============ -->
       <a-card title="协作与备注" :bordered="false" size="small" class="reg-block">
-        <a-row :gutter="12">
-          <a-col :span="12">
+        <a-row :gutter="16">
+          <a-col :span="6">
             <a-form-item label="创建人（自动带入）">
               <a-input :model-value="form.creator" disabled />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col :span="6">
             <a-form-item label="开发人员（必填，从数仓团队）" required>
               <a-select
                 v-model="form.developer"
@@ -244,22 +290,19 @@
               />
             </a-form-item>
           </a-col>
-        </a-row>
-
-        <a-row :gutter="12">
-          <a-col :span="12">
+          <a-col :span="6">
             <a-form-item label="验收人（默认带入创建人）">
-              <a-input v-model="form.acceptor" placeholder="可手动调整" />
+              <a-input v-model="form.acceptor" placeholder="可手动调整" :disabled="isFieldLocked('acceptor')" />
             </a-form-item>
           </a-col>
-          <a-col :span="12">
+          <a-col :span="6">
             <a-form-item label="产品范围">
               <a-input v-model="form.productScope" placeholder="例如：风控反欺诈" />
             </a-form-item>
           </a-col>
         </a-row>
 
-        <a-row :gutter="12">
+        <a-row :gutter="16">
           <a-col :span="12">
             <a-form-item label="名单类型">
               <a-select
@@ -277,16 +320,6 @@
           </a-col>
         </a-row>
 
-        <a-form-item label="备注">
-          <a-textarea
-            v-model="form.remark"
-            :rows="2"
-            :max-length="200"
-            show-word-limit
-            placeholder="协作说明、风险点、依赖等"
-          />
-        </a-form-item>
-
         <a-form-item label="特征粒度">
           <a-radio-group v-model="form.featureGranularity">
             <a-radio value="identity_only">身份证号</a-radio>
@@ -296,15 +329,25 @@
             <span style="color: var(--color-text-3); font-size: 12px;">区分特征入参维度：仅身份证号 或 身份证号+产品号</span>
           </template>
         </a-form-item>
+
+        <a-form-item label="备注">
+          <a-textarea
+            v-model="form.remark"
+            :rows="3"
+            :max-length="200"
+            show-word-limit
+            placeholder="协作说明、风险点、依赖等"
+          />
+        </a-form-item>
       </a-card>
     </a-form>
 
     <template #footer>
       <a-space>
-        <a-button v-if="!isReviewMode" @click="handleSaveDraft">保存草稿</a-button>
+        <a-button v-if="!isReviewMode && !isEdit" @click="handleSaveDraft">保存草稿</a-button>
         <a-button @click="handleCancel">取消</a-button>
         <a-button type="primary" :loading="submitting" @click="handleSubmit">
-          注册特征
+          {{ isEdit ? '保存修改' : '注册特征' }}
         </a-button>
       </a-space>
     </template>
@@ -312,7 +355,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import SqlEditor from '@/components/common/SqlEditor.vue'
 import {
@@ -326,9 +369,12 @@ import {
   type RegisterFormPayload
 } from '@/modules/variable-hub/mock/variable-management/variable-draft-store'
 import { LIST_TYPES } from '@/modules/variable-hub/constants/riskCategoryMap'
+import { canEditField, getEditLockReason } from '@/modules/variable-hub/constants/midloanStatusMap'
 
 /** 注册入口：ledger = 特征台账（新增/审核）；derivation = 需求列表「去注册」*/
 type RegisterSource = 'ledger' | 'derivation'
+/** 抽屉模式：create = 注册新特征；edit = 编辑既有特征（复用同一套表单与校验口径）*/
+type RegisterDrawerMode = 'create' | 'edit'
 
 interface Props {
   visible: boolean
@@ -340,20 +386,32 @@ interface Props {
   requirementData?: any
   /** requirementData 的数据形态，决定预填/预览的字段映射 */
   source?: RegisterSource
+  /** 抽屉模式，默认新建 */
+  mode?: RegisterDrawerMode
+  /** 编辑模式下的既有特征资产（VariableAssetMock / VariableDraftMock）*/
+  editData?: any
 }
 
 const props = withDefaults(defineProps<Props>(), {
   existingNames: () => [],
   existingCnNames: () => [],
   requirementData: () => null,
-  source: 'ledger'
+  source: 'ledger',
+  mode: 'create',
+  editData: () => null
 })
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void
   (
     e: 'submit',
-    payload: RegisterFormPayload & { isReview?: boolean; requirementId?: string; source?: RegisterSource }
+    payload: RegisterFormPayload & {
+      isReview?: boolean
+      requirementId?: string
+      source?: RegisterSource
+      isEdit?: boolean
+      variableId?: string
+    }
   ): void
   (e: 'save-draft', payload: RegisterFormPayload): void
 }>()
@@ -362,13 +420,89 @@ const emit = defineEmits<{
 const isReviewMode = computed(() => !!props.requirementData)
 /** 需求列表「去注册」入口（数据源为 DerivationRecord） */
 const isDerivationMode = computed(() => isReviewMode.value && props.source === 'derivation')
+/** 编辑模式：复用新建表单，不生成新特征 */
+const isEdit = computed(() => props.mode === 'edit' && !!props.editData)
 
-const drawerTitle = computed(() =>
-  isDerivationMode.value ? '注册特征（需求受理单 → B1 标准化注册）' : '注册特征（B1 标准化注册）'
-)
+/**
+ * 抽屉宽度：需填写信息较多（业务逻辑 / 代码逻辑 / 来源与时效），
+ * 宽屏固定 1080px，窄屏（≤1280）按视口 92% 自适应，避免出现横向滚动条
+ */
+const winWidth = ref(typeof window === 'undefined' ? 1600 : window.innerWidth)
+function syncWinWidth() {
+  winWidth.value = window.innerWidth
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('resize', syncWinWidth)
+  onUnmounted(() => window.removeEventListener('resize', syncWinWidth))
+}
+const drawerWidth = computed(() => (winWidth.value <= 1280 ? '92%' : 1080))
 
-/** 顶部说明文案：区分三种入口，无差异化提示时返回空串走默认文案 */
+/** 被编辑特征的流程态（决定字段锁定策略）*/
+const editStatus = computed(() => {
+  const d = props.editData || {}
+  return d.midloanStatus || d.status || ''
+})
+
+const drawerTitle = computed(() => {
+  if (isEdit.value) return '编辑特征（B1 注册表单 · 与新建同构）'
+  return isDerivationMode.value ? '注册特征（需求受理单 → B1 标准化注册）' : '注册特征（B1 标准化注册）'
+})
+
+// ============ 编辑态字段锁定（状态机口径）============
+/** 表单字段 → 状态机字段策略名（部分字段共用同一策略，如业务/代码逻辑同属加工逻辑）*/
+const FORM_FIELD_POLICY: Record<string, string> = {
+  name: 'featureEnName',
+  featureCnName: 'featureCnName',
+  fieldType: 'fieldType',
+  defaultValue: 'defaultValue',
+  businessLogic: 'processingLogic',
+  codeLogic: 'processingLogic',
+  l1Category: 'l1Category',
+  l2Category: 'l2Category',
+  sourceType: 'sourceTableAfter',
+  sourceTableAfter: 'sourceTableAfter',
+  sourceTableBefore: 'sourceTableBefore',
+  dataTableName: 'dataTableName',
+  dwTaskId: 'dwTaskId',
+  acceptor: 'acceptor'
+}
+
+/** 抽屉内受状态机约束的字段（用于顶部锁定提示，按表单文案展示）*/
+const LOCKABLE_FIELDS: Array<{ field: string; label: string }> = [
+  { field: 'name', label: '特征英文名' },
+  { field: 'featureCnName', label: '特征中文名' },
+  { field: 'fieldType', label: '字段类型' },
+  { field: 'defaultValue', label: '默认值' },
+  { field: 'businessLogic', label: '业务/代码逻辑' },
+  { field: 'l1Category', label: '一级分类' },
+  { field: 'l2Category', label: '二级分类' },
+  { field: 'sourceType', label: '数据源类型' },
+  { field: 'sourceTableAfter', label: '标准化后源表' },
+  { field: 'sourceTableBefore', label: '标准化前源表' },
+  { field: 'dataTableName', label: '数据底表' },
+  { field: 'dwTaskId', label: '数仓任务ID' },
+  { field: 'acceptor', label: '验收人' }
+]
+
+function isFieldLocked(field: string): boolean {
+  if (!isEdit.value) return false
+  const policy = FORM_FIELD_POLICY[field]
+  if (!policy) return false
+  return !canEditField(editStatus.value, policy)
+}
+
+const lockedLabels = computed(() => {
+  if (!isEdit.value) return []
+  return LOCKABLE_FIELDS.filter((f) => isFieldLocked(f.field)).map((f) => f.label)
+})
+
+const editLockReason = computed(() => (isEdit.value ? getEditLockReason(editStatus.value) : ''))
+
+/** 顶部说明文案：区分四种入口，无差异化提示时返回空串走默认文案 */
 const alertText = computed(() => {
+  if (isEdit.value) {
+    return `编辑不会改变特征当前流程状态（${props.editData?.midloanStatus || props.editData?.status || '-'}），仅更新已填写的信息。锁定字段灰显不可修改。`
+  }
   if (isDerivationMode.value) {
     return '需求受理单中已填写的信息已预填到下方表单，可在此基础上补充/修改。提交后将写入特征台账（状态「已注册」），并在需求列表中关联生成的特征ID。'
   }
@@ -505,19 +639,39 @@ const developerOptions = computed(() => {
 const LIST_TYPE_OPTIONS = LIST_TYPES
 
 // ============ 校验函数 ============
+/** 去重校验用的存量名单：编辑态需把自己排除，否则原名会被误判为「重复」*/
+function dedupList(list: string[], self?: string) {
+  if (!isEdit.value) return list
+  const key = (self || '').trim()
+  if (!key) return list
+  return list.filter((v) => v !== key)
+}
+
+function existingNameCandidates() {
+  const originalEn = props.editData?.code || props.editData?.name || ''
+  return dedupList(props.existingNames || [], originalEn)
+}
+
+function existingCnNameCandidates() {
+  const originalCn = props.editData?.featureCnName || props.editData?.name || ''
+  return dedupList(props.existingCnNames || [], originalCn)
+}
+
 function validateNameOnBlur() {
-  const err = validateFeatureName(form.name || '', props.existingNames)
+  const err = validateFeatureName(form.name || '', existingNameCandidates())
   errors.name = err || undefined
 }
 
 function validateCnNameOnBlur() {
-  const err = validateFeatureCnName(form.featureCnName || '', props.existingCnNames)
+  const err = validateFeatureCnName(form.featureCnName || '', existingCnNameCandidates())
   errors.featureCnName = err || undefined
 }
 
 function validateAll(): boolean {
-  const nameErr = validateFeatureName(form.name || '', props.existingNames)
-  const cnErr = validateFeatureCnName(form.featureCnName || '', props.existingCnNames)
+  const nameErr = isFieldLocked('name') ? null : validateFeatureName(form.name || '', existingNameCandidates())
+  const cnErr = isFieldLocked('featureCnName')
+    ? null
+    : validateFeatureCnName(form.featureCnName || '', existingCnNameCandidates())
   errors.name = nameErr || undefined
   errors.featureCnName = cnErr || undefined
   if (nameErr) {
@@ -588,8 +742,14 @@ function handleSubmit() {
       isReview?: boolean
       requirementId?: string
       source?: RegisterSource
+      isEdit?: boolean
+      variableId?: string
     } = { ...form }
-    if (isReviewMode.value && props.requirementData) {
+    if (isEdit.value) {
+      payload.isEdit = true
+      payload.variableId = props.editData.id || props.editData.midloanFeatureId
+    }
+    if (!isEdit.value && isReviewMode.value && props.requirementData) {
       payload.isReview = true
       payload.requirementId = props.requirementData.id || props.requirementData.midloanFeatureId
       payload.source = props.source
@@ -611,13 +771,18 @@ function handleSaveDraft() {
   }
 }
 
-// 打开时重置 / 按入口预填 A1 数据
+// 打开时重置 / 按入口预填（编辑 → 既有特征；审核/去注册 → A1 需求数据）
 watch(() => props.visible, (v) => {
   if (!v) return
+  syncWinWidth()
   Object.assign(form, createEmptyForm())
   errors.name = undefined
   errors.featureCnName = undefined
 
+  if (isEdit.value) {
+    prefillFromVariable(props.editData)
+    return
+  }
   if (!isReviewMode.value || !props.requirementData) return
   if (props.source === 'derivation') {
     prefillFromDerivation(props.requirementData)
@@ -625,6 +790,38 @@ watch(() => props.visible, (v) => {
     prefillFromRequirementProposal(props.requirementData)
   }
 })
+
+/** 编辑模式：既有特征资产 → B1 表单（与 buildAssetFromPayload 反向映射，保证新建/编辑同构）*/
+function prefillFromVariable(d: any) {
+  const p = d.profile || {}
+  form.name = d.code || d.featureEnName || d.name || ''
+  form.featureCnName = d.featureCnName || d.name || ''
+  form.fieldType = matchFieldType(d.fieldType || d.type)
+  form.businessLogic = d.businessLogic || d.processingLogic || d.description || ''
+  form.codeLogic = d.codeLogic || d.processingLogic || ''
+  form.defaultValue = d.defaultValue ?? ''
+  form.description = d.description || ''
+  form.featureGranularity = d.featureGranularity || 'identity_only'
+  form.category = d.category || 'midloan_behavior'
+  form.l1Category = d.l1Category || ''
+  form.l2Category = d.l2Category || ''
+  form.dataFreshness = matchDataFreshness(d.dataFreshness || d.updateFrequency)
+  form.sourceType = (d.sourceType || (d.dataSource === 'external' ? 'external' : 'internal')) as RegisterFormPayload['sourceType']
+  form.sourceTableAfter = d.sourceTableAfter || d.upstreamTable || ''
+  form.sourceTableBefore = d.sourceTableBefore || ''
+  form.sourceField = d.sourceField || ''
+  form.dataTableName = d.dataTableName || ''
+  form.dwTaskId = d.dwTaskId || ''
+  form.productScope = p.productScope || d.productScope || ''
+  form.listType = p.listType || d.listType || undefined
+  form.batch = p.batch || d.batch || ''
+  form.acceptor = d.acceptor || p.acceptor || ''
+  form.developer = d.developer || p.developer || ''
+  form.creator = d.creator || p.creator || '小李'
+  form.remark = p.remark || d.remark || ''
+  form.excelAttachment = p.excelAttachment || d.excelAttachment || undefined
+  form.derivationId = d.derivationId || undefined
+}
 
 /** 需求列表「去注册」：DerivationRecord → B1 表单字段映射（全量预填）*/
 function prefillFromDerivation(d: any) {

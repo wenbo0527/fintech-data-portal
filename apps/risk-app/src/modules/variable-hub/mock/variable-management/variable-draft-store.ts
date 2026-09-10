@@ -204,6 +204,68 @@ export function validateFeatureCnName(name: string, existingCnNames: string[]): 
   return null
 }
 
+/** B1 注册表单 → 特征资产对象（新增与编辑共用同一份字段映射口径）*/
+function buildAssetFromPayload(
+  payload: RegisterFormPayload,
+  id: string,
+  now: string
+): VariableDraftMock {
+  const creator = payload.creator || '小李'
+  return {
+    id,
+    // 兼容 variables.ts 的字段映射
+    name: payload.name,
+    featureCnName: payload.featureCnName,
+    code: payload.name,
+    type: payload.fieldType === 'String' ? 'categorical' : 'numerical',
+    status: 'registered', // B1 R21：提交后状态=已注册
+    midloanStatus: 'registered',
+    midloanFeatureId: id,
+    description: payload.businessLogic,
+    dataSource: payload.sourceType === 'external' ? 'external' : payload.sourceType === 'credit' ? 'credit' : 'internal',
+    dataSourceName: payload.sourceType === 'external' ? '外部数据源（外数）' : payload.sourceType === 'credit' ? '合作机构' : '数仓（内数）',
+    creator,
+    createdAt: now,
+    updatedAt: now,
+    sourceType: payload.sourceType || 'internal',
+    category: payload.category || 'midloan_behavior',
+    fieldType: payload.fieldType,
+    businessLogic: payload.businessLogic,
+    codeLogic: payload.codeLogic,
+    processingLogic: payload.codeLogic,
+    defaultValue: payload.defaultValue || '',
+    featureGranularity: payload.featureGranularity || 'identity_only',
+    l1Category: payload.l1Category,
+    l2Category: payload.l2Category,
+    dataFreshness: payload.dataFreshness,
+    sourceTableAfter: payload.sourceTableAfter,
+    sourceTableBefore: payload.sourceTableBefore,
+    sourceField: payload.sourceField,
+    // 关联需求（需求列表「去注册」时透传，台账详情页/去重校验据此定位）
+    derivationId: payload.derivationId,
+    // 协作信息（写入 profile 便于详情页展示）
+    profile: {
+      dataType: payload.category === 'credit' ? '征信' : payload.category === 'external' ? '外数' : '行为',
+      onlineStatus: '已注册',
+      productScope: payload.productScope,
+      listType: payload.listType,
+      batch: payload.batch,
+      acceptor: payload.acceptor || creator,
+      remark: payload.remark,
+      developer: payload.developer,
+      excelAttachment: payload.excelAttachment,
+      registeredAt: now
+    },
+    // 数据底表/数仓任务ID（B1 R17/R18）
+    dataTableName: payload.dataTableName,
+    dwTaskId: payload.dwTaskId,
+    // 补充协作字段到顶层（兼容详情页读取）
+    acceptor: payload.acceptor || creator,
+    // 来源与时效元信息
+    upstreamTable: payload.sourceTableAfter
+  }
+}
+
 /** 默认草稿仓库 */
 export const VariableDraftStore = {
   list(): VariableDraftMock[] {
@@ -217,61 +279,40 @@ export const VariableDraftStore = {
     const existing = readAll()
     const id = buildNextDraftId(existing.map((item) => item.id))
     const now = nowFmt()
-    const creator = payload.creator || '小李'
-    const item: VariableDraftMock = {
-      id,
-      // 兼容 variables.ts 的字段映射
-      name: payload.name,
-      featureCnName: payload.featureCnName,
-      code: payload.name,
-      type: payload.fieldType === 'String' ? 'categorical' : 'numerical',
-      status: 'registered', // B1 R21：提交后状态=已注册
-      midloanStatus: 'registered',
-      midloanFeatureId: id,
-      description: payload.businessLogic,
-      dataSource: payload.sourceType === 'external' ? 'external' : payload.sourceType === 'credit' ? 'credit' : 'internal',
-      dataSourceName: payload.sourceType === 'external' ? '外部数据源（外数）' : payload.sourceType === 'credit' ? '合作机构' : '数仓（内数）',
-      creator,
-      createdAt: now,
-      updatedAt: now,
-      sourceType: payload.sourceType || 'internal',
-      category: payload.category || 'midloan_behavior',
-      fieldType: payload.fieldType,
-      businessLogic: payload.businessLogic,
-      codeLogic: payload.codeLogic,
-      defaultValue: payload.defaultValue || '',
-      featureGranularity: payload.featureGranularity || 'identity_only',
-      l1Category: payload.l1Category,
-      l2Category: payload.l2Category,
-      dataFreshness: payload.dataFreshness,
-      sourceTableAfter: payload.sourceTableAfter,
-      sourceTableBefore: payload.sourceTableBefore,
-      sourceField: payload.sourceField,
-      // 关联需求（需求列表「去注册」时透传，台账详情页/去重校验据此定位）
-      derivationId: payload.derivationId,
-      // 协作信息（写入 profile 便于详情页展示）
-      profile: {
-        dataType: payload.category === 'credit' ? '征信' : payload.category === 'external' ? '外数' : '行为',
-        onlineStatus: '已注册',
-        productScope: payload.productScope,
-        listType: payload.listType,
-        batch: payload.batch,
-        acceptor: payload.acceptor || creator,
-        remark: payload.remark,
-        developer: payload.developer,
-        excelAttachment: payload.excelAttachment,
-        registeredAt: now
-      },
-      // 数据底表/数仓任务ID（B1 R17/R18）
-      dataTableName: payload.dataTableName,
-      dwTaskId: payload.dwTaskId,
-      // 补充协作字段到顶层（兼容详情页读取）
-      acceptor: payload.acceptor || creator,
-      // 来源与时效元信息
-      upstreamTable: payload.sourceTableAfter
-    }
+    const item = buildAssetFromPayload(payload, id, now)
     writeAll([item, ...existing])
     return item
+  },
+
+  /**
+   * 编辑既有草稿特征：用同一份 B1 注册表单口径就地覆盖草稿字段（保留 ID / 状态 / 流程时间戳）
+   * 返回 null 表示该 ID 不在草稿仓库（属于内置 mock 资产，由 stateEngine 就地回写）
+   */
+  updateDraft(id: string, payload: RegisterFormPayload): VariableDraftMock | null {
+    const existing = readAll()
+    const idx = existing.findIndex((item) => String(item.id) === String(id))
+    if (idx < 0) return null
+    const prev = existing[idx]
+    const next = buildAssetFromPayload(payload, prev.id, nowFmt())
+    // 流程态与状态机字段不被编辑表单覆盖
+    existing[idx] = {
+      ...next,
+      status: prev.status,
+      midloanStatus: prev.midloanStatus,
+      midloanFeatureId: prev.midloanFeatureId || prev.id,
+      derivationId: payload.derivationId || prev.derivationId,
+      createdAt: prev.createdAt,
+      registeredAt: prev.registeredAt,
+      developingOaAt: prev.developingOaAt,
+      dwOnlineTime: prev.dwOnlineTime,
+      devOaOrderId: prev.devOaOrderId,
+      onlineTime: prev.onlineTime,
+      hiveInfo: prev.hiveInfo,
+      responseField: prev.responseField,
+      updatedAt: nowFmt()
+    }
+    writeAll(existing)
+    return existing[idx]
   },
 
   /**

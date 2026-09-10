@@ -767,8 +767,8 @@
       </a-modal>
     </div>
 
-    <!-- ============ 注册特征（B1 完整注册表单）============
-         三种入口共用：台账「注册特征」/ 台账状态机 submit_requirement / 需求列表「去注册」
+    <!-- ============ 注册 / 编辑特征（B1 完整注册表单）============
+         四种入口共用：台账「注册特征」/ 状态机 submit_requirement / 需求列表「去注册」/ 台账「编辑」
          挂在 Tab v-if 块之外，两个 Tab 均可触发 -->
     <VariableRegisterDrawer
       v-model:visible="registerDrawerVisible"
@@ -776,6 +776,8 @@
       :existing-cn-names="existingFeatureCnNames"
       :requirement-data="registerDrawerRequirementData"
       :source="registerDrawerSource"
+      :mode="registerDrawerMode"
+      :edit-data="registerDrawerEditData"
       @submit="handleRegisterSubmit"
       @save-draft="handleRegisterSaveDraft"
     />
@@ -831,9 +833,7 @@ const handleDerivationAction = () => {
     nextTick(() => {
       const rec = DerivationStore.get(String(route.query.id))
       if (rec) {
-        registerDrawerRequirementData.value = rec
-        registerDrawerSource.value = 'derivation'
-        registerDrawerVisible.value = true
+        openRegisterDrawer({ source: 'derivation', requirementData: rec })
         // 切换到需求列表 Tab
         activeTab.value = 'derivations'
       }
@@ -1300,9 +1300,7 @@ const triggerTableAction = (record, action) => {
 
   // submit_requirement：打开 VariableRegisterDrawer 审核模式（B1 完整注册表单）
   if (action.key === 'submit_requirement') {
-    registerDrawerRequirementData.value = record
-    registerDrawerSource.value = 'ledger'
-    registerDrawerVisible.value = true
+    openRegisterDrawer({ source: 'ledger', requirementData: record })
     return
   }
 
@@ -1363,9 +1361,8 @@ const triggerTableAction = (record, action) => {
       handleEdit(record)
       break
     case 'supplement_table':
-      // 跳详情页补充数据底表（带 query，详情页自动定位）
+      // 跳详情页并自动打开「补充数据底表」抽屉（含 HIVE 表与字段 + 技术关联信息）
       handleViewDetail(record, { tab: 'basic', focusField: 'dataTableName' })
-      Message.info('请到特征详情页补充数据底表')
       break
     case 'external_archive':
       openExternalArchive(record)
@@ -1820,8 +1817,12 @@ const handleBatchAction = (batchAction) => {
   })
 }
 
-const handleViewDetail = (record) => {
-  router.push({ name: 'VariableAssetDetail', params: { id: record.id, mode: 'view' } })
+const handleViewDetail = (record, opts = {}) => {
+  router.push({
+    name: 'VariableAssetDetail',
+    params: { id: record.id, mode: 'view' },
+    query: opts.focusField ? { focusField: opts.focusField } : {}
+  })
 }
 
 const openExternalArchive = (record) => {
@@ -1830,8 +1831,12 @@ const openExternalArchive = (record) => {
   window.open(buildRiskAppUrl(`/risk/external-data/archive/${id}`), '_blank')
 }
 
+/**
+ * 编辑特征：复用「注册特征」抽屉（同一套 B1 表单 + 同一套校验），
+ * 状态机锁定字段在抽屉内灰显，提交后就地回写、不改变流程状态
+ */
 const handleEdit = (record) => {
-  router.push({ name: 'VariableAssetDetail', params: { id: record.id, mode: 'edit' } })
+  openRegisterDrawer({ mode: 'edit', editData: { ...record } })
 }
 
 const handleToggleStatus = async (record) => {
@@ -1870,9 +1875,7 @@ const showIncrementalModal = () => {
 const handleCreateMenuSelect = (val) => {
   if (val === 'add' || val === 'create') {
     // 「注册为特征」=「新增」= 打开完整注册表单抽屉（B1 文档）
-    registerDrawerRequirementData.value = null
-    registerDrawerSource.value = 'ledger'
-    registerDrawerVisible.value = true
+    openRegisterDrawer({ mode: 'create', source: 'ledger' })
     return
   }
   if (val === 'incremental') {
@@ -1886,17 +1889,42 @@ const registerDrawerVisible = ref(false)
 const registerDrawerRequirementData = ref(null)
 // 抽屉入口：ledger=特征台账注册特征；derivation=需求列表「去注册」（同一个组件，不同预填与提交口径）
 const registerDrawerSource = ref('ledger')
+// 抽屉模式：create=注册新特征；edit=编辑既有特征（与新建完全同构的表单 + 校验）
+const registerDrawerMode = ref('create')
+// 编辑模式下被修改的特征记录
+const registerDrawerEditData = ref(null)
 
-// 去重校验时需要排除「自己」：需求本身 + 该需求已生成的台账资产
-// 否则「去注册」会因台账里已存在同名特征而误报重名
+/**
+ * 统一打开注册/编辑抽屉
+ * 四种入口共用同一个 VariableRegisterDrawer，避免"新建一套表单、编辑另一套表单"
+ */
+function openRegisterDrawer(opts = {}) {
+  registerDrawerMode.value = opts.mode || 'create'
+  registerDrawerEditData.value = opts.editData || null
+  registerDrawerRequirementData.value = opts.requirementData ?? null
+  registerDrawerSource.value = opts.source || 'ledger'
+  registerDrawerVisible.value = true
+}
+
+// 去重校验时需要排除「自己」：需求本身 + 该需求已生成的台账资产 + 正在编辑的特征本身
+// 否则「去注册」/「编辑」会因台账里已存在同名特征而误报重名
 const registerSelfIds = computed(() => {
+  const ids = new Set()
   const target = registerDrawerRequirementData.value
-  if (!target) return new Set()
-  const ids = new Set([target.id])
-  ;(variableStore.variableList || []).forEach((v) => {
-    if (v.derivationId && v.derivationId === target.id) ids.add(v.id)
-    if (v.midloanFeatureId && v.midloanFeatureId === target.id) ids.add(v.id)
-  })
+  if (target) {
+    ids.add(target.id)
+    ;(variableStore.variableList || []).forEach((v) => {
+      if (v.derivationId && v.derivationId === target.id) ids.add(v.id)
+      if (v.midloanFeatureId && v.midloanFeatureId === target.id) ids.add(v.id)
+    })
+  }
+  if (registerDrawerMode.value === 'edit' && registerDrawerEditData.value) {
+    const editId = registerDrawerEditData.value.id || registerDrawerEditData.value.midloanFeatureId
+    ids.add(editId)
+    ;(variableStore.variableList || []).forEach((v) => {
+      if (v.id === editId || (v.midloanFeatureId && v.midloanFeatureId === editId)) ids.add(v.id)
+    })
+  }
   return ids
 })
 
@@ -1915,6 +1943,22 @@ const existingFeatureCnNames = computed(() =>
 )
 
 const handleRegisterSubmit = (payload) => {
+  // 编辑模式：与新建完全同构的表单 → 就地回写，流程状态不变
+  if (payload.isEdit) {
+    const id = payload.variableId
+    // 先尝试 localStorage 草稿（用户新建的特征），未命中则回写内置 mock 资产
+    const draftUpdated = VariableDraftStore.updateDraft(id, payload)
+    const result = draftUpdated ? { ok: true } : MidloanStateEngine.updateFeatureBasicInfo(id, payload)
+    if (!result?.ok) {
+      Message.error(result?.reason || '保存失败')
+      return
+    }
+    Message.success('特征信息已更新')
+    registerDrawerVisible.value = false
+    registerDrawerEditData.value = null
+    fetchVariableList()
+    return
+  }
   // 需求列表「去注册」：B1 表单 → 回写 A1 需求 + 台账资产
   if (payload.source === 'derivation') {
     completeDerivationRegister(payload)
@@ -2336,9 +2380,7 @@ function resetDerivationFilter() {
 // 「去注册」与特征台账「注册特征」共用 VariableRegisterDrawer（B1 完整表单），
 // 区别只在 source='derivation'：打开时把 A1 需求已填信息预填到表单，提交后回写需求 + 台账
 function goRegister(record) {
-  registerDrawerRequirementData.value = DerivationStore.get(record.id) || record
-  registerDrawerSource.value = 'derivation'
-  registerDrawerVisible.value = true
+  openRegisterDrawer({ source: 'derivation', requirementData: DerivationStore.get(record.id) || record })
 }
 
 // B1 表单字段 → A1 需求（DerivationRecord）字段口径

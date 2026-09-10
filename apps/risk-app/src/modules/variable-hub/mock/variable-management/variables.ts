@@ -71,6 +71,7 @@ export interface VariableAssetMock {
   l1Category?: string
   l2Category?: string
   dataFreshness?: string
+  /** 数据底表名称（= 标准化后 HIVE 表，格式「库.表」，库名可省）；B1 R10 补充后回填 */
   dataTableName?: string
   dwTaskId?: string
   dwOnlineTime?: string
@@ -118,6 +119,37 @@ export interface VariableAssetMock {
   oaDocLink?: string                      // OA单据链接（OA回调同步）
   archiveStatus?: string                  // 归档状态
   featureGranularity?: 'identity_only' | 'identity_plus_product'  // 特征粒度
+  // ============ HIVE 表与字段 / 技术关联信息（「补充数据底表」时回填）============
+  /** 底层 HIVE 注册信息（详情页「HIVE 表与字段」卡片的数据源）*/
+  hiveInfo?: VariableHiveInfo
+  /** 响应字段（外数品类 API 返回字段）*/
+  responseField?: string
+  /** 数据底表补充说明（B1 R10 补充时填写）*/
+  dataTableRemark?: string
+}
+
+/**
+ * 详情页「HIVE 表与字段」卡片字段（标准化前 = 原始上游，标准化后 = 当前 HIVE 注册表）
+ * 注：标准化后的 databaseName / tableName 由 VariableAssetMock.dataTableName（「库.表」一个串）拆分派生，
+ * 不再单独登记，避免与技术关联信息里的「数据底表名称」重复填写。
+ */
+export interface VariableHiveInfo {
+  /** 标准化前 HIVE 数据库名（原始上游库）*/
+  sourceDbName?: string
+  /** 标准化前 HIVE 表名（原始上游表）*/
+  sourceTableName?: string
+  /** 标准化前字段名（原始上游字段）*/
+  sourceFieldName?: string
+  /** 标准化后 HIVE 数据库名（= dataTableName 拆分出的库名部分）*/
+  databaseName?: string
+  /** 标准化后 HIVE 表名（= dataTableName 拆分出的表名部分）*/
+  tableName?: string
+  /** 是否分区表 */
+  isPartitioned?: boolean
+  /** 分区字段列表 */
+  partitionFields?: string[]
+  /** 更新频率 */
+  updateFrequency?: string
 }
 
 const now = new Date()
@@ -665,7 +697,7 @@ export const variableAssets: VariableAssetMock[] = [
     l1Category: 'collection',
     l2Category: 'collection_behavior',
     dataFreshness: 'offline_t1',
-    dataTableName: 'ads_midloan_ip_change_7d',
+    dataTableName: 'risk_dw.ads_midloan_ip_change_7d',
     dwTaskId: 'DW-TASK-998920',
     dwOnlineTime: fmt(new Date(now.getTime() - 1 * 86400000)),
     devOaOrderId: 'OA-DEV-20260724-0030',
@@ -674,7 +706,70 @@ export const variableAssets: VariableAssetMock[] = [
     developingOaAt: fmt(new Date(now.getTime() - 5 * 86400000)),
     upstreamTable: 'dwd_login_log',
     effectMetrics: { iv: 0.33, ks: 0.26, auc: 0.73, coverage: 0.96, lift: 13 },
-    costMetrics: { pricePerCall: 0, monthlyCalls: 88000, monthlyCost: 0, costTrend: 'stable' }
+    costMetrics: { pricePerCall: 0, monthlyCalls: 88000, monthlyCost: 0, costTrend: 'stable' },
+    /** 已补充数据底表 → HIVE 与技术关联信息可直接展示（对照 0025 的「未补充」态）*/
+    hiveInfo: {
+      sourceDbName: 'ods_nis_login',
+      sourceTableName: 'ods_login_log_di',
+      sourceFieldName: 'ip_change_cnt_7d',
+      databaseName: 'risk_dw',
+      tableName: 'ads_midloan_ip_change_7d',
+      isPartitioned: true,
+      partitionFields: ['ds'],
+      updateFrequency: 'T+1 日更新'
+    },
+    responseField: ''
+  },
+  // ============ 补齐：dw_online（数仓已上线 / 开发完成 · 数据底表未补充）============
+  // 演示「补充数据底表」流程：详情页技术关联信息显示「未补充（必填）」+ 补充按钮，
+  // 顶部动作出现「补充数据底表」，补充后 HIVE 表与字段 / 技术关联信息一并回填
+  {
+    id: 'MIDLOAN-FEAT-0025',
+    name: '近30日提前还款次数',
+    code: 'MIDLOAN_PREPAY_CNT_30D',
+    featureCnName: '近30日提前还款次数',
+    type: 'numerical',
+    status: 'dw_online',
+    description: '贷中行为：用户近30日主动提前还款笔数，用于识别资金周转异常与套现风险',
+    dataSource: 'hbase',
+    dataSourceName: 'Hbase 还款行为表',
+    sourceField: 'prepay_cnt_30d',
+    updateFrequency: '日',
+    quality: 90,
+    missingRate: 0.05,
+    creator: '李行为',
+    requirementProposer: '李行为',
+    developer: '数仓_B',
+    adminManager: '培培',
+    acceptor: '李行为',
+    createdAt: fmt(new Date(now.getTime() - 16 * 86400000)),
+    updatedAt: fmt(new Date(now.getTime() - 2 * 86400000)),
+    sourceType: 'internal',
+    category: 'midloan_behavior',
+    midloanStatus: 'dw_online',
+    midloanFeatureId: 'MIDLOAN-FEAT-0025',
+    featureGranularity: 'identity_plus_product',
+    derivationId: 'DRV-20260726-0011',
+    fieldType: 'Integer',
+    businessLogic: '统计用户近30日内成功发起的提前还款笔数（含部分提前还款），剔除撤销与失败记录',
+    processingLogic: '按 user_id + product_id 统计近30日 repay_type = PREPAY 且 status = SUCCESS 的还款流水笔数',
+    codeLogic:
+      "SELECT user_id, product_id, count(1) AS prepay_cnt_30d\nFROM dwd_repay_flow_di\nWHERE repay_type = 'PREPAY' AND status = 'SUCCESS'\n  AND dt >= date_sub(current_date, 30)\nGROUP BY user_id, product_id",
+    defaultValue: '0',
+    l1Category: 'repayment',
+    l2Category: 'repayment_behavior',
+    dataFreshness: 'offline_t1',
+    sourceTableBefore: 'dwd_repay_flow_di',
+    /** 数仓已上线但底表未补充：dataTableName 为空，且无 hiveInfo */
+    dataTableName: '',
+    dwTaskId: 'DW-TASK-100231',
+    dwOnlineTime: fmt(new Date(now.getTime() - 2 * 86400000)),
+    devOaOrderId: 'OA-DEV-20260728-0041',
+    registeredAt: fmt(new Date(now.getTime() - 10 * 86400000)),
+    developingOaAt: fmt(new Date(now.getTime() - 7 * 86400000)),
+    upstreamTable: 'dwd_repay_flow_di',
+    effectMetrics: { iv: 0.21, ks: 0.17, auc: 0.66, coverage: 0.91, lift: 7 },
+    costMetrics: { pricePerCall: 0, monthlyCalls: 45000, monthlyCost: 0, costTrend: 'stable' }
   },
   // ============ 补齐：business_acceptance（待业务验证）============
   {

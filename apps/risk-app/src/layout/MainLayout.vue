@@ -36,12 +36,10 @@
           <a-sub-menu key="risk-factor-explore">
             <template #title>探索过程</template>
             <a-menu-item key="/explore/topics">探索课题</a-menu-item>
-            <a-menu-item key="/explore/compare">实验对比</a-menu-item>
           </a-sub-menu>
           <a-sub-menu key="risk-factor-config">
             <template #title>模块配置</template>
             <a-menu-item key="/explore/taxonomy">探索分类管理</a-menu-item>
-            <a-menu-item key="/explore/audit">决策审计</a-menu-item>
           </a-sub-menu>
 
           <!-- 外数生命周期管理 -->
@@ -54,11 +52,9 @@
           <a-sub-menu key="external-data-service-group">
             <template #title>外数服务管理</template>
             <a-menu-item key="/variable-hub/external-data/service-scene">服务场景入口</a-menu-item>
-            <a-menu-item key="/variable-hub/external-data/service-create">外数服务创建（新）</a-menu-item>
             <a-menu-item key="/variable-hub/external-data/service">服务任务列表</a-menu-item>
             <a-menu-item key="/variable-hub/external-data/sample-preparation">样本表准备</a-menu-item>
             <a-menu-item key="/variable-hub/external-data/validation-template">服务校验模版管理</a-menu-item>
-            <a-menu-item key="/variable-hub/external-data/online-call-application">外数线上调用服务申请</a-menu-item>
           </a-sub-menu>
           <a-sub-menu key="external-data-budget-group">
             <template #title>预算与合同</template>
@@ -68,7 +64,6 @@
             <a-menu-item key="/budget/contracts">合同管理</a-menu-item>
             <a-menu-item key="/budget/sign-reports">签报管理</a-menu-item>
             <a-menu-item key="/budget/settlement">结算管理</a-menu-item>
-            <a-menu-item key="/budget/accounting">核算流程</a-menu-item>
           </a-sub-menu>
           <a-sub-menu key="external-data-accompany-group">
             <template #title>陪跑计划</template>
@@ -138,9 +133,7 @@ function updateMenuState(path: string) {
   if (path === '/variable-hub' || path === '/variable-hub/') activeSideMenu.value = '/variable-hub'
   else if (path.startsWith('/variable-management')) activeSideMenu.value = '/variable-management'
   else if (path.startsWith('/explore/topics')) activeSideMenu.value = '/explore/topics'
-  else if (path.startsWith('/explore/compare')) activeSideMenu.value = '/explore/compare'
   else if (path.startsWith('/explore/taxonomy')) activeSideMenu.value = '/explore/taxonomy'
-  else if (path.startsWith('/explore/audit')) activeSideMenu.value = '/explore/audit'
   else if (path.startsWith('/explore/map')) activeSideMenu.value = '/explore/map'
   else if (path.startsWith('/evaluation/')) activeSideMenu.value = '/evaluation/tasks'
   // 外数
@@ -148,11 +141,9 @@ function updateMenuState(path: string) {
   else if (path.startsWith('/variable-hub/external-data/archive')) activeSideMenu.value = '/variable-hub/external-data/archive'
   else if (path.startsWith('/variable-hub/external-data/evaluation')) activeSideMenu.value = '/variable-hub/external-data/evaluation'
   else if (path.startsWith('/variable-hub/external-data/service-scene')) activeSideMenu.value = '/variable-hub/external-data/service-scene'
-  else if (path.startsWith('/variable-hub/external-data/service-create')) activeSideMenu.value = '/variable-hub/external-data/service-create'
   else if (path.startsWith('/variable-hub/external-data/service')) activeSideMenu.value = '/variable-hub/external-data/service'
   else if (path.startsWith('/variable-hub/external-data/sample-preparation')) activeSideMenu.value = '/variable-hub/external-data/sample-preparation'
   else if (path.startsWith('/variable-hub/external-data/validation-template')) activeSideMenu.value = '/variable-hub/external-data/validation-template'
-  else if (path.startsWith('/variable-hub/external-data/online-call-application')) activeSideMenu.value = '/variable-hub/external-data/online-call-application'
   // 预算
   else if (path.startsWith('/budget/overview')) activeSideMenu.value = '/budget/overview'
   else if (path.startsWith('/budget/list')) activeSideMenu.value = '/budget/list'
@@ -160,7 +151,6 @@ function updateMenuState(path: string) {
   else if (path.startsWith('/budget/contracts')) activeSideMenu.value = '/budget/contracts'
   else if (path.startsWith('/budget/sign-reports')) activeSideMenu.value = '/budget/sign-reports'
   else if (path.startsWith('/budget/settlement')) activeSideMenu.value = '/budget/settlement'
-  else if (path.startsWith('/budget/accounting')) activeSideMenu.value = '/budget/accounting'
   // 陪跑
   else if (path.startsWith('/accompany/create')) activeSideMenu.value = '/accompany/create'
   else if (path.startsWith('/accompany/result')) activeSideMenu.value = '/accompany/result'

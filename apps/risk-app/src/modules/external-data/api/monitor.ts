@@ -1,5 +1,5 @@
 import http from '../../../api/http'
-const useMock = (import.meta as any)?.env?.VITE_USE_MOCK === 'true'
+const useMock = import.meta.env.VITE_USE_MOCK === 'true'
 
 export async function getBurndown(params: any) {
   if (useMock) {

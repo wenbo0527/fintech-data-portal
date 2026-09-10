@@ -84,16 +84,17 @@ const statusLabel = (s?: string) => s === 'draft' ? '草稿' : s === 'in_progres
 const statusTag = (s?: string) => s === 'completed' ? 'success' : s === 'in_progress' ? 'warning' : s === 'draft' ? 'default' : 'default'
 const formatDate = (d?: string) => { try { return DateUtils.formatDateTime(d || '') } catch { return '—' } }
 
-const applyFilter = () => { Message.success('筛选已更新') }
-const resetFilter = () => { filters.type = undefined; filters.status = undefined }
+const applyFilter = () => { pagination.current = 1; Message.success('筛选已更新') }
+const resetFilter = () => { filters.type = undefined; filters.status = undefined; pagination.current = 1 }
 const onPageChange = (page: number) => { pagination.current = page }
-const load = async () => { try { await store.fetchEvaluationList(); evaluations.value = store.evaluationList || []; pagination.total = evaluations.value.length; Message.success('已加载评估列表') } catch { Message.error('加载失败') } }
+// 一次性拉全量，类型/状态筛选在前端 computed 中完成
+const load = async () => { try { await store.fetchEvaluationList({ page: 1, pageSize: 200 }); evaluations.value = store.evaluationList || []; pagination.total = evaluations.value.length } catch { Message.error('加载失败') } }
 onMounted(load)
 
 const goDetail = (record: any) => {
   const id = record?.id
   if (!id) { Message.warning('无效的评估ID'); return }
-  router.push(`/external-data/evaluation/${encodeURIComponent(String(id))}`)
+  router.push(`/variable-hub/external-data/evaluation/${encodeURIComponent(String(id))}`)
 }
 const publish = async (record: any) => {
   const id = record?.id
@@ -116,7 +117,7 @@ const create = async () => {
     // 创建成功后跳转到详情页
     const newItem = store.evaluationList[0]
     if (newItem?.id) {
-      router.push(`/external-data/evaluation/${encodeURIComponent(String(newItem.id))}`)
+      router.push(`/variable-hub/external-data/evaluation/${encodeURIComponent(String(newItem.id))}`)
     }
   } else { 
     Message.error('创建失败') 

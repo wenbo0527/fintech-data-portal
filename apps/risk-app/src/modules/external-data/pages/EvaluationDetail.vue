@@ -61,7 +61,8 @@
           <ACard v-if="reportData.status === '分析中'" class="progress-card" title="分析进度" style="margin-bottom: 24px;">
             <AProgress 
               :percent="reportData.progress" 
-              :status="reportData.progress === 100 ? 'success' : 'active'"
+              :status="reportData.progress === 100 ? 'success' : 'normal'"
+              animated
             />
             <div class="progress-text">
               <p>当前步骤：{{ getCurrentStepName() }}</p>
@@ -147,14 +148,14 @@
                       size="small"
                     />
                   </div>
-                  <div class="table-section">
-                    <h4>{{ module.tableData.correlationTable.title }}</h4>
+                  <div v-if="module.tableData?.correlationTable" class="table-section">
+                    <h4>{{ module.tableData?.correlationTable.title }}</h4>
                     <div v-if="isEditMode && !canEditTable(module.id)" class="edit-notice">
                       <AAlert type="info" message="此表格为系统自动生成，不支持编辑" show-icon />
                     </div>
                     <ATable
-                      :columns="getTableColumns(module.tableData.correlationTable)"
-                      :data="getTableRows(module.tableData.correlationTable)"
+                      :columns="getTableColumns(module.tableData?.correlationTable)"
+                      :data="getTableRows(module.tableData?.correlationTable)"
                       :pagination="false"
                       size="small"
                     />
@@ -238,11 +239,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, nextTick } from 'vue';
+import { ref, reactive, computed, onMounted, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { Message } from '@arco-design/web-vue';
 import * as echarts from 'echarts';
 import { safeInitECharts, safeDisposeChart } from '@/utils/echartsUtils';
+import {
+  getEvaluationReportDetail as apiGetReportDetail,
+  updateEvaluationReport as apiUpdateReport,
+  publishReport as apiPublishReport,
+  archiveReport as apiArchiveReport,
+  deleteReport as apiDeleteReport,
+} from '@/modules/external-data/api/evaluation';
 import {
   Row as ARow,
   Col as ACol,
@@ -270,31 +278,50 @@ import {
 } from '@arco-design/web-vue/es/icon';
 
 // 定义报告数据类型
+interface ReportModule {
+  id: number;
+  name: string;
+  content?: string;
+  textContent?: string;
+  type?: string;
+  editType?: string;
+  status?: string;
+  editable?: boolean;
+  wordLimit?: number;
+  table?: any;
+  tables?: any[];
+  tableData?: any;
+  charts?: any[];
+  chartData?: Record<string, any>;
+  suggestions?: string[];
+  [key: string]: any;
+}
+
 interface ReportData {
+  id?: string | number;
   reportName: string;
+  title?: string;
   productName: string;
+  supplier?: string;
   analysisPeriod: string;
+  sampleCount?: number;
+  creator?: string;
+  generateDate?: string;
   status: string;
+  score?: number | null;
   progress: number;
   estimatedCompletion?: string;
   editable: boolean;
-  modules: Array<{
-    id: number;
-    name: string;
-    content: string;
-    type: string;
-    table?: any;
-    tables?: any[];
-    charts?: any[];
-    suggestions?: string[];
-  }>;
+  modules: ReportModule[];
   analysisWorkflow?: {
     currentStep: number;
     steps: Array<{
       id: number;
       name: string;
+      status?: string;
     }>;
   };
+  [key: string]: any;
 }
 
 const router = useRouter();
@@ -305,7 +332,7 @@ const exporting = ref(false);
 const isEditMode = ref(false);
 const saving = ref(false);
 const publishing = ref(false);
-const editData = ref<Record<number, { textContent?: string; selectedCharts?: boolean[]; }>>({});
+const editData = ref<Record<number, { textContent?: string; selectedCharts: boolean[]; }>>({});
 const modifiedModules = ref<Set<number>>(new Set());
 
 const reportData = reactive<ReportData>({
@@ -321,51 +348,23 @@ const reportData = reactive<ReportData>({
 // 获取报告详情
 const fetchReportDetail = async () => {
   try {
-    const response = await fetch(`/api/external-data-evaluation/detail/${route.params.id}`);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const result = await response.json();
-    console.log('API响应数据:', result);
-    
-    if (result.code === 200 && result.data) {
-      Object.assign(reportData, result.data);
+    const result: any = await apiGetReportDetail(route.params.id as string);
+    console.log('报告详情数据:', result);
+
+    if (result) {
+      Object.assign(reportData, result);
       console.log('报告数据已更新:', reportData);
-      
+
       // 渲染图表
       nextTick(() => {
         renderCharts();
       });
     } else {
-      Message.error(result.message || '获取报告详情失败');
+      Message.error('获取报告详情失败');
     }
   } catch (error) {
     console.error('获取报告详情失败:', error);
-    Message.error('获取报告详情失败');
-    
-    // 提供模拟数据作为后备
-    const mockData = {
-      id: route.params.id,
-      productName: '京东金融',
-      reportType: '效果分析',
-      analysisPeriod: '2024-12-01 至 2024-12-31',
-      generateDate: '2024-12-19',
-      status: '已完成',
-      progress: 100,
-      editable: true,
-      modules: [
-        {
-          id: 1,
-          name: '数据概览',
-          description: '展示核心指标和趋势',
-          status: '已完成',
-          content: '本次分析涵盖了京东金融在2024年12月的完整数据表现...'
-        }
-      ]
-    };
-    Object.assign(reportData, mockData);
+    Message.error((error as Error)?.message || '获取报告详情失败');
   }
 };
 
@@ -551,16 +550,9 @@ const handleImageError = (event: Event) => {
 
 // 编辑模式切换
 const toggleEditMode = () => {
-  // 如果是草稿状态，跳转到编辑页
-  if (reportData.status === '草稿') {
-    router.push({
-      name: 'externalDataEvaluationEdit',
-      params: { id: route.params.id }
-    });
-  } else {
-    isEditMode.value = true;
-    initEditData();
-  }
+  // 详情页即编辑载体，统一进入页内编辑模式
+  isEditMode.value = true;
+  initEditData();
 };
 
 // 取消编辑
@@ -666,39 +658,28 @@ function getAvailableCharts(module: { charts?: any[]; chartData?: Record<string,
 const saveReport = async () => {
   saving.value = true;
   try {
-    const response = await fetch(`/api/external-data-evaluation/update/${route.params.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        reportName: reportData.reportName,
-        status: reportData.status,
-        modules: editData.value
-      })
+    await apiUpdateReport(route.params.id as string, {
+      reportName: reportData.reportName,
+      status: reportData.status,
+      modules: editData.value
     });
 
-    const result = await response.json();
-    if (result.code === 200) {
-      Message.success('报告保存成功');
-      modifiedModules.value.clear();
-      // 更新原始数据
-      reportData.modules.forEach((module: { id: number; content?: string; textContent?: string; }) => {
-        if (editData.value[module.id]) {
-          if (module.content !== undefined) {
-            module.content = editData.value[module.id].textContent;
-          }
-          if (module.textContent !== undefined) {
-            module.textContent = editData.value[module.id].textContent;
-          }
+    Message.success('报告保存成功');
+    modifiedModules.value.clear();
+    // 更新原始数据
+    reportData.modules.forEach((module: { id: number; content?: string; textContent?: string; }) => {
+      if (editData.value[module.id]) {
+        if (module.content !== undefined) {
+          module.content = editData.value[module.id].textContent;
         }
-      });
-    } else {
-      Message.error(result.message || '保存失败');
-    }
+        if (module.textContent !== undefined) {
+          module.textContent = editData.value[module.id].textContent;
+        }
+      }
+    });
   } catch (error) {
     console.error('保存报告失败:', error);
-    Message.error('保存报告失败');
+    Message.error((error as Error)?.message || '保存报告失败');
   } finally {
     saving.value = false;
   }
@@ -708,52 +689,42 @@ const saveReport = async () => {
 const publishReport = async () => {
   publishing.value = true;
   try {
-    const response = await fetch(`/api/external-data-evaluation/publish/${route.params.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        reportName: reportData.reportName
-      })
+    await apiPublishReport(route.params.id as string, {
+      reportName: reportData.reportName
     });
 
-    const result = await response.json();
-    if (result.code === 200) {
-      Message.success('报告发布成功');
-      reportData.status = '已发布';
-      isEditMode.value = false;
-      modifiedModules.value.clear();
-    } else {
-      Message.error(result.message || '发布失败');
-    }
+    Message.success('报告发布成功');
+    reportData.status = '已发布';
+    reportData.progress = 100;
+    isEditMode.value = false;
+    modifiedModules.value.clear();
   } catch (error) {
     console.error('发布报告失败:', error);
-    Message.error('发布报告失败');
+    Message.error((error as Error)?.message || '发布报告失败');
   } finally {
     publishing.value = false;
   }
 };
 
 // 基础信息
-const basicInfo: Array<{ label: string; value: string; }> = [
+const basicInfo = computed<Array<{ label: string; value: string }>>(() => [
   {
     label: '外数产品',
-    value: reportData.productName
+    value: reportData.productName || '-'
   },
   {
     label: '分析时间段',
-    value: reportData.analysisPeriod
+    value: reportData.analysisPeriod || '-'
   },
   {
     label: '样本量',
-    value: '10000'
+    value: reportData.sampleCount != null ? String(reportData.sampleCount) : '-'
   },
   {
     label: '报告生成时间',
-    value: '2025-02-01 10:30:00'
+    value: reportData.generateDate || '-'
   }
-];
+]);
 
 // 移除导航点击处理函数
 
@@ -775,24 +746,13 @@ const archiveReport = () => {
     cancelText: '取消',
     onOk: async () => {
       try {
-        const response = await fetch(`/api/external-data-evaluation/archive/${route.params.id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-
-        const result = await response.json();
-        if (result.code === 200) {
-          Message.success('报告归档成功');
-          // 可以选择跳转到列表页或更新报告状态
-          router.push('/variable-hub/external-data/evaluation');
-        } else {
-          Message.error(result.message || '归档失败');
-        }
+        await apiArchiveReport(route.params.id as string);
+        Message.success('报告归档成功');
+        // 归档后返回列表页
+        router.push('/variable-hub/external-data/evaluation');
       } catch (error) {
         console.error('归档报告失败:', error);
-        Message.error('归档报告失败');
+        Message.error((error as Error)?.message || '归档报告失败');
       }
     }
   });
@@ -811,24 +771,13 @@ const deleteReport = () => {
     cancelText: '取消',
     onOk: async () => {
       try {
-        const response = await fetch(`/api/external-data-evaluation/delete/${route.params.id}`, {
-          method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-
-        const result = await response.json();
-        if (result.code === 200) {
-          Message.success('报告删除成功');
-          // 跳转到报告列表页
-          router.push('/variable-hub/external-data/evaluation');
-        } else {
-          Message.error(result.message || '删除失败');
-        }
+        await apiDeleteReport(route.params.id as string);
+        Message.success('报告删除成功');
+        // 跳转到报告列表页
+        router.push('/variable-hub/external-data/evaluation');
       } catch (error) {
         console.error('删除报告失败:', error);
-        Message.error('删除报告失败');
+        Message.error((error as Error)?.message || '删除报告失败');
       }
     }
   });

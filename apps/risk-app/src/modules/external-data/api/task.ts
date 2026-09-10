@@ -2,7 +2,7 @@ export type TaskConfig = { parallel?: number; retries?: number; range?: string }
 export type Task = { id: string | number; taskName: string; status: string; progress: number; createdAt?: string; config?: TaskConfig }
 
 import http from '../../../api/http'
-const useMock = (import.meta as any)?.env?.VITE_USE_MOCK === 'true'
+const useMock = import.meta.env.VITE_USE_MOCK === 'true'
 
 export async function getTasks(_: any) {
   if (useMock) {

@@ -1,7 +1,16 @@
 import http from '../../../api/http'
+import {
+  listEvaluationReports,
+  getEvaluationReportDetail as mockGetDetail,
+  createEvaluationReport as mockCreate,
+  updateEvaluationReport as mockUpdate,
+  publishEvaluationReport as mockPublish,
+  archiveEvaluationReport as mockArchive,
+  deleteEvaluationReport as mockDelete,
+} from '../mock/evaluationReports'
 
 // 93BB782D 修复 (2026-06-24): 仿 api/task.ts:5 useMock 模式 + Archive.vue buildProductsView 20 字段
-const useMock = (import.meta as any)?.env?.VITE_USE_MOCK === 'true'
+const useMock = import.meta.env.VITE_USE_MOCK === 'true'
 
 // 20 字段对齐 Archive.vue buildProductsView L370-405
 // 仿 supplierProducts.ts 模板（20 个产品）
@@ -91,6 +100,9 @@ function generateMockProducts() {
 }
 
 export async function getEvaluationReports(params: any) {
+  // VITE_USE_MOCK=true：走本地 mock 数据源，避免 risk-app 未启用 vite-plugin-mock / proxy 时 404
+  if (useMock) return listEvaluationReports(params)
+
   const res: any = await http.get('/external-data-evaluation/list', { params })
   // 适配 Mock 返回结构 { code: 200, data: { list: [], total: 0 } }
   // 同时也兼容直接返回 { list: [], total: 0 } 的情况
@@ -102,22 +114,57 @@ export async function getEvaluationReports(params: any) {
 }
 
 export async function getEvaluationReportDetail(id: string | number) {
+  if (useMock) {
+    const detail = mockGetDetail(id)
+    if (!detail) throw new Error('评估报告不存在')
+    return detail
+  }
   const res: any = await http.get(`/external-data-evaluation/detail/${id}`)
   return res?.data || res
 }
 
 export async function createEvaluationReport(payload: any) {
+  if (useMock) return mockCreate(payload)
   const res: any = await http.post('/external-data-evaluation/create', payload)
   return res?.data || res
 }
 
-export async function publishReport(id: string | number) {
-  const res: any = await http.put(`/external-data-evaluation/${id}/publish`)
+export async function updateEvaluationReport(id: string | number, payload: any) {
+  if (useMock) {
+    const updated = mockUpdate(id, payload)
+    if (!updated) throw new Error('评估报告不存在')
+    return { id, ...payload, lastModified: updated.updatedAt }
+  }
+  const res: any = await http.put(`/external-data-evaluation/update/${id}`, payload)
+  return res?.data || res
+}
+
+export async function publishReport(id: string | number, payload?: any) {
+  if (useMock) {
+    const published = mockPublish(id)
+    if (!published) throw new Error('评估报告不存在')
+    return { id, ...payload, status: '已发布', progress: 100, publishTime: published.updatedAt }
+  }
+  const res: any = await http.put(`/external-data-evaluation/${id}/publish`, payload)
   return res?.data || res
 }
 
 export async function archiveReport(id: string | number) {
+  if (useMock) {
+    const archived = mockArchive(id)
+    if (!archived) throw new Error('评估报告不存在')
+    return { id, status: 'archived' }
+  }
   const res: any = await http.put(`/external-data-evaluation/${id}/archive`)
+  return res?.data || res
+}
+
+export async function deleteReport(id: string | number) {
+  if (useMock) {
+    if (!mockDelete(id)) throw new Error('评估报告不存在')
+    return { id, deleted: true }
+  }
+  const res: any = await http.delete(`/external-data-evaluation/delete/${id}`)
   return res?.data || res
 }
 

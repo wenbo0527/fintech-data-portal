@@ -696,6 +696,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('../pages/unified-query/task-create.vue'),
         meta: { title: '创建定时任务' }
       },
+      {
+        path: 'exploration/unified-query/exports',
+        name: 'unified-query-exports',
+        component: () => import('../pages/unified-query/export-tasks.vue'),
+        meta: { title: '导出任务' }
+      },
       // ===== 无访问权限 =====
       {
         path: 'unauthorized',

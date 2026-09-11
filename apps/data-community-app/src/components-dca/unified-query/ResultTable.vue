@@ -41,15 +41,47 @@
         </span>
       </template>
       <span class="uq-result__spacer" />
-      <a-button v-if="rowCount > 0" size="mini" type="text" @click="exportCSV">
-        <template #icon><icon-download /></template>
-        导出 CSV
-      </a-button>
-      <a-button v-if="rowCount > 0" size="mini" type="text" @click="exportExcel">
-        <template #icon><icon-download /></template>
-        导出 Excel
+      <a-button v-if="rowCount > 0" size="mini" type="primary" @click="openExport">
+        <template #icon><icon-export /></template>
+        导出
       </a-button>
     </div>
+
+    <!-- 导出弹窗:选择导出方式 / 编辑文件名 / 文件类型 CSV -->
+    <a-modal
+      v-model:visible="exportVisible"
+      title="导出查询结果"
+      :width="460"
+      :mask-closable="false"
+      ok-text="确定"
+      @before-ok="submitExport"
+    >
+      <a-form :model="exportForm" layout="vertical">
+        <a-form-item label="导出方式" required>
+          <a-radio-group v-model="exportForm.method" type="button">
+            <a-radio value="platform">
+              <icon-save /> 保存到平台
+            </a-radio>
+            <a-radio value="local">
+              <icon-download /> 下载到本地
+            </a-radio>
+          </a-radio-group>
+          <div class="uq-export__hint">
+            {{ exportForm.method === 'platform'
+              ? '生成导出任务并保存到「我的导出」,可稍后统一下载。'
+              : '创建导出任务的同时,浏览器会立即下载一份 CSV 文件。' }}
+          </div>
+        </a-form-item>
+        <a-form-item label="文件名称" required>
+          <a-input v-model="exportForm.fileName" placeholder="请输入文件名称" allow-clear>
+            <template #suffix>.csv</template>
+          </a-input>
+        </a-form-item>
+        <a-form-item label="文件类型">
+          <a-input value="CSV(逗号分隔)" disabled />
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -60,14 +92,26 @@
  * 数值列右对齐并按数值排序,文本列按字典序排序;
  * 排序状态由组件内部管理,Arco 只负责表头交互回调。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, h, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { Message } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
-import type { ExecStatus, QueryResult, ResultColumn } from '@/mock/unified-query/types'
+import type { DataSourceKey, ExecStatus, ExportMethod, QueryResult, ResultColumn } from '@/mock/unified-query/types'
+import { DATASOURCE_LABEL } from '@/mock/unified-query/database'
+import { useUqExportStore } from '@/stores-dca/unified-query/export'
 
 const props = withDefaults(
-  defineProps<{ result: QueryResult | null; loading?: boolean; status: ExecStatus }>(),
-  { loading: false }
+  defineProps<{
+    result: QueryResult | null;
+    loading?: boolean;
+    status: ExecStatus;
+    datasource?: DataSourceKey;
+  }>(),
+  { loading: false, datasource: 'doris' }
 )
+
+const router = useRouter()
+const exportStore = useUqExportStore()
 
 const columns = computed<ResultColumn[]>(() => props.result?.columns ?? [])
 const rows = computed<Record<string, string | number>[]>(() =>
@@ -125,11 +169,10 @@ function clearSort() {
 // 换了查询结果就重置排序,避免残留的排序键落到新列上
 watch(() => props.result, clearSort)
 
-/** F10:导出 CSV */
-function exportCSV() {
-  const cols = columns.value
+/** 生成 CSV 文本(含 BOM,Excel 友好) */
+function buildCsv(cols: ResultColumn[], data: Record<string, string | number>[]): string {
   const header = cols.map(c => c.title).join(',')
-  const lines = sortedRows.value.map(r =>
+  const lines = data.map(r =>
     cols.map(c => {
       const v = r[c.dataIndex] ?? ''
       const s = String(v)
@@ -137,31 +180,82 @@ function exportCSV() {
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
     }).join(',')
   )
-  const csv = '\uFEFF' + [header, ...lines].join('\n')
+  return '\uFEFF' + [header, ...lines].join('\n')
+}
+
+/** 触发浏览器下载 CSV */
+function downloadCsv(fileName: string, cols: ResultColumn[], data: Record<string, string | number>[]) {
+  const csv = buildCsv(cols, data)
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `查询结果_${new Date().toISOString().slice(0, 10)}.csv`
+  a.download = `${fileName}.csv`
   a.click()
   URL.revokeObjectURL(url)
 }
 
-/** F10:导出 Excel(HTML 表格 .xls 格式) */
-function exportExcel() {
+/* ── 导出弹窗 ── */
+const exportVisible = ref(false)
+const exportForm = reactive<{ fileName: string; method: ExportMethod }>({
+  fileName: '',
+  method: 'platform'
+})
+
+/** 默认文件名:查询结果_YYYYMMDDHHmmss */
+function defaultFileName(): string {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `查询结果_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+}
+
+function openExport() {
+  exportForm.fileName = defaultFileName()
+  exportForm.method = 'platform'
+  exportVisible.value = true
+}
+
+/** 点击确定:创建导出任务;下载到本地时额外触发浏览器下载 */
+function submitExport() {
+  const name = exportForm.fileName.trim()
+  if (!name) {
+    Message.warning('请填写文件名称')
+    return false // 阻止弹窗关闭
+  }
   const cols = columns.value
-  const header = cols.map(c => `<th>${c.title}</th>`).join('')
-  const rows = sortedRows.value.map(r =>
-    `<tr>${cols.map(c => `<td>${r[c.dataIndex] ?? ''}</td>`).join('')}</tr>`
-  ).join('')
-  const html = `<table border="1"><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table>`
-  const blob = new Blob(['\uFEFF' + html], { type: 'application/vnd.ms-excel' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `查询结果_${new Date().toISOString().slice(0, 10)}.xls`
-  a.click()
-  URL.revokeObjectURL(url)
+  const data = sortedRows.value
+  const dsLabel = DATASOURCE_LABEL[props.datasource]
+
+  const task = exportStore.createTask({
+    baseName: name,
+    datasource: dsLabel,
+    method: exportForm.method,
+    rowCount: data.length,
+    columns: cols,
+    rows: data
+  })
+
+  if (exportForm.method === 'local') {
+    downloadCsv(task.fileName, cols, data)
+  }
+
+  Message.success({
+    content: () =>
+      h('span', {}, [
+        '导出任务已创建,请到「我的导出」查看 ',
+        h(
+          'a',
+          {
+            style: 'color:rgb(var(--primary-6));cursor:pointer;margin-left:4px',
+            onClick: () => router.push({ name: 'unified-query-exports' })
+          },
+          '查看任务'
+        )
+      ]),
+    duration: 5000,
+    closable: true
+  })
+  return true
 }
 </script>
 
@@ -210,5 +304,12 @@ function exportExcel() {
   &__spacer {
     flex: 1;
   }
+}
+
+.uq-export__hint {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-3);
 }
 </style>

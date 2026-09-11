@@ -184,7 +184,7 @@
               </span>
             </template>
             <a-tab-pane key="result" title="结果">
-              <ResultTable :result="result" :loading="running" :status="status" />
+              <ResultTable :result="result" :loading="running" :status="status" :datasource="datasource" />
             </a-tab-pane>
             <a-tab-pane key="log" title="日志">
               <LogViewer :logs="logs" />

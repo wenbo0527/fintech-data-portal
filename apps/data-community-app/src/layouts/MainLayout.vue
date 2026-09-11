@@ -336,6 +336,7 @@ const explorationMenus = [
   { key: 'exploration-group-unified-query', title: '统一查询', children: [
     { key: 'exploration/unified-query/sql', title: '统一查询' },
     { key: 'exploration/unified-query/tasks', title: '任务调度' },
+    { key: 'exploration/unified-query/exports', title: '导出任务' },
   ]},
   { key: 'exploration/workflows', title: '分析工作流' },
   { key: 'exploration/indicator-dashboard', title: '业务指标看板' },
@@ -395,6 +396,7 @@ const EXPLORATION_ALWAYS_ON = new Set([
   // 统一查询;父组 key 含 -group- 由 isAllowed 自动放行
   'exploration/unified-query/sql',
   'exploration/unified-query/tasks',
+  'exploration/unified-query/exports',
 ])
 
 // 用 ref + 手动 update 替代 computed,避免每次 render 返回新 array
@@ -617,6 +619,7 @@ const NAME_BY_PATH: Record<string, string> = {
   'exploration/indicator-dashboard': 'exploration-indicator-dashboard',
   'exploration/unified-query/sql': 'unified-query-sql',
   'exploration/unified-query/tasks': 'unified-query-tasks',
+  'exploration/unified-query/exports': 'unified-query-exports',
 
   // —— 工作台 ——
   'workbench': 'workbench'

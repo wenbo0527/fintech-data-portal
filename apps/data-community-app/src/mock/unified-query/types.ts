@@ -234,6 +234,36 @@ export interface TaskExecHistory {
   errorMsg?: string
 }
 
+/** 导出方式:保存到平台 / 下载到本地 */
+export type ExportMethod = 'platform' | 'local'
+
+/** 导出任务状态:排队中 / 导出中 / 成功 / 失败 / 已过期 */
+export type ExportStatus = 'queued' | 'exporting' | 'success' | 'failed' | 'expired'
+
+/** 导出任务记录(我的导出列表页) */
+export interface ExportTask {
+  /** 任务编号,如 EXP20260910-001 */
+  id: string
+  /** 文件名(不含扩展名) */
+  fileName: string
+  /** 文件扩展名,当前固定 csv */
+  fileExt: 'csv'
+  /** 数据源展示名:Doris / Hive / Spark */
+  datasource: string
+  status: ExportStatus
+  /** 进度 0-100 */
+  progress: number
+  /** 文件大小展示串,如 "156.3 MB",进行中/失败为 "—" */
+  fileSize: string
+  /** 创建时间 */
+  createdAt: string
+  method: ExportMethod
+  /** 返回行数 */
+  rowCount: number
+  /** 结果集快照,用于「下载到本地」时重新生成 CSV */
+  data?: { columns: ResultColumn[]; rows: Record<string, string | number>[] }
+}
+
 /** SQL 执行历史记录(F21) */
 export interface QueryHistory {
   id: string

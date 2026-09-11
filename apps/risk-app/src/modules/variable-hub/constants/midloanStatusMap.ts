@@ -429,11 +429,16 @@ export const mainActionsByStatus = (status: string, role?: string): AllowedActio
  * - core：核心字段（特征英文名/中文名/字段类型/加工逻辑/默认值/接口号等）
  *        上线后会影响特征中心实际调用，必须锁定
  * - supplementary：补充字段（数据底表名/数仓任务ID/OA单号/验收人等）
- *        仅在 developing_oa / dw_online / dw_online_failed 阶段可补充
+ *        自 developing_oa（离线开发中）起的离线阶段可补充/修改
  * - meta：元数据（描述/标签/可见性等）
  *        任何阶段都可编辑
+ * - tag：治理标签字段（黑/白/灰名单类型）
+ *        任何阶段都可编辑，含已上线/已下线/已归档——名单标签只影响业务侧使用口径，
+ *        不改变特征加工逻辑与投产调用，因此全生命周期开放修改
+ *
+ * 注意：编辑「入口」对所有状态开放（见 canEdit），锁定发生在「字段级」。
  */
-export type FieldCategory = 'core' | 'supplementary' | 'meta'
+export type FieldCategory = 'core' | 'supplementary' | 'meta' | 'tag'
 
 export interface FieldEditPolicy {
   /** 字段名（驼峰命名）*/
@@ -473,7 +478,20 @@ export const VARIABLE_FIELD_POLICIES: FieldEditPolicy[] = [
   { field: 'variableTypeTags', label: '特征类型标签', category: 'meta' },
   { field: 'description', label: '描述', category: 'meta' },
   { field: 'visibility', label: '可见性', category: 'meta' },
-  { field: 'remark', label: '备注', category: 'meta' }
+  { field: 'remark', label: '备注', category: 'meta' },
+  // 治理标签（黑/白/灰名单）：全生命周期可改
+  { field: 'listType', label: '名单类型（黑/白/灰）', category: 'tag' }
+]
+
+/** 任意状态都可修改的治理标签字段（含已上线 / 已下线 / 已归档）*/
+export const TAG_EDITABLE_FIELDS: string[] = VARIABLE_FIELD_POLICIES.filter(
+  p => p.category === 'tag'
+).map(p => p.field)
+
+/** 离线阶段可补充协作信息的状态（含离线开发中 developing_oa，可修改验收人）*/
+const SUPPLEMENTARY_EDITABLE_STATUSES = [
+  'developing_oa', 'dw_online', 'dw_online_failed',
+  'business_acceptance', 'business_verified', 'admin_confirmed'
 ]
 
 /**
@@ -483,16 +501,19 @@ export const VARIABLE_FIELD_POLICIES: FieldEditPolicy[] = [
  * @returns true 可编辑；false 锁定
  */
 export const canEditField = (status: string, field: string): boolean => {
-  // 已上线 / 已下线 / 已归档：所有字段锁定
+  // 治理标签（黑/白/灰名单）：任何状态都可修改，先于投产锁定判断
+  if (TAG_EDITABLE_FIELDS.includes(field)) return true
+
+  // 已上线 / 已下线 / 已归档：除治理标签外的字段锁定
   if (status === 'online' || status === 'offline' || status === 'archived') return false
 
   // 元数据：所有状态可编辑
   const policy = VARIABLE_FIELD_POLICIES.find(p => p.field === field)
   if (!policy || policy.category === 'meta') return true
 
-  // 补充字段：开发/数仓/验证阶段可编辑
+  // 补充字段（含验收人）：离线开发中起的开发/数仓/验证阶段可编辑
   if (policy.category === 'supplementary') {
-    return ['developing_oa', 'dw_online', 'dw_online_failed', 'business_acceptance', 'business_verified', 'admin_confirmed'].includes(status)
+    return SUPPLEMENTARY_EDITABLE_STATUSES.includes(status)
   }
 
   // 核心字段：需求提出/已注册阶段可编辑
@@ -516,10 +537,12 @@ export const getLockedFields = (status: string): FieldEditPolicy[] => {
 /**
  * 判断当前状态下，整个特征是否允许编辑入口
  * （用于编辑按钮的 disabled 控制）
+ *
+ * 用户反馈：所有变量都要开放编辑功能——已上线 / 已下线 / 已归档同样进入编辑抽屉，
+ * 只是抽屉内按字段级策略（canEditField）灰显锁定：
+ * 治理标签（黑/白/灰名单）与元数据始终可改，核心字段投产后锁定。
  */
-export const canEdit = (status: string): boolean => {
-  return getEditableFields(status).length > 0
-}
+export const canEdit = (_status: string): boolean => true
 
 /**
  * 编辑保护说明（用于 UI 提示）
@@ -527,35 +550,38 @@ export const canEdit = (status: string): boolean => {
 export const getEditLockReason = (status: string): string => {
   switch (status) {
     case 'online':
-      return '已上线：核心信息已投产调用，修改将影响实际生产调用，请先申请下线'
+      return '已上线：投产调用字段（英文名/类型/加工逻辑/默认值等）已锁定；名单标签（黑/白/灰）与描述类元数据仍可修改'
     case 'offline':
-      return '已下线：归档状态，禁止修改'
+      return '已下线：核心与数仓补充字段已锁定；可调整名单标签（黑/白/灰）与描述类元数据'
     case 'archived':
-      return '已归档：特征已归档，不再进入主流程，禁止修改'
+      return '已归档：主流程字段已锁定；仅名单标签（黑/白/灰）与描述类元数据可维护'
     case 'param_preparing':
     case 'syncing_internal':
     case 'syncing_variable':
-      return '流程进行中：处于参数准备/同步状态，暂不开放编辑'
+      return '流程进行中：处于参数准备/同步状态，流程字段暂不开放，可维护名单标签与描述类元数据'
     case 'internal_sync_failed':
     case 'variable_sync_failed':
     case 'dw_online_failed':
     case 'offline_failed':
-      return '异常态：暂不开放编辑，请先处理异常（重试）'
+      return '异常态：请先处理异常（重试），流程字段暂不开放，可维护名单标签与描述类元数据'
     case 'requirement_proposal':
       return '需求提出：业务发起需求阶段，核心字段可编辑'
     case 'developing_oa':
+      return '离线开发中：可补充数据底表、OA单号等运维字段，并修改验收人；名单标签随时可改'
     case 'dw_online':
-      return '开发/数仓阶段：仅可补充数据底表、OA单号等运维字段'
+      return '数仓已上线：仅可补充数据底表、OA单号等运维字段与名单标签'
     case 'business_acceptance':
-      return '待业务验证：数仓已上线，业务验证人需在台账内确认'
+      return '待业务验证：核心字段已锁定，可修改验收人等协作字段与名单标签'
     case 'business_verified':
-      return '业务已验证：业务验证通过，等待管理员确认'
+      return '业务已验证：核心字段已锁定，可修改验收人等协作字段与名单标签'
     case 'admin_confirmed':
-      return '管理员已确认：管理员确认通过，可提投产单'
+      return '管理员已确认：核心字段已锁定，可修改验收人等协作字段与名单标签'
+    case 'oa_production_reviewing':
+      return 'OA 投产审批中：流程字段暂不开放，可维护名单标签与描述类元数据'
     case 'registered':
       return '已注册：所有字段均可编辑'
     default:
-      return '未知状态'
+      return '可编辑：核心字段按状态锁定，名单标签（黑/白/灰）与描述类元数据始终可改'
   }
 }
 
@@ -628,13 +654,9 @@ export const tableActionsByStatus = (
     topActions.push({ key: 'submit_online', label: '提交上线', type: 'primary' })
   }
 
-  // 编辑（受保护）
-  const editable = (() => {
-    if (status === 'online' || status === 'offline' || status === 'archived') return false
-    if (['registered', 'requirement_proposal'].includes(status)) return true
-    return false
-  })()
-  if (editable) {
+  // 编辑：所有状态都开放入口（用户反馈：所有变量都要开放编辑功能）
+  // 具体字段是否可改由 canEditField 在抽屉内逐个灰显：投产后核心字段锁定，名单标签/元数据始终可改
+  if (canEdit(status)) {
     topActions.push({ key: 'edit', label: '编辑', type: 'primary' })
   }
 

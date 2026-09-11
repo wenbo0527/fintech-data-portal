@@ -261,6 +261,8 @@ function buildAssetFromPayload(
     dwTaskId: payload.dwTaskId,
     // 补充协作字段到顶层（兼容详情页读取）
     acceptor: payload.acceptor || creator,
+    // 名单标签（黑/白/灰）落到顶层，台账列表列直接读取
+    listType: payload.listType || 'none',
     // 来源与时效元信息
     upstreamTable: payload.sourceTableAfter
   }

@@ -76,6 +76,10 @@
             <div class="info-value">{{ record.featureCnName || '—' }}</div>
           </div>
           <div class="info-item">
+            <div class="info-label">特征英文名</div>
+            <div class="info-value">{{ record.featureEnName || '—' }}</div>
+          </div>
+          <div class="info-item">
             <div class="info-label">特征类型</div>
             <div class="info-value">{{ categoryLabel }}</div>
           </div>

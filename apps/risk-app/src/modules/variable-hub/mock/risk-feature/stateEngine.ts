@@ -856,15 +856,10 @@ export interface SupplementDataTablePayload {
   remark?: string
   /** 技术关联：数据源名称 */
   dataSourceName?: string
-  /** 技术关联：接口号（阶段4上线后回填，也可提前手工登记）*/
-  apiNo?: string
-  /** 技术关联：响应字段（外数品类）*/
-  responseField?: string
   /** HIVE 表与字段（标准化后表名不在此登记，恒等于上方数据底表名称）*/
   hive?: {
-    /** 标准化前原始上游表，格式「库.表」，库名可省 */
-    sourceTableName?: string
-    sourceFieldName?: string
+    /** 标准化前原始上游「库.表.字段」合并登记，库名可省 */
+    sourceRef?: string
     isPartitioned?: boolean
     partitionFields?: string[]
     updateFrequency?: string
@@ -878,6 +873,21 @@ function splitQualified(raw?: string): [string, string] {
   const s = clean(raw)
   if (!s || !s.includes('.')) return ['', s]
   return [s.split('.')[0], s.split(/\.(.+)/)[1]]
+}
+
+/**
+ * 把合并登记的「库.表.字段」从右往左拆成 [库, 表, 字段]
+ * 约定：段数 ≥3 → 前部为库名；2 段 → 库名省略（表.字段）；1 段 → 只有表名、字段留空
+ */
+function splitSourceRef(raw?: string): [string, string, string] {
+  const parts = clean(raw)
+    .split('.')
+    .map((x) => x.trim())
+    .filter(Boolean)
+  if (parts.length === 0) return ['', '', '']
+  if (parts.length === 1) return ['', parts[0], '']
+  if (parts.length === 2) return ['', parts[0], parts[1]]
+  return [parts.slice(0, -2).join('.'), parts[parts.length - 2], parts[parts.length - 1]]
 }
 
 export function supplementDataTable(
@@ -898,16 +908,16 @@ export function supplementDataTable(
   v.syncFailedReason = ''
 
   // ============ 技术关联信息 ============
+  // 接口号 / 响应字段不在此登记：接口号由阶段4 内数同步生成，响应字段属外数品类
   if (clean(p.dataSourceName)) v.dataSourceName = clean(p.dataSourceName)
-  if (p.apiNo !== undefined) v.apiNo = clean(p.apiNo)
-  if (p.responseField !== undefined) v.responseField = clean(p.responseField)
 
   // ============ HIVE 表与字段 ============
   const h = p.hive
   if (h) {
     // 标准化后 HIVE 表 = 数据底表名称（单一事实源），按「库.表」拆库名供 API 注册使用
     const [dbName, stdTable] = splitQualified(v.dataTableName)
-    const [srcDb, srcTable] = splitQualified(h.sourceTableName)
+    // 标准化前：原始上游「库.表.字段」合并登记，落库时拆回三段
+    const [srcDb, srcTable, srcField] = splitSourceRef(h.sourceRef)
 
     const partitionFields = (h.partitionFields || []).map(clean).filter(Boolean)
     const isPartitioned = h.isPartitioned !== false && partitionFields.length > 0
@@ -916,7 +926,7 @@ export function supplementDataTable(
       ...(v.hiveInfo || {}),
       sourceDbName: srcDb,
       sourceTableName: srcTable,
-      sourceFieldName: clean(h.sourceFieldName),
+      sourceFieldName: srcField,
       databaseName: dbName,
       tableName: stdTable,
       isPartitioned,
@@ -986,6 +996,8 @@ export function updateFeatureBasicInfo(
     remark: payload.remark ?? v.profile?.remark,
     excelAttachment: payload.excelAttachment ?? v.profile?.excelAttachment
   }
+  // 名单标签（黑/白/灰）同步到顶层：台账列表列与筛选直接读 v.listType，未登记按「空」
+  v.listType = v.profile.listType || 'none'
   v.updatedAt = now
   v.status = v.status || curStatus
   return { ok: true }

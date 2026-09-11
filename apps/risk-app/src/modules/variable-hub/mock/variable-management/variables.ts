@@ -88,6 +88,8 @@ export interface VariableAssetMock {
   // ============ 验收 / 驳回 / 引用 状态机专属字段 ============
   acceptor?: string
   developer?: string                 // 数仓开发人员
+  /** 名单类型标签（none/white/black/gray），全生命周期可改 */
+  listType?: string
   adminManager?: string             // 管理人
   verifiedAt?: string                 // 验收时间（v2.0 历史，v2.1 改为 businessVerifiedAt）
   rejectReason?: string
@@ -239,6 +241,8 @@ export const variableAssets: VariableAssetMock[] = [
   // ============ 贷中行为特征（MIDLOAN-FEAT-NNNN）· 11 状态机 demo 数据 ============
   {
     id: 'MIDLOAN-FEAT-0001',
+    /** 名单标签（黑/白/灰）：台账内任何状态都可调整 */
+    listType: 'black',
     name: '近30日大额交易次数',
     code: 'MIDLOAN_BIGTXN_CNT_30D',
     type: 'numerical',
@@ -435,6 +439,7 @@ export const variableAssets: VariableAssetMock[] = [
   },
   {
     id: 'MIDLOAN-FEAT-0004',
+    listType: 'white',
     name: '支用间隔天数均值',
     code: 'MIDLOAN_USAGE_INTERVAL_D',
     type: 'numerical',
@@ -628,6 +633,7 @@ export const variableAssets: VariableAssetMock[] = [
   // ============ 补齐：developing_oa（开发中 OA 单）============
   {
     id: 'MIDLOAN-FEAT-0005',
+    listType: 'white',
     name: '近30日夜间活跃时长',
     code: 'MIDLOAN_NIGHT_ACTIVE_MINS_30D',
     type: 'numerical',
@@ -981,6 +987,7 @@ export const variableAssets: VariableAssetMock[] = [
   // ============ 补齐：offline（已下线）============
   {
     id: 'MIDLOAN-FEAT-0007',
+    listType: 'gray',
     name: '旧版近30日大额交易次数',
     code: 'MIDLOAN_BIGTXN_CNT_30D_V1',
     type: 'numerical',

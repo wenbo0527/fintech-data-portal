@@ -485,6 +485,7 @@ import {
   SOURCE_TYPE_OPTIONS
 } from '@/modules/variable-hub/mock/variable-management/variable-draft-store'
 import { UserContext } from '@/modules/variable-hub/mock/risk-feature/permissions'
+import { LIST_TYPES } from '@/modules/variable-hub/constants/riskCategoryMap'
 
 interface Props {
   visible: boolean
@@ -551,13 +552,8 @@ const l2Options = computed(() => {
   return (L1_L2_CATEGORY_MAP[form.l1Category] || []).map((v) => ({ value: v, label: v }))
 })
 
-/** 名单类型 */
-const LIST_TYPE_OPTIONS = [
-  { value: '白名单', label: '白名单' },
-  { value: '黑名单', label: '黑名单' },
-  { value: '灰名单', label: '灰名单' },
-  { value: '其他', label: '其他' }
-]
+/** 名单类型（与注册表单 / 台账列表共用码值字典：none / white / black / gray）*/
+const LIST_TYPE_OPTIONS = LIST_TYPES
 
 /** 开发人员（数仓团队）*/
 const DEVELOPER_OPTIONS = [
@@ -632,6 +628,9 @@ const DATA_FRESHNESS_LABELS: Record<string, string> = {
 
 /** 需求清单字段定义（key 映射到特征数据字段）*/
 const REQUIREMENT_FIELDS = [
+  // 协作信息前置：开发人 / 验收人员取自 B1 协作信息（v.developer / v.acceptor）
+  { key: 'developer', label: '开发人', defaultChecked: true },
+  { key: 'acceptor', label: '验收人员', defaultChecked: true },
   { key: 'l1Category', label: '一级分类', defaultChecked: true },
   { key: 'l2Category', label: '二级分类', defaultChecked: true },
   { key: 'code', label: '特征名称', defaultChecked: true },
@@ -647,6 +646,11 @@ const REQUIREMENT_FIELDS = [
 /** 用户当前选中的字段 key 列表 */
 const selectedFieldKeys = ref<string[]>(REQUIREMENT_FIELDS.filter(f => f.defaultChecked).map(f => f.key))
 
+/** 列顺序统一按 REQUIREMENT_FIELDS 定义顺序，避免勾选先后导致列序跳动 */
+const orderedFieldKeys = computed(() =>
+  REQUIREMENT_FIELDS.filter((f) => selectedFieldKeys.value.includes(f.key)).map((f) => f.key)
+)
+
 /** 字段值映射：根据 key 从特征记录中取值 */
 function getFieldValue(r: any, key: string): string {
   if (key === 'featureCnName') return r.featureCnName || r.name || '-'
@@ -656,15 +660,15 @@ function getFieldValue(r: any, key: string): string {
   return r[key] || '-'
 }
 
-/** 表格预览用的列配置（基于 selectedFieldKeys）*/
+/** 表格预览用的列配置（基于勾选字段，顺序按字段定义）*/
 const previewColumns = computed(() => {
   return [
-    ...selectedFieldKeys.value.map(key => {
+    ...orderedFieldKeys.value.map(key => {
       const def = REQUIREMENT_FIELDS.find(f => f.key === key)
       return {
         title: def?.label || key,
         dataIndex: key,
-        width: key === 'processingLogic' ? 220 : key === 'description' ? 180 : 120
+        width: key === 'processingLogic' ? 220 : key === 'description' ? 180 : key === 'developer' || key === 'acceptor' ? 100 : 120
       }
     })
   ]
@@ -674,7 +678,7 @@ const previewColumns = computed(() => {
 const previewRowData = computed(() => {
   return (props.batchRecords || []).map((r, idx) => {
     const row: any = { __idx: idx + 1 }
-    selectedFieldKeys.value.forEach(key => {
+    orderedFieldKeys.value.forEach(key => {
       row[key] = getFieldValue(r, key)
     })
     return row
@@ -685,13 +689,15 @@ const previewRowData = computed(() => {
 function regenerateBatchRequirementFile() {
   if (!isBatchMode.value) return
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-  const header = selectedFieldKeys.value.map(key => REQUIREMENT_FIELDS.find(f => f.key === key)?.label || key)
-  const rows = (props.batchRecords || []).map(r => selectedFieldKeys.value.map(key => getFieldValue(r, key)))
+  const keys = orderedFieldKeys.value
+  const header = keys.map(key => REQUIREMENT_FIELDS.find(f => f.key === key)?.label || key)
+  const rows = (props.batchRecords || []).map(r => keys.map(key => getFieldValue(r, key)))
 
   const ws = XLSX.utils.aoa_to_sheet([header, ...rows])
-  ws['!cols'] = selectedFieldKeys.value.map(key => {
+  ws['!cols'] = keys.map(key => {
     if (key === 'processingLogic') return { wch: 50 }
     if (key === 'description') return { wch: 30 }
+    if (key === 'developer' || key === 'acceptor') return { wch: 12 }
     return { wch: 18 }
   })
   const wb = XLSX.utils.book_new()

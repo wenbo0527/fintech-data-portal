@@ -537,6 +537,14 @@
             <span>{{ record.l2Category || '—' }}</span>
           </template>
 
+          <!-- 名单标签（黑/白/灰）：任何状态都可在编辑抽屉内调整 -->
+          <template #listTypeCell="{ record }">
+            <a-tag v-if="listTypeLabel(record.listType)" :color="listTypeColor(record.listType)" size="small">
+              {{ listTypeLabel(record.listType) }}
+            </a-tag>
+            <span v-else>—</span>
+          </template>
+
           <!-- 效果视角列渲染 -->
           <template #ivCell="{ record }">
             <span class="effect-number">{{ record.effectMetrics?.iv?.toFixed(2) ?? '—' }}</span>
@@ -584,14 +592,11 @@
               <template v-for="action in getTableTopActions(record)" :key="action.key">
                 <a-tooltip
                   v-if="action.key === 'edit'"
-                  :content="canEdit(record.midloanStatus || record.status)
-                    ? '编辑特征信息'
-                    : `编辑受限：${getEditLockReason(record.midloanStatus || record.status)}`"
+                  :content="`编辑 · ${getEditLockReason(record.midloanStatus || record.status)}`"
                 >
                   <a-button
                     type="text"
                     size="small"
-                    :disabled="!canEdit(record.midloanStatus || record.status)"
                     @click="handleTableAction(record, action)"
                   >
                     {{ action.label }}
@@ -801,8 +806,8 @@ import DmtPageHeader from '@/modules/variable-hub/components/PageHeader.vue'
 import DmtStatGroup from '@/modules/variable-hub/components/StatGroup.vue'
 import { ExploreStore } from '@/modules/variable-hub/mock/explore/explore-store'
 import { RISK_CATEGORY_OPTIONS, MIDLOAN_L1_CATEGORIES } from '@/modules/variable-hub/constants/riskCategoryMap'
-import { midloanStatusLabel, midloanStatusColor, allowedActionsByStatus, canEdit, getEditLockReason, tableActionsByStatus, OFFLINE_ANALYSIS_FILTER_OPTIONS, API_CALL_FILTER_OPTIONS, getStatusCategory, getOfflineAnalysisDisplay, getApiCallDisplay } from '@/modules/variable-hub/constants/midloanStatusMap'
-import { riskCategoryLabel, riskCategoryColor } from '@/modules/variable-hub/constants/riskCategoryMap'
+import { midloanStatusLabel, midloanStatusColor, allowedActionsByStatus, getEditLockReason, tableActionsByStatus, OFFLINE_ANALYSIS_FILTER_OPTIONS, API_CALL_FILTER_OPTIONS, getStatusCategory, getOfflineAnalysisDisplay, getApiCallDisplay } from '@/modules/variable-hub/constants/midloanStatusMap'
+import { riskCategoryLabel, riskCategoryColor, listTypeLabel, listTypeColor } from '@/modules/variable-hub/constants/riskCategoryMap'
 import DerivationStore from '@/modules/variable-hub/mock/risk-feature/derivations'
 import DerivationCreateModal from '@/modules/variable-hub/components/risk-feature/DerivationCreateModal.vue'
 import BulkImportDerivationModal from '@/modules/variable-hub/components/risk-feature/BulkImportDerivationModal.vue'
@@ -1032,6 +1037,7 @@ const columnsAll = [
   { title: 'API调用状态', dataIndex: 'apiCallStatus', slotName: 'apiCallStatusCell', width: 140 },
   { title: '一级分类', dataIndex: 'l1Category', slotName: 'l1CategoryCell', width: 110 },
   { title: '二级分类', dataIndex: 'l2Category', slotName: 'l2CategoryCell', width: 130 },
+  { title: '名单类型', dataIndex: 'listType', slotName: 'listTypeCell', width: 100 },
   { title: '创建人', dataIndex: 'creator', width: 120 },
   { title: '创建时间', dataIndex: 'createdAt', width: 180 },
   { title: '操作', dataIndex: 'actions', slotName: 'actions', width: 180, fixed: 'right' }

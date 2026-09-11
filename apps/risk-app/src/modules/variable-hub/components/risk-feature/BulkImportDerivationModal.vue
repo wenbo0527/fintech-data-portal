@@ -2,8 +2,9 @@
   批量导入需求
   - 填写需求名称后上传文件，系统自动解析并展示文档内容
   - 不限定模板：解析 Excel/CSV 中匹配"特征英文名""中文名"的列
-  - 支持手动添加需求行
-  - 挂载统一附件（所有需求共享同一附件）
+  - 仅保留一个文件上传入口：上传的需求文档同时作为附件挂载到本批次所有需求
+  - 支持手动添加 / 删除需求行
+  - 解析失败或无有效列时回退 mock 示例数据，保证 Demo 可展示解析结果
 -->
 <template>
   <a-modal
@@ -150,7 +151,7 @@
         <span>系统自动解析"特征英文名"和"中文名"列，非标准模板会模糊匹配列名</span>
       </div>
 
-      <!-- 需求名称 + 提出人 -->
+      <!-- 需求名称 + 提出人 + 处理人 -->
       <div class="form-row">
         <div class="form-item">
           <div class="label">需求名称 <span class="req">*</span></div>
@@ -160,7 +161,7 @@
             class="form-input"
           />
         </div>
-        <div class="form-item" style="flex: 0 0 200px">
+        <div class="form-item" style="flex: 0 0 180px">
           <div class="label">提出人</div>
           <a-input
             :model-value="proposer + '（当前用户）'"
@@ -168,16 +169,21 @@
             class="form-input readonly"
           />
         </div>
+        <div class="form-item" style="flex: 0 0 180px">
+          <div class="label">处理人</div>
+          <a-select v-model="handler" :options="HANDLER_OPTIONS" placeholder="请选择处理人" class="form-input" />
+        </div>
       </div>
 
-      <!-- 下载模板 -->
+      <!-- 下载模板 / 示例数据 -->
       <div class="template-row">
         <icon-file class="t-icon" />
         <span class="t-text">标准模板：需求导入模板.xlsx（含字段说明+示例数据）</span>
+        <a class="t-link" @click="loadMockRows">载入示例数据</a>
         <a class="t-link" @click="downloadTemplate">下载模板 ↓</a>
       </div>
 
-      <!-- 上传区 / 已上传文件 -->
+      <!-- 上传区 / 已上传文件（唯一上传入口，文件同时作为需求附件挂载） -->
       <div
         v-if="!uploadedFile"
         class="upload-zone"
@@ -188,7 +194,7 @@
           将文件拖拽到此处，或
           <a class="upload-link">点击上传</a>
         </div>
-        <div class="upload-hint">支持 .xlsx / .xls / .csv 格式，单文件 ≤ 10MB</div>
+        <div class="upload-hint">支持 .xlsx / .xls / .csv 格式，单文件 ≤ 10MB；该文档会作为附件挂载到本次导入的所有需求</div>
         <input
           ref="fileInputRef"
           type="file"
@@ -200,41 +206,17 @@
       <div v-else class="file-item">
         <icon-check-circle class="file-icon" />
         <span class="file-name">{{ uploadedFile.name }}</span>
-        <span class="file-meta">{{ uploadedFile.rowCount }} 条数据 · {{ formatSize(uploadedFile.size) }}</span>
+        <span class="file-meta">{{ uploadedFile.rowCount }} 条数据 · {{ formatSize(uploadedFile.size) }} · 已挂载为需求附件</span>
         <span class="file-remove" @click="removeFile">删除</span>
-      </div>
-
-      <!-- 附件挂载 -->
-      <div class="attachment-section">
-        <div class="section-label">
-          统一附件
-          <span class="opt">（非必填，挂载到所有导入的需求）</span>
-        </div>
-        <a-upload
-          v-if="!sharedAttachment"
-          :custom-request="handleAttachmentUpload"
-          :show-file-list="false"
-          :before-upload="beforeAttachmentUpload"
-          accept=".xlsx,.xls,.csv,.pdf,.doc,.docx,.zip"
-        >
-          <div class="attach-zone">
-            <icon-link />
-            <span>点击上传统一附件（如评估报告等），将挂载到本次导入的所有需求</span>
-          </div>
-        </a-upload>
-        <div v-else class="file-item" style="margin-bottom: 0">
-          <icon-file class="file-icon" style="color: #165dff" />
-          <span class="file-name">{{ sharedAttachment.name }}</span>
-          <span class="file-meta">{{ formatSize(sharedAttachment.size) }}</span>
-          <span class="file-remove" @click="sharedAttachment = null">移除</span>
-        </div>
-        <div class="attach-hint">支持 .xlsx / .pdf / .docx 格式，单个文件 ≤ 10MB</div>
       </div>
 
       <!-- 解析预览 -->
       <div v-if="rows.length > 0" class="preview-section">
         <div class="preview-header">
-          <span class="preview-title">解析预览</span>
+          <span class="preview-title">
+            解析预览（{{ rows.length }} 条）
+            <span v-if="parsedFromMock" class="mock-tag">示例数据</span>
+          </span>
           <span class="preview-stats">
             <span class="ok">✓ {{ successCount }} 条解析成功</span>
             <span class="sep">|</span>
@@ -249,14 +231,15 @@
                 <th>特征英文名</th>
                 <th>中文名</th>
                 <th>业务场景</th>
-                <th>状态</th>
+                <th style="width: 90px">状态</th>
+                <th style="width: 56px">操作</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="(row, idx) in rows" :key="idx">
                 <td>{{ idx + 1 }}</td>
                 <td>
-                  <a-input v-model="row.variableEnName" placeholder="特征英文名" size="mini" style="width: 100%" />
+                  <a-input v-model="row.variableEnName" placeholder="特征英文名" size="mini" style="width: 100%" @input="refreshRowStatus" />
                 </td>
                 <td>
                   <a-input v-model="row.variableCnName" placeholder="中文名" size="mini" style="width: 100%" />
@@ -265,7 +248,10 @@
                   {{ row.businessScene || '—' }}
                 </td>
                 <td :class="row.status === 'ok' ? 'cell-ok' : 'cell-warn'">
-                  {{ row.status === 'ok' ? '✓ 解析成功' : '⚠ 业务场景需确认' }}
+                  {{ row.status === 'ok' ? '✓ 解析成功' : '⚠ 需确认' }}
+                </td>
+                <td>
+                  <a-button type="text" size="mini" status="danger" @click="removeRow(idx)">删除</a-button>
                 </td>
               </tr>
             </tbody>
@@ -313,8 +299,7 @@ import {
   IconUpload,
   IconFile,
   IconCheckCircle,
-  IconPlus,
-  IconLink
+  IconPlus
 } from '@arco-design/web-vue/es/icon'
 import * as XLSX from 'xlsx'
 import { UserContext } from '@/modules/variable-hub/mock/risk-feature/permissions'
@@ -342,6 +327,15 @@ const isDemandMode = computed(() => props.source === 'demand')
 // ============ 表单（standalone 模式） ============
 const requirementName = ref('')
 const proposer = UserContext.get().name || '张三'
+/** 处理人候选列表（默认吴培培） */
+const HANDLER_OPTIONS = [
+  { value: '吴培培', label: '吴培培（风险数据）' },
+  { value: '小李', label: '小李（风险数据成员）' },
+  { value: '小张', label: '小张（风险数据管理员）' },
+  { value: '王数仓', label: '王数仓（数仓团队）' }
+]
+const DEFAULT_HANDLER = '吴培培'
+const handler = ref(DEFAULT_HANDLER)
 const submitting = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
@@ -419,11 +413,17 @@ function submitDemandMode() {
   emit('ok', payloads)
 }
 
-// ============ 上传文件信息 ============
-const uploadedFile = ref<{ name: string; size: number; rowCount: number } | null>(null)
+// ============ 上传文件信息（唯一上传入口，文件同时作为需求附件） ============
+const uploadedFile = ref<{
+  name: string
+  size: number
+  rowCount: number
+  uploadedAt: string
+} | null>(null)
 
-// ============ 统一附件 ============
-const sharedAttachment = ref<{ name: string; size: number; uploadedAt: string } | null>(null)
+/** 当前解析结果是否来自 mock 示例数据 */
+const parsedFromMock = ref(false)
+
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 
 function formatSize(bytes: number) {
@@ -433,23 +433,8 @@ function formatSize(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`
 }
 
-function beforeAttachmentUpload(file: any) {
-  if (file.size > MAX_FILE_SIZE) {
-    Message.error('文件超过 10MB 上限')
-    return false
-  }
-  return true
-}
-
-function handleAttachmentUpload(option: any) {
-  const file = option.fileItem?.file
-  if (!file) return
-  sharedAttachment.value = {
-    name: file.name,
-    size: file.size,
-    uploadedAt: new Date().toISOString().slice(0, 19).replace('T', ' ')
-  }
-  option.onSuccess?.(file)
+function nowText() {
+  return new Date().toISOString().slice(0, 19).replace('T', ' ')
 }
 
 // ============ 数据行 ============
@@ -494,12 +479,105 @@ const rows = reactive<DataRow[]>([])
 const successCount = computed(() => rows.filter(r => r.status === 'ok').length)
 const warnCount = computed(() => rows.filter(r => r.status === 'warn').length)
 
+/** 行状态：英文名已填 + 业务场景属于贷中 → 解析成功，否则需确认 */
+function computeRowStatus(row: DataRow): 'ok' | 'warn' {
+  return row.variableEnName.trim() && row.businessScene.includes('贷中') ? 'ok' : 'warn'
+}
+
+function refreshRowStatus() {
+  rows.forEach(r => { r.status = computeRowStatus(r) })
+  if (uploadedFile.value) uploadedFile.value.rowCount = rows.length
+}
+
 function addRow() {
   rows.push(createEmptyRow())
+  refreshRowStatus()
 }
 
 function removeRow(idx: number) {
   rows.splice(idx, 1)
+  refreshRowStatus()
+}
+
+// ============ mock 示例数据（Demo 环境用于展示解析结果） ============
+const MOCK_PARSED_ROWS: Omit<DataRow, 'status'>[] = [
+  {
+    variableEnName: 'MIDLOAN_BIGTXN_CNT_30D',
+    variableCnName: '近30天大额交易笔数',
+    fieldType: 'Integer',
+    variableMeaning: '客户近30天内单笔金额≥5万元的交易笔数',
+    processingLogic: 'sum(txn_cnt) where amount>=50000 and days<=30',
+    dimension: '用户维度',
+    dataFreshness: '离线T-1',
+    defaultValue: '0',
+    proposer: '李四',
+    backtrackPeriod: '近1年',
+    expectedLaunchDate: '2026-06-15',
+    expectedEffect: '提升贷中预警覆盖率',
+    businessScene: '贷中行为'
+  },
+  {
+    variableEnName: 'MIDLOAN_REPAY_OVERDAY_CNT_90D',
+    variableCnName: '近90天还款逾期次数',
+    fieldType: 'Integer',
+    variableMeaning: '客户近90天发生还款逾期的次数',
+    processingLogic: 'count(overdue_flag=1) where days<=90',
+    dimension: '借据维度',
+    dataFreshness: '离线T-1',
+    defaultValue: '0',
+    proposer: '李四',
+    backtrackPeriod: '近2年',
+    expectedLaunchDate: '2026-06-15',
+    expectedEffect: '支撑早期逾期模型',
+    businessScene: '贷中行为'
+  },
+  {
+    variableEnName: 'PRELOAN_CREDIT_UTIL_AVG_6M',
+    variableCnName: '近6个月额度使用率均值',
+    fieldType: 'Double',
+    variableMeaning: '近6个月额度使用率的月均值',
+    processingLogic: 'avg(used_limit / total_limit) group by month',
+    dimension: '客户维度',
+    dataFreshness: '离线T-1',
+    defaultValue: '0',
+    proposer: '王五',
+    backtrackPeriod: '近1年',
+    expectedLaunchDate: '2026-06-20',
+    expectedEffect: '用于额度调降策略',
+    businessScene: '贷前准入'
+  },
+  {
+    variableEnName: 'MIDLOAN_DEVICE_CHANGE_CNT_7D',
+    variableCnName: '近7天登录设备变更次数',
+    fieldType: 'Integer',
+    variableMeaning: '客户近7天登录设备指纹发生变化的次数',
+    processingLogic: 'count(distinct device_id) - 1 where days<=7',
+    dimension: '用户维度',
+    dataFreshness: '准实时',
+    defaultValue: '0',
+    proposer: '赵六',
+    backtrackPeriod: '近6个月',
+    expectedLaunchDate: '2026-06-25',
+    expectedEffect: '反欺诈规则输入',
+    businessScene: '贷中行为'
+  }
+]
+
+/** 将 mock 行载入解析预览 */
+function loadMockRows() {
+  rows.splice(0, rows.length, ...MOCK_PARSED_ROWS.map(r => ({ ...r, status: 'warn' as const })))
+  refreshRowStatus()
+  parsedFromMock.value = true
+  uploadedFile.value = {
+    name: '需求导入示例.xlsx',
+    size: 18432,
+    rowCount: rows.length,
+    uploadedAt: nowText()
+  }
+  if (!requirementName.value.trim()) {
+    requirementName.value = '贷中行为特征批量注册（示例）'
+  }
+  Message.success(`已载入示例数据 ${rows.length} 条（Demo 环境 mock 解析结果）`)
 }
 
 // ============ 模板下载（mock） ============
@@ -517,11 +595,16 @@ function handleFileInputChange(e: Event) {
   const file = target.files?.[0]
   if (!file) return
   target.value = ''
+  if (file.size > MAX_FILE_SIZE) {
+    Message.error('文件超过 10MB 上限')
+    return
+  }
   parseFile(file)
 }
 
 function resetFile() {
   uploadedFile.value = null
+  parsedFromMock.value = false
   rows.splice(0, rows.length)
 }
 
@@ -529,15 +612,34 @@ function removeFile() {
   resetFile()
 }
 
+/** 解析异常时回退 mock 示例数据，保证 Demo 始终能看到解析结果 */
+function fallbackToMock(file: File, reason: string) {
+  rows.splice(0, rows.length, ...MOCK_PARSED_ROWS.map(r => ({ ...r, status: 'warn' as const })))
+  refreshRowStatus()
+  parsedFromMock.value = true
+  uploadedFile.value = {
+    name: file.name,
+    size: file.size,
+    rowCount: rows.length,
+    uploadedAt: nowText()
+  }
+  Message.warning(`${reason}，Demo 环境已用示例数据展示解析结果`)
+}
+
 function parseFile(file: File) {
   const isCSV = /\.csv$/i.test(file.name)
+  const isExcel = /\.(xlsx|xls)$/i.test(file.name)
+  if (!isCSV && !isExcel) {
+    fallbackToMock(file, '文件类型不支持（仅 .xlsx / .xls / .csv）')
+    return
+  }
   if (isCSV) {
     const reader = new FileReader()
     reader.onload = (e) => {
       const text = e.target?.result as string
       parseCSVText(text, file)
     }
-    reader.onerror = () => { Message.error('文件读取失败') }
+    reader.onerror = () => { fallbackToMock(file, '文件读取失败') }
     reader.readAsText(file, 'UTF-8')
   } else {
     const reader = new FileReader()
@@ -547,17 +649,17 @@ function parseFile(file: File) {
         const workbook = XLSX.read(data, { type: 'array' })
         const sheetName = workbook.SheetNames[0]
         if (!sheetName) {
-          Message.error('Excel 文件无有效工作表')
+          fallbackToMock(file, 'Excel 文件无有效工作表')
           return
         }
         const sheet = workbook.Sheets[sheetName]
         const json = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: '' })
         parseJsonRows(json, file)
       } catch (err) {
-        Message.error('Excel 解析失败：' + (err as Error).message)
+        fallbackToMock(file, 'Excel 解析失败：' + (err as Error).message)
       }
     }
-    reader.onerror = () => { Message.error('文件读取失败') }
+    reader.onerror = () => { fallbackToMock(file, '文件读取失败') }
     reader.readAsArrayBuffer(file)
   }
 }
@@ -566,7 +668,7 @@ function parseCSVText(text: string, file: File) {
   try {
     const lines = text.split(/\r?\n/).filter(line => line.trim())
     if (lines.length < 2) {
-      Message.error('文件至少需要包含表头 + 1 条数据')
+      fallbackToMock(file, '文件至少需要包含表头 + 1 条数据')
       return
     }
     const headers = lines[0].split(',').map(h => h.trim())
@@ -579,14 +681,14 @@ function parseCSVText(text: string, file: File) {
     }
     parseJsonRows(json, file)
   } catch (err) {
-    Message.error('CSV 解析失败：' + (err as Error).message)
+    fallbackToMock(file, 'CSV 解析失败：' + (err as Error).message)
   }
 }
 
 /** 从 JSON 行数组中提取各字段（不限定模板，按关键词匹配列名） */
 function parseJsonRows(json: Record<string, any>[], file: File) {
   if (!json.length) {
-    Message.error('未解析到有效数据行')
+    fallbackToMock(file, '未解析到有效数据行')
     return
   }
 
@@ -609,17 +711,14 @@ function parseJsonRows(json: Record<string, any>[], file: File) {
   const sceneKey = findKey(/业务场景|场景|scene/i)
 
   if (!enNameKey && !cnNameKey) {
-    Message.error(`未找到"特征英文名"或"中文名"列，请检查文件列名。当前列：${allKeys.join('、')}`)
+    fallbackToMock(file, `未找到"特征英文名"或"中文名"列（当前列：${allKeys.join('、')}）`)
     return
   }
 
   const getVal = (r: Record<string, any>, key?: string) => key ? String(r[key] ?? '').trim() : ''
 
   const parsed: DataRow[] = json.map((r) => {
-    const scene = getVal(r, sceneKey) || '贷中行为'
-    // 业务场景不是"贷中行为"或"贷中"的行标记为需确认
-    const sceneConfirmed = scene.includes('贷中')
-    return {
+    const row: DataRow = {
       variableEnName: getVal(r, enNameKey),
       variableCnName: getVal(r, cnNameKey),
       fieldType: getVal(r, fieldTypeKey) || 'Integer',
@@ -632,25 +731,29 @@ function parseJsonRows(json: Record<string, any>[], file: File) {
       backtrackPeriod: getVal(r, backtrackKey),
       expectedLaunchDate: getVal(r, launchKey),
       expectedEffect: getVal(r, effectKey),
-      businessScene: scene,
-      status: sceneConfirmed ? 'ok' : 'warn'
+      businessScene: getVal(r, sceneKey) || '贷中行为',
+      status: 'warn'
     }
+    row.status = computeRowStatus(row)
+    return row
   }).filter(r => r.variableEnName || r.variableCnName)
 
   if (!parsed.length) {
-    Message.error('解析到的行均为空数据')
+    fallbackToMock(file, '解析到的行均为空数据')
     return
   }
 
   rows.splice(0, rows.length, ...parsed)
+  parsedFromMock.value = false
   uploadedFile.value = {
     name: file.name,
     size: file.size,
-    rowCount: parsed.length
+    rowCount: parsed.length,
+    uploadedAt: nowText()
   }
   const okCount = parsed.filter(r => r.status === 'ok').length
-  const warnCount = parsed.filter(r => r.status === 'warn').length
-  Message.success(`已解析 ${parsed.length} 条数据（成功 ${okCount}，需确认 ${warnCount}）`)
+  const warnCnt = parsed.filter(r => r.status === 'warn').length
+  Message.success(`已解析 ${parsed.length} 条数据（成功 ${okCount}，需确认 ${warnCnt}）`)
 }
 
 // ============ 提交 ============
@@ -699,9 +802,16 @@ function onSubmit() {
       dataFreshness: r.dataFreshness,
       expectedEffect: r.expectedEffect,
       requirementDescription: r.variableMeaning,
-      handler: r.proposer || proposer,
+      handler: handler.value || DEFAULT_HANDLER,
       proposer: r.proposer || proposer,
-      attachment: sharedAttachment.value,
+      // 上传的需求文档同时作为附件挂载到本批次所有需求
+      attachment: uploadedFile.value
+        ? {
+            name: uploadedFile.value.name,
+            size: uploadedFile.value.size,
+            uploadedAt: uploadedFile.value.uploadedAt
+          }
+        : null,
       excelData: excelSnapshot,
       businessScene: r.businessScene,
       category: 'midloan_behavior',
@@ -725,7 +835,8 @@ watch(
       // standalone 模式重置
       rows.splice(0, rows.length)
       requirementName.value = ''
-      sharedAttachment.value = null
+      handler.value = DEFAULT_HANDLER
+      parsedFromMock.value = false
       uploadedFile.value = null
       // demand 模式重置：从 demandRecords 初始化行
       demandRows.splice(0, demandRows.length)
@@ -974,50 +1085,6 @@ watch(
   background: #ffece8;
 }
 
-/* 附件挂载 */
-.attachment-section {
-  margin-bottom: 16px;
-}
-
-.section-label {
-  font-size: 13px;
-  color: #4e5969;
-  margin-bottom: 8px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.section-label .opt {
-  color: #c9cdd4;
-  font-size: 12px;
-}
-
-.attach-zone {
-  border: 1px dashed #e5e6eb;
-  border-radius: 4px;
-  padding: 12px 16px;
-  cursor: pointer;
-  font-size: 13px;
-  color: #86909c;
-  background: #fff;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: all 0.2s;
-}
-
-.attach-zone:hover {
-  border-color: #165dff;
-  color: #165dff;
-}
-
-.attach-hint {
-  font-size: 12px;
-  color: #c9cdd4;
-  margin-top: 4px;
-}
-
 /* 解析预览 */
 .preview-section {
   margin-bottom: 16px;
@@ -1034,6 +1101,19 @@ watch(
   font-size: 13px;
   font-weight: 600;
   color: #1d2129;
+}
+
+/* mock 示例数据标记 */
+.mock-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-size: 11px;
+  font-weight: 400;
+  color: #ff7d00;
+  background: #fff7e8;
+  border: 1px solid #ffcf8b;
 }
 
 .preview-stats {

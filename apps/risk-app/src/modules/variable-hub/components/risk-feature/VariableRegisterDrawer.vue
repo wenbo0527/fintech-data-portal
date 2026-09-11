@@ -464,7 +464,9 @@ const FORM_FIELD_POLICY: Record<string, string> = {
   sourceTableBefore: 'sourceTableBefore',
   dataTableName: 'dataTableName',
   dwTaskId: 'dwTaskId',
-  acceptor: 'acceptor'
+  acceptor: 'acceptor',
+  // 名单标签（黑/白/灰）属治理标签：任意状态都不可锁（canEditField 内已放行）
+  listType: 'listType'
 }
 
 /** 抽屉内受状态机约束的字段（用于顶部锁定提示，按表单文案展示）*/
@@ -501,7 +503,7 @@ const editLockReason = computed(() => (isEdit.value ? getEditLockReason(editStat
 /** 顶部说明文案：区分四种入口，无差异化提示时返回空串走默认文案 */
 const alertText = computed(() => {
   if (isEdit.value) {
-    return `编辑不会改变特征当前流程状态（${props.editData?.midloanStatus || props.editData?.status || '-'}），仅更新已填写的信息。锁定字段灰显不可修改。`
+    return `编辑不会改变特征当前流程状态（${props.editData?.midloanStatus || props.editData?.status || '-'}），仅更新已填写的信息；名单类型（黑/白/灰）任何阶段都可调整，其余锁定字段灰显不可修改。`
   }
   if (isDerivationMode.value) {
     return '需求受理单中已填写的信息已预填到下方表单，可在此基础上补充/修改。提交后将写入特征台账（状态「已注册」），并在需求列表中关联生成的特征ID。'

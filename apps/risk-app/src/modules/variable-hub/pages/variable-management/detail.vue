@@ -83,10 +83,13 @@
             <template #icon><IconExperiment /></template>
             提交上线申请
           </a-button>
-          <a-button type="primary" @click="handleEdit">
-            <template #icon><IconEdit /></template>
-            编辑
-          </a-button>
+          <!-- 编辑：所有状态开放入口，抽屉内按字段级策略灰显（名单标签/元数据始终可改）-->
+          <a-tooltip :content="getEditLockReason(variableData.midloanStatus || variableData.status)">
+            <a-button type="primary" @click="handleEdit">
+              <template #icon><IconEdit /></template>
+              编辑
+            </a-button>
+          </a-tooltip>
           <a-dropdown trigger="click" @select="handleMoreSelect">
             <a-button>更多</a-button>
             <template #content>
@@ -123,14 +126,14 @@
 
           <!-- ========= 基础人员信息（注册即有 + 后期部分回填） ========= -->
           <a-card title="基础与人员信息" class="detail-card">
-            <a-descriptions :column="3" bordered size="small">
-              <a-descriptions-item label="创建时间">{{ basePersonInfo.createdAt }}</a-descriptions-item>
-              <a-descriptions-item label="更新时间">{{ basePersonInfo.updatedAt }}</a-descriptions-item>
-              <a-descriptions-item label="需求提出人">{{ basePersonInfo.proposer }}</a-descriptions-item>
-              <a-descriptions-item label="管理人">{{ basePersonInfo.adminManager }}</a-descriptions-item>
-              <a-descriptions-item label="数仓开发人员">{{ basePersonInfo.developer }}</a-descriptions-item>
-              <a-descriptions-item label="验收人">{{ basePersonInfo.acceptor }}</a-descriptions-item>
-            </a-descriptions>
+            <ParamGroup layout="inline" :columns="3" label-width="6em" :items="basePersonItems">
+              <template #listType="{ item }">
+                <a-tag v-if="item.value" :color="listTypeColor(item.value)" size="small">
+                  {{ item.text }}
+                </a-tag>
+                <span v-else class="param-empty">—</span>
+              </template>
+            </ParamGroup>
           </a-card>
 
           <!-- ========= 长文本区（业务含义 + 技术口径 + 备注） ========= -->
@@ -157,9 +160,9 @@
             </div>
           </a-card>
 
-          <!-- ========= HIVE 表与字段（标准化前表/字段 + 标准化后 HIVE 表（= 数据底表）+ 分区 + 更新频率） ========= -->
-          <a-card title="HIVE 表与字段" class="detail-card">
-            <a-alert v-if="!hiveInfo.registered" type="warning" :show-icon="true" style="margin-bottom: 12px">
+          <!-- ========= HIVE 表与字段 + 技术关联信息（样例图分组样式：无边框 label/value 网格） ========= -->
+          <a-card title="数据来源与技术关联" class="detail-card">
+            <a-alert v-if="!hiveInfo.registered" type="warning" :show-icon="true" style="margin-bottom: 16px">
               <template #title>
                 数据底表（标准化后 HIVE 表）未登记
                 <a-button size="mini" type="primary" style="margin-left: 8px" @click="openSupplementTable">
@@ -168,63 +171,39 @@
               </template>
               <div>数据开发完成后，需由数仓同学补充「数据底表 + HIVE 表与字段」，补齐后才能进入业务验收。</div>
             </a-alert>
-            <a-alert v-else type="info" :show-icon="true" style="margin-bottom: 12px">
+            <a-alert v-else type="info" :show-icon="true" style="margin-bottom: 16px">
               <template #title>HBase 数据由 HIVE 提供，下方为底层 HIVE 表注册信息</template>
               <div>
-                标准化前表名/字段 = 原始上游表（数据源）→ 标准化后 HIVE 表 = 「技术关联信息」中的数据底表（同一份值，不重复登记）
+                标准化前 = 原始上游「库.表.字段」；标准化后 HIVE 表即「技术关联信息」中的数据底表，不重复登记
               </div>
             </a-alert>
-            <a-descriptions :column="2" bordered size="small">
-              <a-descriptions-item label="标准化前表名（原始上游）">
-                <a-space>
-                  <code class="mono">{{ hiveInfo.sourceTableLabel }}</code>
-                  <a-button size="mini" type="text" @click="copyText(hiveInfo.sourceTableLabel, '标准化前表名')">复制</a-button>
+
+            <!-- 原始上游 库.表.字段 + 分区 + 更新频率；标准化后 HIVE 表见「技术关联信息 · 数据底表名称」 -->
+            <ParamGroup title="HIVE 表与字段" layout="inline" :columns="3" label-width="9em" :items="hiveItems">
+              <template #sourceRef>
+                <a-space :size="6">
+                  <code class="mono">{{ hiveInfo.sourceRefLabel }}</code>
+                  <a-button size="mini" type="text" @click="copyText(hiveInfo.sourceRefLabel, '标准化前表名/字段')">复制</a-button>
                 </a-space>
-              </a-descriptions-item>
-              <a-descriptions-item label="标准化前字段名（原始上游）">
-                <a-space>
-                  <code class="mono">{{ hiveInfo.sourceFieldName }}</code>
-                  <a-button size="mini" type="text" @click="copyText(hiveInfo.sourceFieldName, '标准化前字段名')">复制</a-button>
-                </a-space>
-              </a-descriptions-item>
-              <a-descriptions-item label="标准化后 HIVE 表（即数据底表）" :span="2">
-                <a-space>
-                  <code class="mono strong">{{ hiveInfo.tableName }}</code>
-                  <a-tag color="green" size="small">与「技术关联信息 · 数据底表」同一份值</a-tag>
-                  <a-button size="mini" type="text" @click="copyText(hiveInfo.tableName, '数据底表（HIVE 表）')">复制</a-button>
-                </a-space>
-              </a-descriptions-item>
-              <a-descriptions-item label="是否分区表">{{ hiveInfo.isPartitioned ? '是' : '否' }}</a-descriptions-item>
-              <a-descriptions-item label="分区字段">
-                <a-tag v-for="p in hiveInfo.partitionFields" :key="p" color="purple" size="mini" style="margin-right: 4px;">
+              </template>
+              <template #partitionFields>
+                <a-tag v-for="p in hiveInfo.partitionFields" :key="p" color="purple" size="mini">
                   {{ p }}
                 </a-tag>
-                <span v-if="hiveInfo.partitionFields.length === 0">—</span>
-              </a-descriptions-item>
-              <a-descriptions-item label="更新频率">{{ hiveInfo.updateFrequency }}</a-descriptions-item>
-            </a-descriptions>
-          </a-card>
+                <span v-if="hiveInfo.partitionFields.length === 0" class="param-empty">—</span>
+              </template>
+            </ParamGroup>
 
-          <!-- ========= 技术关联信息（精简） ========= -->
-          <a-card title="技术关联信息" class="detail-card">
-            <a-descriptions :column="2" bordered size="small">
-              <a-descriptions-item label="数据源名称">{{ techLink.dataSourceName }}</a-descriptions-item>
-              <a-descriptions-item label="数据底表名称（= 标准化后 HIVE 表）">
-                <a-space>
+            <ParamGroup title="技术关联信息" layout="inline" :columns="3" label-width="9em" :items="techLinkItems">
+              <template #dataTableName>
+                <a-space :size="6">
                   <code v-if="techLink.dataTableName" class="mono strong">{{ techLink.dataTableName }}</code>
                   <span v-else class="missing-table">未补充（必填）</span>
                   <a-button size="mini" type="primary" v-if="!techLink.dataTableName" @click="openSupplementTable">补充</a-button>
                   <a-button size="mini" v-else @click="openSupplementTable">修改</a-button>
                 </a-space>
-              </a-descriptions-item>
-              <a-descriptions-item label="接口号（生产）">
-                <code v-if="techLink.apiNo" class="mono">{{ techLink.apiNo }}</code>
-                <span v-else>—（阶段4上线后回填）</span>
-              </a-descriptions-item>
-              <a-descriptions-item label="响应字段（外数）">
-                <span>{{ techLink.responseField || '—（仅外数品类）' }}</span>
-              </a-descriptions-item>
-            </a-descriptions>
+              </template>
+            </ParamGroup>
           </a-card>
 
           <!-- 关键时间戳 & 运维信息已内嵌到离线分析/API调用两个 tab 的 StatusStepFlow 中，无需重复展示 -->
@@ -236,7 +215,7 @@
                 本品类（{{ nonMidloanCategoryLabel }}）采用通用生命周期阶段，不接入贷中行为 11 状态机。
                 如需使用精细化状态机，请联系数据团队评估迁移到「贷中行为」品类。
               </a-alert>
-              <a-descriptions :column="2" :data="lifecycleHeader" bordered />
+              <ParamGroup layout="inline" :columns="2" label-width="7em" :items="lifecycleHeader" />
               <a-divider style="margin: 12px 0" />
               <a-table :data="lifecycleStages" :pagination="false">
                 <template #columns>
@@ -431,16 +410,6 @@
                 <a-input v-model="supplementTableForm.dataSourceName" placeholder="例如：数仓（内数）" allow-clear />
               </a-form-item>
             </a-col>
-            <a-col :span="12">
-              <a-form-item label="接口号">
-                <a-input v-model="supplementTableForm.apiNo" placeholder="阶段4 上线后回填，可留空" allow-clear />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="响应字段（外数）">
-                <a-input v-model="supplementTableForm.responseField" placeholder="仅外数品类需要填写，与 HIVE 字段无关，可留空" allow-clear />
-              </a-form-item>
-            </a-col>
             <a-col :span="24">
               <a-form-item label="补充说明">
                 <a-textarea v-model="supplementTableForm.remark" placeholder="可说明补全原因、口径变更等" :rows="2" />
@@ -450,15 +419,25 @@
         </a-card>
 
         <a-card title="HIVE 表与字段" size="small" class="supp-block">
+          <a-alert type="info" :show-icon="false" style="margin-bottom: 12px">
+            标准化后的 HIVE 表就是上方「数据底表名称」，此处不再重复登记，只填原始上游来源。
+          </a-alert>
           <a-row :gutter="16">
-            <a-col :span="12">
-              <a-form-item label="标准化前表名（原始上游，库.表）">
-                <a-input v-model="supplementTableForm.hive.sourceTableName" placeholder="例如：ods_nis_login.ods_login_log_di" allow-clear />
+            <a-col :span="24">
+              <a-form-item label="标准化前表名 / 字段（原始上游，库.表.字段）">
+                <a-input
+                  v-model="supplementTableForm.hive.sourceRef"
+                  placeholder="例如：ods_nis_login.ods_login_log_di.ip_change_cnt_7d"
+                  allow-clear
+                />
+                <template #extra>
+                  库名可省（如 ods_login_log_di.ip_change_cnt_7d）；只填表名表示上游字段暂未确定
+                </template>
               </a-form-item>
             </a-col>
             <a-col :span="12">
-              <a-form-item label="标准化前字段（原始上游）">
-                <a-input v-model="supplementTableForm.hive.sourceFieldName" placeholder="例如：ip_change_cnt_7d" allow-clear />
+              <a-form-item label="是否分区表">
+                <a-switch v-model="supplementTableForm.hive.isPartitioned" />
               </a-form-item>
             </a-col>
             <a-col :span="12">
@@ -468,18 +447,7 @@
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="12">
-              <a-form-item label="标准化后 HIVE 表">
-                <a-input :model-value="supplementTableForm.tableName || '—'" disabled />
-                <template #extra>自动取上方「数据底表名称」，不可单独填写</template>
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item label="是否分区表">
-                <a-switch v-model="supplementTableForm.hive.isPartitioned" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
+            <a-col :span="24">
               <a-form-item label="分区字段">
                 <a-input-tag
                   v-model="supplementTableForm.hive.partitionFields"
@@ -585,6 +553,7 @@ import EvaluationCard from '@/modules/variable-hub/components/risk-feature/Evalu
 import StatusStepFlow from '@/modules/variable-hub/components/risk-feature/StatusStepFlow.vue'
 import StatusTimeline11 from '@/modules/variable-hub/components/risk-feature/StatusTimeline11.vue'
 import { allowedActionsByStatus, isRetryableFailedStatus, midloanStatusLabel, midloanStatusColor, getEditLockReason, getLockedFields, getPhaseByStatus, midloanStatusDataForm, getStatusCategory, canEdit } from '@/modules/variable-hub/constants/midloanStatusMap'
+import { listTypeLabel, listTypeColor } from '@/modules/variable-hub/constants/riskCategoryMap'
 import MidloanStateEngine, { SyncLogStore, OfflineRecordStore, StatusChangeStore } from '@/modules/variable-hub/mock/risk-feature/stateEngine'
 import DemoConsole from '@/modules/variable-hub/components/risk-feature/DemoConsole.vue'
 import UserContext, { PERMISSIONS } from '@/modules/variable-hub/mock/risk-feature/permissions'
@@ -734,16 +703,19 @@ const longtextProcessingLogic = computed(() => {
 const longtextRemark = computed(() => profile.value.remark || variableData.value.remark || '')
 
 /**
- * HIVE 表与字段（标准化前/后表名与字段、是否分区、分区字段、更新频率）
+ * HIVE 表与字段（标准化前原始上游「库.表.字段」合并展示、是否分区、分区字段、更新频率）
  * 数据源：「补充数据底表」表单登记的 v.hiveInfo；未登记时只从 B1 源表字段推断，
  * 不再用 risk_dw / ods_raw / ['ds'] 等假数据兜底，避免看不出"是否真的补充过"。
- * 注意：标准化后 HIVE 表 = 技术关联信息里的「数据底表名称」（同一份值，库名与表名合并为一个串）。
+ * 注意：标准化后 HIVE 表 = 技术关联信息里的「数据底表名称」，本卡片不重复展示。
  */
 const hiveInfo = computed(() => {
   const v = variableData.value
   const h = v.hiveInfo || {}
-  // 标准化前：原始上游「库.表」，登记值优先，其次 B1「标准化前源表」
-  const sourceTableLabel = joinQualified(h.sourceDbName, h.sourceTableName) || v.sourceTableBefore || '—'
+  // 标准化前：原始上游「库.表」+「字段」，登记值优先，其次 B1「标准化前源表 / 源字段」
+  const sourceTable = joinQualified(h.sourceDbName, h.sourceTableName) || v.sourceTableBefore || ''
+  const sourceField = h.sourceFieldName || v.sourceField || ''
+  // 合并为一个串展示：库.表.字段（缺段时按已有段展示）
+  const sourceRefLabel = joinQualified(sourceTable, sourceField) || '—'
   // 标准化后：单一事实源 = v.dataTableName；老数据只有拆分值时按 hiveInfo 拼回
   const stdTable = v.dataTableName || joinQualified(h.databaseName, h.tableName) || v.sourceTableAfter || '—'
 
@@ -752,24 +724,19 @@ const hiveInfo = computed(() => {
   return {
     /** 是否已完成 HIVE 登记（决定卡片是否展示"未补充"引导）*/
     registered: stdTable !== '—',
-    sourceTableLabel,
-    sourceFieldName: h.sourceFieldName || v.sourceField || '—',
-    tableName: stdTable,
+    sourceRefLabel,
     isPartitioned: h.isPartitioned === true,
     partitionFields: h.isPartitioned === true ? partitionFields : [],
     updateFrequency: h.updateFrequency || v.updateFrequency || '—'
   }
 })
 
-/** 技术关联信息（精简：数据源名 + 数据底表 + 接口号 + 响应字段） */
+/** 技术关联信息（精简：数据源名 + 数据底表） */
 const techLink = computed(() => {
   const v = variableData.value
-  const p = profile.value
   return {
     dataSourceName: v.dataSourceName || '—',
-    dataTableName: v.dataTableName || '',
-    apiNo: v.apiNo || p.interfaceName || p.apiNo || '',
-    responseField: v.responseField || p.responseField || ''
+    dataTableName: v.dataTableName || ''
   }
 })
 
@@ -782,8 +749,46 @@ const basePersonInfo = computed(() => {
     proposer: v.requirementProposer || v.creator || '—',
     adminManager: v.adminManager || '—',
     developer: v.developer || '—',
-    acceptor: v.acceptor || '—'
+    acceptor: v.acceptor || '—',
+    // 名单标签（黑/白/灰）：顶层优先，兼容仅写入 profile 的历史数据
+    listType: v.listType || v.profile?.listType || '',
+    listTypeLabel: listTypeLabel(v.listType || v.profile?.listType)
   }
+})
+
+/** 基础与人员信息 → ParamGroup(inline) 字段项 */
+const basePersonItems = computed(() => {
+  const info = basePersonInfo.value
+  return [
+    { key: 'createdAt', label: '创建时间', value: info.createdAt },
+    { key: 'updatedAt', label: '更新时间', value: info.updatedAt },
+    { key: 'proposer', label: '需求提出人', value: info.proposer },
+    { key: 'adminManager', label: '管理人', value: info.adminManager },
+    { key: 'developer', label: '数仓开发人员', value: info.developer },
+    { key: 'acceptor', label: '验收人', value: info.acceptor },
+    // 名单标签（黑/白/灰）：治理标签，任何状态都可在编辑抽屉内调整
+    { key: 'listType', label: '名单类型', value: info.listType, text: info.listTypeLabel }
+  ]
+})
+
+/** HIVE 表与字段 → ParamGroup(inline) 字段项（长标签项 nowrap，宽值项 span 2） */
+const hiveItems = computed(() => {
+  const h = hiveInfo.value
+  return [
+    { key: 'sourceRef', label: '标准化前表名/字段（原始上游）', span: 2, nowrap: true },
+    { key: 'isPartitioned', label: '是否分区表', value: h.isPartitioned ? '是' : '否' },
+    { key: 'partitionFields', label: '分区字段', span: 2 },
+    { key: 'updateFrequency', label: '更新频率', value: h.updateFrequency }
+  ]
+})
+
+/** 技术关联信息 → ParamGroup(inline) 字段项 */
+const techLinkItems = computed(() => {
+  const t = techLink.value
+  return [
+    { key: 'dataSourceName', label: '数据源名称', value: t.dataSourceName },
+    { key: 'dataTableName', label: '数据底表名称（= 标准化后 HIVE 表）', span: 2, nowrap: true }
+  ]
 })
 
 /** 复制文本的通用方法（加 toast 提示） */
@@ -1805,19 +1810,17 @@ const UPDATE_FREQUENCY_OPTIONS = ['实时（秒级）', '准实时（分钟级�
 const supplementTableForm = reactive({
   tableName: '',
   dataSourceName: '',
-  apiNo: '',
-  responseField: '',
   remark: '',
   hive: {
-    sourceTableName: '',
-    sourceFieldName: '',
+    /** 标准化前原始上游「库.表.字段」，一个串登记 */
+    sourceRef: '',
     isPartitioned: true,
     partitionFields: [],
     updateFrequency: ''
   }
 })
 
-/** 「库.表」串：库名缺省时只用表名，避免出现 ".tbl" 这种半截值 */
+/** 点号拼接（库.表 / 表.字段）：任一段缺省时不留半截值 */
 function joinQualified(db, tb) {
   const d = (db || '').trim()
   const t = (tb || '').trim()
@@ -1833,12 +1836,11 @@ function openSupplementTable() {
   // 数据底表名称 = 标准化后 HIVE 表（单一事实源），优先取已登记值
   supplementTableForm.tableName = v.dataTableName || joinQualified(h.databaseName, h.tableName)
   supplementTableForm.dataSourceName = v.dataSourceName === '—' ? '' : v.dataSourceName || ''
-  supplementTableForm.apiNo = v.apiNo || ''
-  supplementTableForm.responseField = v.responseField || ''
   supplementTableForm.remark = v.dataTableRemark || ''
   // HIVE 表与字段：优先取已登记的 hiveInfo，其次从 B1 源表字段推断（不再用假数据兜底）
-  supplementTableForm.hive.sourceTableName = joinQualified(h.sourceDbName, h.sourceTableName) || v.sourceTableBefore || ''
-  supplementTableForm.hive.sourceFieldName = h.sourceFieldName || v.sourceField || ''
+  const srcTable = joinQualified(h.sourceDbName, h.sourceTableName) || v.sourceTableBefore || ''
+  const srcField = h.sourceFieldName || v.sourceField || ''
+  supplementTableForm.hive.sourceRef = joinQualified(srcTable, srcField)
   supplementTableForm.hive.isPartitioned = h.isPartitioned !== false
   supplementTableForm.hive.partitionFields = [...(h.partitionFields || [])]
   const freq = h.updateFrequency || v.updateFrequency || ''
@@ -1865,11 +1867,8 @@ function onSupplementTable() {
       tableName,
       remark: supplementTableForm.remark,
       dataSourceName: supplementTableForm.dataSourceName,
-      apiNo: supplementTableForm.apiNo,
-      responseField: supplementTableForm.responseField,
       hive: {
-        sourceTableName: h.sourceTableName,
-        sourceFieldName: h.sourceFieldName,
+        sourceRef: h.sourceRef,
         isPartitioned: h.isPartitioned,
         partitionFields: h.partitionFields,
         updateFrequency: h.updateFrequency
@@ -2101,6 +2100,7 @@ setTimeout(() => {
 .batch-stat.success .batch-num { color: #00b42a; }
 .batch-stat.failed .batch-num { color: #f53f3f; }
 .missing-table { color: var(--color-text-3, #86909c); font-style: italic; }
+.param-empty { color: var(--color-text-4, #c9cdd4); }
 .role-tag { margin-left: 8px; }
 .demo-buttons-tip { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
@@ -2124,9 +2124,10 @@ setTimeout(() => {
   gap: 16px;
 }
 .header-public-grid .public-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 6em minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 8px;
   min-width: 0;
 }
 .header-public-grid .public-item.public-full {
@@ -2135,8 +2136,9 @@ setTimeout(() => {
 .header-public-grid .label {
   color: var(--color-text-3, #86909c);
   font-size: 13px;
-  white-space: nowrap;
-  flex-shrink: 0;
+  text-align: right;
+  line-height: 1.6;
+  word-break: break-word;
 }
 .header-public-grid .value {
   color: var(--color-text-1, #1d2129);

@@ -60,6 +60,30 @@ export const LIST_TYPES = [
   { label: '灰名单', value: 'gray' }
 ]
 
+/** 名单类型展示名（同时兼容历史直接存中文标签的数据）*/
+const LIST_TYPE_LABEL_MAP: Record<string, string> = LIST_TYPES.reduce(
+  (acc, t) => ({ ...acc, [t.value]: t.label, [t.label]: t.label }),
+  {} as Record<string, string>
+)
+
+/** 名单类型标签色：黑=红 / 白=绿 / 灰=橙 / 空=灰 */
+const LIST_TYPE_COLOR_MAP: Record<string, string> = {
+  黑名单: 'red',
+  白名单: 'green',
+  灰名单: 'orange',
+  空: 'gray'
+}
+
+/** 名单类型码值 → 中文标签；未登记 / 「空」（none）返回空串，列表与详情按「—」展示 */
+export const listTypeLabel = (value?: string): string => {
+  if (!value || value === 'none') return ''
+  return LIST_TYPE_LABEL_MAP[value] || ''
+}
+
+/** 名单类型码值 → a-tag 颜色 */
+export const listTypeColor = (value?: string): string =>
+  LIST_TYPE_COLOR_MAP[listTypeLabel(value)] || 'gray'
+
 /**
  * 特征分类筛选选项（2026-08-10 会议新增 · 需求5）
  * 按内数/外数/行为/实时分类展示，支持全量混合展示

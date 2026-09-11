@@ -105,7 +105,7 @@
                     </a-alert>
                   </a-col>
                 </a-row>
-                <a-form-item label="已有外数">
+                <a-form-item label="已有外数（可多选）">
                   <a-space direction="vertical" style="width: 100%">
                     <a-space wrap>
                        <a-button size="mini" @click="forceRefreshProducts">刷新外数列表</a-button>
@@ -116,17 +116,69 @@
                        </a-button>
                        <span style="font-size: 12px; color: var(--subapp-text-tertiary)">当前外数总数: {{ products.length }}（支持 Excel/CSV，按接口号或名称匹配：命中自动勾选并写入价格，未匹配自动新增外数）</span>
                     </a-space>
-                    <!-- PRD D1: 穿梭框（Transfer）+ 接口号搜索 + 已关联不可取消 -->
-                    <a-transfer
-                      v-model="selectedExternalIds"
-                      :data="externalTransferData"
-                      show-search
-                      :source-input-search-props="{ placeholder: '搜索外数名称或接口号' }"
-                      :target-input-search-props="{ placeholder: '搜索外数名称或接口号' }"
-                      :title="['可选外数', '已关联外数']"
-                      show-select-all
-                      style="width: 100%"
-                    />
+                    <!-- PRD D1: 外数多选框（Checkbox）+ 已选外数标签展示 -->
+                    <div class="ext-select">
+                      <!-- 已选外数展示区 -->
+                      <div class="ext-selected">
+                        <div class="ext-selected-head">
+                          <span class="ext-selected-label">已选外数</span>
+                          <a-tag size="small" :color="selectedExternalIds.length ? 'arcoblue' : 'gray'">
+                            {{ selectedExternalIds.length }} / {{ externalCandidateProducts.length }}
+                          </a-tag>
+                          <a-button v-if="selectedExternalIds.length" type="text" size="mini" status="danger" @click="clearAllExternal">清空</a-button>
+                          <span v-if="selectedExternalIds.length" class="ext-selected-hint">点击标签可跳转到对应外数的价格配置</span>
+                        </div>
+                        <div v-if="!selectedExternalIds.length" class="ext-selected-empty">
+                          暂未选择外数，可在下方列表勾选，或通过「批量上传」按接口号自动匹配
+                        </div>
+                        <div v-else class="ext-selected-tags">
+                          <a-tag
+                            v-for="id in selectedExternalIds"
+                            :key="String(id)"
+                            :color="String(activeExternalId) === String(id) ? 'arcoblue' : 'gray'"
+                            closable
+                            class="ext-selected-tag"
+                            @click="activeExternalId = String(id)"
+                            @close="removeExternal(id)"
+                          >
+                            {{ externalTagText(id) }}
+                          </a-tag>
+                        </div>
+                      </div>
+                      <!-- 搜索 + 全选 -->
+                      <div class="ext-filter">
+                        <a-input v-model="externalKeyword" allow-clear placeholder="搜索外数名称 / 接口号 / 合作机构" class="ext-filter-search">
+                          <template #prefix><IconSearch /></template>
+                        </a-input>
+                        <a-checkbox
+                          :model-value="isAllExternalChecked"
+                          :indeterminate="isExternalIndeterminate"
+                          @change="toggleAllExternal"
+                        >
+                          全选（{{ externalCheckOptions.length }} 项）
+                        </a-checkbox>
+                        <span class="ext-filter-hint">
+                          共 {{ externalCandidateProducts.length }} 项可选{{ form.supplier ? `，已按合作机构「${form.supplier}」过滤` : '' }}
+                        </span>
+                      </div>
+                      <!-- 多选框列表 -->
+                      <a-checkbox-group v-if="externalCheckOptions.length" v-model="selectedExternalIds" class="ext-checkbox-group">
+                        <a-checkbox
+                          v-for="opt in externalCheckOptions"
+                          :key="opt.value"
+                          :value="opt.value"
+                          class="ext-check-item"
+                          :class="{ 'is-checked': isExternalChecked(opt.value) }"
+                        >
+                          <span class="ext-check-main">
+                            <span class="ext-check-name">{{ opt.name }}</span>
+                            <span class="ext-check-meta">{{ opt.supplier }} · {{ opt.channel }}</span>
+                          </span>
+                          <span v-if="opt.interfaceNo" class="ext-check-ifno">{{ opt.interfaceNo }}</span>
+                        </a-checkbox>
+                      </a-checkbox-group>
+                      <a-empty v-else :description="externalKeyword ? `未找到与「${externalKeyword}」匹配的外数` : '当前合作机构下暂无可选外数'" />
+                    </div>
                   </a-space>
                 </a-form-item>
                 <div class="step-actions"><a-space><a-button @click="skipUpload">跳过上传</a-button></a-space></div>
@@ -301,7 +353,7 @@
         </a-upload>
         <ul class="bm-rules">
           <li>命中<em>接口号</em>或<em>产品名称</em>：自动勾选并写入计费方式、单价等</li>
-          <li>未命中：自动新增外数到穿梭框并选中</li>
+          <li>未命中：自动新增外数到多选列表并勾选</li>
         </ul>
       </section>
 
@@ -326,7 +378,7 @@
 import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
-import { IconUpload, IconDownload, IconThunderbolt } from '@arco-design/web-vue/es/icon'
+import { IconUpload, IconDownload, IconThunderbolt, IconSearch } from '@arco-design/web-vue/es/icon'
 import * as XLSX from 'xlsx'
 import { useContractStore } from '@/modules/budget/stores/contract'
 import { useExternalDataStore } from '@/modules/external-data/stores/external-data'
@@ -436,35 +488,63 @@ const externalOptions = computed(() => {
     value: p.id
   }))
 })
-// PRD D1: 穿梭框数据源（含接口号字段、不可取消 disabled）
-const externalTransferData = computed(() => {
-  const sup = String(form.supplier || '').trim()
-  const base = (products.value || []).filter((p: any) => !sup || String(p.supplier || '').trim() === sup)
-  return base.map((p: any) => {
-    const name = p.name || p.productName || p.code
-    const supplier = p.supplier || '—'
-    const interfaceNo = p.interfaceNo || ''
-    // 将供应商和接口号拼入 label，使 Arco 默认搜索可按名称/接口号/供应商匹配
-    const label = `${name}（${supplier}${interfaceNo ? ' / 接口号:' + interfaceNo : ''}）`
-    return {
-      value: String(p.id),
-      label,
-      disabled: false,
-    }
-  })
-})
-// PRD D1: 穿梭框搜索（名称/接口号/合作机构）
-const filterExternal = (inputValue: string, item: any) => {
-  if (!inputValue) return true
-  const k = String(inputValue).toLowerCase()
-  return String(item.label || '').toLowerCase().includes(k)
-    || String(item.interfaceNo || '').toLowerCase().includes(k)
-    || String(item.supplier || '').toLowerCase().includes(k)
-}
 const selectedExternalIds = ref<Array<string | number>>([])
 const activeExternalId = ref<string | number | undefined>(undefined)
 const externalConfigs = reactive<Record<string, any>>({})
 const externalLabel = (id: string | number) => { const p = products.value.find((x: any) => String(x.id) === String(id)) as any; return p ? `${p.name}（${p.supplier || '—'}/${p.channel || '—'}${p.interfaceNo ? ' / ' + p.interfaceNo : ''}）` : String(id) }
+
+// PRD D1: 外数多选框数据源（按合作机构过滤 + 关键字搜索名称/接口号/合作机构/渠道）
+const externalCandidateProducts = computed(() => {
+  const sup = String(form.supplier || '').trim()
+  return (products.value || []).filter((p: any) => !sup || String(p.supplier || '').trim() === sup)
+})
+const externalKeyword = ref('')
+const externalCheckOptions = computed(() => {
+  const kw = externalKeyword.value.trim().toLowerCase()
+  return externalCandidateProducts.value
+    .map((p: any) => ({
+      value: String(p.id),
+      name: p.name || p.productName || p.code || String(p.id),
+      supplier: p.supplier || '—',
+      channel: p.channel || '—',
+      interfaceNo: p.interfaceNo || ''
+    }))
+    .filter((it) => {
+      if (!kw) return true
+      return [it.name, it.supplier, it.channel, it.interfaceNo].some((f) => String(f).toLowerCase().includes(kw))
+    })
+})
+const selectedExternalSet = computed(() => new Set(selectedExternalIds.value.map(String)))
+const isExternalChecked = (val: string) => selectedExternalSet.value.has(val)
+const filteredCheckedCount = computed(() => externalCheckOptions.value.filter((o) => selectedExternalSet.value.has(o.value)).length)
+const isAllExternalChecked = computed(
+  () => externalCheckOptions.value.length > 0 && filteredCheckedCount.value === externalCheckOptions.value.length
+)
+const isExternalIndeterminate = computed(
+  () => filteredCheckedCount.value > 0 && filteredCheckedCount.value < externalCheckOptions.value.length
+)
+// 全选 / 取消全选（仅作用于当前筛选结果，不影响筛选外的已选项）
+const toggleAllExternal = (checked: any) => {
+  const ids = externalCheckOptions.value.map((o) => o.value)
+  const others = selectedExternalIds.value.filter((x) => !ids.includes(String(x))).map(String)
+  selectedExternalIds.value = checked ? Array.from(new Set([...others, ...ids])) : others
+}
+// 取消勾选单个已选外数（价格配置保留，重新勾选时无需重复填写）
+const removeExternal = (id: string | number) => {
+  const key = String(id)
+  selectedExternalIds.value = selectedExternalIds.value.filter((x) => String(x) !== key)
+}
+const clearAllExternal = () => {
+  if (!selectedExternalIds.value.length) return
+  selectedExternalIds.value = []
+  Message.info('已清空所选外数')
+}
+// 已选标签文案：名称 + 接口号
+const externalTagText = (id: string | number) => {
+  const p = products.value.find((x: any) => String(x.id) === String(id)) as any
+  if (!p) return String(id)
+  return p.interfaceNo ? `${p.name} · ${p.interfaceNo}` : String(p.name || id)
+}
 
 const form = reactive<any>({
   contractType: 'framework',
@@ -906,7 +986,7 @@ const applyBatchRecords = (records: Record<string, string>[]) => {
     if (ifNo) product = products.value.find((x: any) => String(x.interfaceNo || '').trim() === ifNo)
     if (!product && nm) product = products.value.find((x: any) => String(x.name || '').trim() === nm)
     if (!product) {
-      // 未匹配 → 新增为外数产品并写入穿梭框
+      // 未匹配 → 新增为外数产品并写入多选列表
       const newId = `EXT-${Date.now()}-${idx}`
       product = {
         id: newId,
@@ -1042,6 +1122,36 @@ const applyMockBatchData = () => {
 .upload-highlight { color: var(--color-primary); font-weight: 600; }
 .upload-hint { color: var(--color-text-3); font-size: 12px; }
 .step-actions { margin-top: 8px; text-align: right; }
+
+/* ---- PRD D1: 外数多选框（含已选外数展示） ---- */
+.ext-select { display: flex; flex-direction: column; gap: 10px; }
+.ext-selected { padding: 10px 12px; border: 1px solid var(--color-border-2); border-radius: 8px; background: var(--color-fill-1); }
+.ext-selected-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ext-selected-label { font-size: 13px; font-weight: 600; color: var(--color-text-1); }
+.ext-selected-hint { font-size: 12px; color: var(--color-text-3); }
+.ext-selected-empty { margin-top: 6px; font-size: 12px; color: var(--color-text-3); }
+.ext-selected-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ext-selected-tag { max-width: 100%; cursor: pointer; }
+.ext-selected-tag :deep(.arco-tag-content) { word-break: break-all; }
+.ext-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.ext-filter-search { width: 300px; }
+.ext-filter-hint { margin-left: auto; font-size: 12px; color: var(--color-text-3); }
+.ext-checkbox-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; width: 100%; max-height: 280px; padding: 2px; overflow-y: auto; }
+.ext-check-item {
+  align-items: flex-start; padding: 8px 10px; border-radius: 6px;
+  border: 1px solid var(--color-border-2); background: var(--color-bg-2);
+  transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
+}
+.ext-check-item:hover { border-color: rgb(var(--primary-5)); background: var(--color-primary-light-1); }
+.ext-check-item.is-checked { border-color: rgb(var(--primary-6)); background: var(--color-primary-light-1); }
+.ext-check-item :deep(.arco-checkbox-label) { display: flex; align-items: flex-start; gap: 8px; flex: 1; min-width: 0; }
+.ext-check-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.ext-check-name { font-size: 13px; color: var(--color-text-1); word-break: break-all; }
+.ext-check-meta { font-size: 12px; color: var(--color-text-3); word-break: break-all; }
+.ext-check-ifno {
+  flex: none; margin-left: 8px; padding: 0 6px; border-radius: 4px;
+  font-size: 11px; line-height: 18px; color: var(--color-text-2); background: var(--color-fill-2);
+}
 
 /* ---- PRD I04: 批量上传弹窗 ---- */
 .bm-body { display: flex; flex-direction: column; padding-top: 4px; }

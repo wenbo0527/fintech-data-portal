@@ -433,6 +433,13 @@ const mockUpload = async () => {
     }))
   }
 
+  // 无生效定价档案（如钱塘征信等尚未配置 mock 定价）时 lines 为空，
+  // 此前 Math.max(1, ...) 会让循环多跑一次并读到 undefined，抛 productCode 错误
+  if (!lines.length) {
+    Message.warning('该合作机构暂无生效定价档案，无法生成模拟对账单，请先在定价档案中维护')
+    return
+  }
+
   const includeCount = Math.max(1, Math.floor(lines.length * 0.7))
   for (let i = 0; i < includeCount; i++) {
     const l = lines[i]

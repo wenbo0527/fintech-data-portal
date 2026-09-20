@@ -29,6 +29,18 @@ export const shortToFullName: Record<string, string> = {
   '钱塘': '钱塘征信有限公司'
 }
 
+// 把合同/结算任务里出现的各类机构写法（SUP-ID、短名称、全称、简称）统一解析为 SUP-ID，
+// 避免定价档案、供应商产品等 mock 数据因名称不一致而查不到
+export function resolveSupplierId(key: string): string {
+  if (!key) return key
+  if (suppliersMock.some(s => s.id === key)) return key
+  const exact = suppliersMock.find(s => s.supplierCode === key || s.supplierName === key)
+  if (exact) return exact.id
+  // 简称兜底：如「百行征信」→「百行」、「朴道数据」→「朴道」
+  const byPrefix = suppliersMock.find(s => s.supplierCode.length >= 2 && key.startsWith(s.supplierCode))
+  return byPrefix ? byPrefix.id : key
+}
+
 export async function getSupplierOptions() {
   return suppliersMock.map(s => s.supplierName)
 }

@@ -1,3 +1,5 @@
+import { resolveSupplierId } from './supplierDictionary'
+
 export interface Pricing {
   supplierId: string
   productCode: string
@@ -38,26 +40,25 @@ const pricingMock: Pricing[] = [
 pricingMock.push(
   { supplierId: 'SUP-001', productCode: 'XUEXIN_BATCH_EXPORT', billingType: 'volume', unit: 'record', currency: 'CNY', taxRate: 0.06, unitPrice: 0.02, remark: '批量导出服务' },
   { supplierId: 'SUP-002', productCode: 'BH_DATA_EXPORT', billingType: 'volume', unit: 'record', currency: 'CNY', taxRate: 0.06, unitPrice: 0.025, remark: '批量导出服务' },
-  { supplierId: 'SUP-003', productCode: 'PD_DATA_EXPORT', billingType: 'volume', unit: 'record', currency: 'CNY', taxRate: 0.06, unitPrice: 0.018, remark: '批量导出服务' }
+  { supplierId: 'SUP-003', productCode: 'PD_DATA_EXPORT', billingType: 'volume', unit: 'record', currency: 'CNY', taxRate: 0.06, unitPrice: 0.018, remark: '批量导出服务' },
+  // 钱塘征信（对应 C004 钱塘征信框架协议，3 个数据产品 + 批量导出服务）
+  { supplierId: 'SUP-004', productCode: 'QT_CREDIT_RISK_SCORE', billingType: 'fixed', unit: 'record', currency: 'CNY', taxRate: 0.06, unitPrice: 0.06, remark: '钱塘框架协议单价' },
+  { supplierId: 'SUP-004', productCode: 'QT_FRAUD_BLACKLIST', billingType: 'fixed', unit: 'record', currency: 'CNY', taxRate: 0.06, unitPrice: 0.035, remark: '钱塘框架协议单价' },
+  { supplierId: 'SUP-004', productCode: 'QT_ENTERPRISE_TAX_INVOICE', billingType: 'tiered', unit: 'record', currency: 'CNY', taxRate: 0.06, tiers: [{ lower: 0, upper: 100000, price: 0.11 }, { lower: 100000, upper: 500000, price: 0.085 }, { lower: 500000, price: 0.07 }], remark: '阶梯定价' },
+  { supplierId: 'SUP-004', productCode: 'QT_BATCH_DATA_EXPORT', billingType: 'volume', unit: 'record', currency: 'CNY', taxRate: 0.06, unitPrice: 0.02, remark: '按月用量计费' }
 )
 
-// 合作机构全称 → SUP-ID 映射（兼容历史短名称）
-const nameToId: Record<string, string> = {
-  '学信网': 'SUP-001',
-  '百行': 'SUP-002', '百行征信有限公司': 'SUP-002',
-  '朴道': 'SUP-003', '朴道征信有限公司': 'SUP-003',
-  '钱塘': 'SUP-004', '钱塘征信有限公司': 'SUP-004'
-}
+// 合作机构名称（全称/简称/短名称）→ SUP-ID 统一走 supplierDictionary 解析，避免别名遗漏
 
 export async function getActivePricing(supplierId: string, productCode: string): Promise<Pricing | null> {
-  const normalizedId = pricingMock.some(p => p.supplierId === supplierId) ? supplierId : (nameToId[supplierId] || supplierId)
+  const normalizedId = resolveSupplierId(supplierId)
   const found = pricingMock.find(p => p.supplierId === normalizedId && p.productCode === productCode) || null
   return Promise.resolve(found)
 }
 
 export async function getActivePricingMap(supplierId: string): Promise<Record<string, Pricing>> {
   const map: Record<string, Pricing> = {}
-  const normalizedId = pricingMock.some(p => p.supplierId === supplierId) ? supplierId : (nameToId[supplierId] || supplierId)
+  const normalizedId = resolveSupplierId(supplierId)
   for (const p of pricingMock) { if (p.supplierId === normalizedId) map[p.productCode] = p }
   return Promise.resolve(map)
 }

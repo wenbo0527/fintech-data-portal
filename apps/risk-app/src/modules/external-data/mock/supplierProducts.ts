@@ -1,4 +1,5 @@
 import type { SupplierProduct } from '../../external-data/types/supplier'
+import { resolveSupplierId } from '../../budget/api/supplierDictionary'
 
 const now = new Date().toISOString()
 
@@ -22,7 +23,11 @@ export const supplierProductsMock: SupplierProduct[] = [
   { id: 'SP-003-PD_TRAFFIC_ANALYSIS', supplierId: 'SUP-003', productId: 'P-PD_TRAFFIC_ANALYSIS', productCode: 'PD_TRAFFIC_ANALYSIS', productName: '流量行为分析', category: 'DATA', status: 'active', interfaceCount: 1, hasContract: true, createdAt: now, updatedAt: now },
   { id: 'SP-003-PD_DEVICE_CLUSTER', supplierId: 'SUP-003', productId: 'P-PD_DEVICE_CLUSTER', productCode: 'PD_DEVICE_CLUSTER', productName: '设备聚类分析', category: 'DATA', status: 'active', interfaceCount: 1, hasContract: true, createdAt: now, updatedAt: now },
   { id: 'SP-003-PD_DEVICE_RISK', supplierId: 'SUP-003', productId: 'P-PD_DEVICE_RISK', productCode: 'PD_DEVICE_RISK', productName: '设备风险识别', category: 'SPECIAL', status: 'active', interfaceCount: 1, hasContract: true, createdAt: now, updatedAt: now },
-  { id: 'SP-001-XUEXIN_SPECIAL_AUDIT', supplierId: 'SUP-001', productId: 'P-XUEXIN_SPECIAL_AUDIT', productCode: 'XUEXIN_SPECIAL_AUDIT', productName: '特殊教育审核', category: 'SPECIAL', status: 'active', interfaceCount: 1, hasContract: true, createdAt: now, updatedAt: now }
+  { id: 'SP-001-XUEXIN_SPECIAL_AUDIT', supplierId: 'SUP-001', productId: 'P-XUEXIN_SPECIAL_AUDIT', productCode: 'XUEXIN_SPECIAL_AUDIT', productName: '特殊教育审核', category: 'SPECIAL', status: 'active', interfaceCount: 1, hasContract: true, createdAt: now, updatedAt: now },
+  // 钱塘征信（SUP-004）：与 C004 钱塘征信框架协议 productCount=3 对齐，编码与定价档案 QT_* 一致
+  { id: 'SP-004-QT_CREDIT_RISK_SCORE', supplierId: 'SUP-004', productId: 'P-QT_CREDIT_RISK_SCORE', productCode: 'QT_CREDIT_RISK_SCORE', productName: '钱塘个人信用风险评分', category: 'DATA', status: 'active', interfaceCount: 1, hasContract: true, createdAt: now, updatedAt: now },
+  { id: 'SP-004-QT_FRAUD_BLACKLIST', supplierId: 'SUP-004', productId: 'P-QT_FRAUD_BLACKLIST', productCode: 'QT_FRAUD_BLACKLIST', productName: '钱塘反欺诈黑名单核验', category: 'DATA', status: 'active', interfaceCount: 1, hasContract: true, createdAt: now, updatedAt: now },
+  { id: 'SP-004-QT_ENTERPRISE_TAX_INVOICE', supplierId: 'SUP-004', productId: 'P-QT_ENTERPRISE_TAX_INVOICE', productCode: 'QT_ENTERPRISE_TAX_INVOICE', productName: '企业税务发票画像', category: 'DATA', status: 'active', interfaceCount: 1, hasContract: true, createdAt: now, updatedAt: now }
 ]
 
 export interface ExternalDataField {
@@ -146,11 +151,29 @@ export const externalDataFieldsMap: ExternalDataFieldsMap = {
     { name: 'id_no', type: 'STRING', comment: '身份证号', required: true },
     { name: 'name', type: 'STRING', comment: '姓名', required: true },
     { name: 'audit_reason', type: 'STRING', comment: '审核原因', required: false }
+  ],
+  QT_CREDIT_RISK_SCORE: [
+    { name: 'request_id', type: 'STRING', comment: '请求ID', required: true },
+    { name: 'id_no', type: 'STRING', comment: '身份证号', required: true },
+    { name: 'name', type: 'STRING', comment: '姓名', required: true },
+    { name: 'risk_score', type: 'INT', comment: '风险评分', required: false }
+  ],
+  QT_FRAUD_BLACKLIST: [
+    { name: 'request_id', type: 'STRING', comment: '请求ID', required: true },
+    { name: 'id_no', type: 'STRING', comment: '身份证号', required: true },
+    { name: 'blacklist_level', type: 'STRING', comment: '黑名单等级', required: false }
+  ],
+  QT_ENTERPRISE_TAX_INVOICE: [
+    { name: 'request_id', type: 'STRING', comment: '请求ID', required: true },
+    { name: 'company_name', type: 'STRING', comment: '企业名称', required: true },
+    { name: 'tax_credit_level', type: 'STRING', comment: '纳税信用等级', required: false },
+    { name: 'invoice_amount', type: 'DOUBLE', comment: '发票金额', required: false }
   ]
 }
 
 export async function getSupplierProductsMock(supplierId: string): Promise<SupplierProduct[]> {
-  return Promise.resolve(supplierProductsMock.filter(p => p.supplierId === supplierId))
+  const normalizedId = resolveSupplierId(supplierId)
+  return Promise.resolve(supplierProductsMock.filter(p => p.supplierId === normalizedId))
 }
 
 export async function getSupplierProductsMap(): Promise<Record<string, SupplierProduct[]>> {

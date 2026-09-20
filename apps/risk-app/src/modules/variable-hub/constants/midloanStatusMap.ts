@@ -367,8 +367,8 @@ export const allowedActionsByStatus = (status: string, _data?: any, role?: strin
       result = isAdmin ? [{ key: 'manual_batch_retry', label: '手动触发批次重试', type: 'warning', category: 'error' }] : []
       break
 
-    // ============ 中间态（OA 审批中/同步中/参数准备） ============
-    case 'oa_production_reviewing':
+    // ============ 中间态（同步中/参数准备） ============
+    // 注：oa_production_reviewing 已在上方分支给出审批按钮，此处不再重复匹配
     case 'param_preparing':
     case 'syncing_internal':
     case 'syncing_variable':

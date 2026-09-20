@@ -298,7 +298,6 @@ export const variableAssets: VariableAssetMock[] = [
     referenceDetail: '已正式投产到特征中心，关联决策引擎：风控V3、风控V4',
     upstreamTable: 'dwd_trade_detail',
     requirementProposalAt: fmt(new Date(now.getTime() - 27 * 86400000)),
-    businessAcceptanceAt: fmt(new Date(now.getTime() - 12 * 86400000)),
     requirementProposer: '业务方-张三',
     standardizedAttachment: true,
     paramMappingStatus: 'completed',

@@ -16,9 +16,22 @@
     </div>
 
     <div class="page-content">
+      <!-- 顶部步骤进度条 -->
+      <div class="step-progress-bar">
+        <div class="progress-track">
+          <div class="progress-fill" :style="{ width: `${(stepStatus.doneCount / 6) * 100}%` }"></div>
+        </div>
+        <span class="progress-label">{{ stepStatus.doneCount }}/6 完成</span>
+      </div>
+
       <!-- 步骤一：选择回溯模型 -->
-      <a-collapse :active-key="activeKeys" :bordered="false">
-        <a-collapse-item key="model" header="步骤一：选择回溯模型">
+      <a-collapse v-model:active-key="activeKeys" :bordered="false">
+        <a-collapse-item key="model">
+          <template #header>步骤一：选择回溯模型</template>
+          <template #extra>
+            <a-tag v-if="stepStatus.s1 === 'done'" color="green" size="small">已完成</a-tag>
+            <a-tag v-else color="gray" size="small">待配置</a-tag>
+          </template>
           <a-form :model="modelForm" layout="vertical">
             <a-row :gutter="16">
               <a-col :span="12">
@@ -67,11 +80,86 @@
                 </a-form-item>
               </a-col>
             </a-row>
+        </a-form>
+        </a-collapse-item>
+
+        <!-- 步骤二：落表目标与场景配置（新增） -->
+        <a-collapse-item key="target">
+          <template #header>步骤二：落表目标与场景配置</template>
+          <template #extra>
+            <a-tag v-if="stepStatus.s2 === 'done'" color="green" size="small">已完成</a-tag>
+            <a-tag v-else color="gray" size="small">待配置</a-tag>
+          </template>
+          <a-form layout="vertical">
+            <!-- 落表目标选择 -->
+            <a-form-item label="落表目标" extra="一个模型同时落多模型汇总表和单模型独立表（并行写入）">
+              <div class="landing-block">
+                <!-- 多模型汇总表 -->
+                <div class="landing-group">
+                  <a-checkbox v-model="landingForm.summary" @change="onSummaryToggle">
+                    多模型汇总表
+                  </a-checkbox>
+                  <div class="landing-sub" v-if="landingForm.summary">
+                    <a-radio-group v-model="landingForm.summaryType" @change="onSummaryTypeChange">
+                      <a-radio value="general">通用汇总表（含 business_code 字段）</a-radio>
+                      <a-radio value="channel">渠道专属汇总表</a-radio>
+                    </a-radio-group>
+                    <a-select
+                      v-if="landingForm.summaryType === 'channel'"
+                      v-model="landingForm.channelCode"
+                      placeholder="选择具体渠道"
+                      allow-search
+                      style="width: 240px; margin-top: 8px;"
+                    >
+                      <a-option v-for="c in landingChannelOptions" :key="c.value" :value="c.value">{{ c.label }}</a-option>
+                    </a-select>
+                  </div>
+                </div>
+                <!-- 单模型独立表 -->
+                <div class="landing-group">
+                  <a-checkbox v-model="landingForm.singleModel" @change="onSingleModelToggle">
+                    单模型独立表
+                  </a-checkbox>
+                  <div class="landing-sub" v-if="landingForm.singleModel">
+                    <a-radio-group v-model="landingForm.singleTableType">
+                      <a-radio value="realtime">实时表</a-radio>
+                      <a-radio value="offline">离线表</a-radio>
+                    </a-radio-group>
+                  </div>
+                </div>
+              </div>
+              <!-- 表名预览 -->
+              <div class="landing-table-preview" v-if="landingTableNames.length">
+                <div class="preview-title">将写入以下表：</div>
+                <div class="preview-item" v-for="item in landingTableNames" :key="item.table">
+                  <span class="preview-label">{{ item.label }}</span>
+                  <span class="preview-table">{{ item.table }}</span>
+                </div>
+              </div>
+            </a-form-item>
+
+            <!-- 场景标签 -->
+            <a-form-item label="场景标签" :extra="createMode === CREATE_MODES.PERIODIC ? '周期任务：首次配置选择，后续周期执行沿用' : '临时任务：每次配置时手动选择（仅展示标记，不参与校验）'">
+              <a-select
+                v-model="sceneTags"
+                placeholder="选择场景标签"
+                multiple
+                allow-clear
+                style="width: 100%; max-width: 480px;"
+              >
+                <a-option v-for="tag in sceneTagOptions" :key="tag" :value="tag">{{ tag }}</a-option>
+              </a-select>
+            </a-form-item>
           </a-form>
         </a-collapse-item>
 
-        <!-- 步骤二：配置样本数据 / 周期回溯 -->
-        <a-collapse-item key="sample" :header="createMode === CREATE_MODES.SINGLE ? '步骤二：选择样本数据' : '步骤二：配置周期回溯'">
+        <!-- 步骤三：配置样本数据 / 周期回溯 -->
+        <a-collapse-item key="sample">
+          <template #header>{{ createMode === CREATE_MODES.SINGLE ? '步骤三：选择样本数据' : '步骤三：配置周期回溯' }}</template>
+          <template #extra>
+            <a-tag v-if="stepStatus.s3 === 'done'" color="green" size="small">已完成</a-tag>
+            <a-tag v-else color="gray" size="small">待配置</a-tag>
+          </template>
           <!-- 周期回溯专用配置区 -->
           <template v-if="createMode === CREATE_MODES.PERIODIC">
             <a-divider orientation="left">周期执行配置</a-divider>
@@ -207,11 +295,27 @@
                 </template>
               </div>
             </a-form-item>
+
+            <!-- 关联方式选择（新增）：样本表无 flow_id 时自动提示可选 -->
+            <a-form-item label="关联方式" :extra="associationHint">
+              <a-radio-group v-model="associationMethod">
+                <a-radio v-for="m in associationMethods" :key="m.value" :value="m.value">{{ m.label }}</a-radio>
+              </a-radio-group>
+            </a-form-item>
           </a-form>
         </a-collapse-item>
 
-        <!-- 步骤三：必填字段映射 -->
-        <a-collapse-item key="required" header="步骤三：必填字段映射">
+        <!-- 步骤四：必填字段映射 -->
+        <a-collapse-item key="required">
+          <template #header>步骤四：必填字段映射</template>
+          <template #extra>
+            <a-tag v-if="stepStatus.s4 === 'done'" color="green" size="small">已完成</a-tag>
+            <a-tag v-else-if="stepStatus.s4 === 'partial'" color="orange" size="small">{{ stepStatus.reqMatched }}/{{ stepStatus.reqTotal }}</a-tag>
+            <a-tag v-else color="gray" size="small">待配置</a-tag>
+          </template>
+          <a-alert v-if="!sampleReady" type="info" :show-icon="true" style="margin-bottom: 12px;">
+            请先完成步骤三：拉取样本表数据
+          </a-alert>
           <div class="section-tip">根据样本表字段，完成以下必填字段的映射匹配</div>
           <div class="table-search-row">
             <a-input-search
@@ -240,18 +344,32 @@
                 <a-switch v-model="record.isEncrypted" size="small" />
               </a-tooltip>
             </template>
+            <template #requiredCell="{ record }">
+              <a-tag :color="record.required ? 'red' : 'gray'" size="small">
+                {{ record.required ? '必填' : '选填' }}
+              </a-tag>
+            </template>
             <template #statusCell="{ record }">
-              <a-tag :color="record.status === 'matched' ? 'green' : 'red'" class="status-tag">
-                {{ record.status === 'matched' ? '已匹配' : '未匹配' }}
+              <a-tag :color="record.status === 'matched' ? 'green' : (record.required ? 'red' : 'orange')" class="status-tag">
+                {{ record.status === 'matched' ? '已匹配' : (record.required ? '未匹配' : '可空') }}
               </a-tag>
             </template>
           </a-table>
         </a-collapse-item>
 
-        <!-- 步骤四：入参匹配 -->
-        <a-collapse-item key="match" header="步骤四：入参匹配">
+        <!-- 步骤五：入参匹配 -->
+        <a-collapse-item key="match">
+          <template #header>步骤五：入参匹配</template>
+          <template #extra>
+            <a-tag v-if="stepStatus.s5 === 'done'" color="green" size="small">已完成</a-tag>
+            <a-tag v-else-if="stepStatus.s5 === 'partial'" color="orange" size="small">{{ stepStatus.mapMatched }}/{{ stepStatus.mapTotal }}</a-tag>
+            <a-tag v-else color="gray" size="small">待配置</a-tag>
+          </template>
+          <a-alert v-if="!sampleReady" type="info" :show-icon="true" style="margin-bottom: 12px;">
+            请先完成步骤三：拉取样本表数据
+          </a-alert>
           <div class="section-tip">
-            已匹配 <a-badge :count="matchedCount" :max-count="99" style="margin: 0 4px;" />{{ matchedCount }} / {{ inputMappings.length }}，未匹配 {{ inputMappings.length - matchedCount }}
+            已匹配 {{ matchedCount }} / {{ inputMappings.length }}，未匹配 {{ inputMappings.length - matchedCount }}
           </div>
           <div class="table-search-row">
             <a-input-search
@@ -296,8 +414,31 @@
           </a-table>
         </a-collapse-item>
 
-        <!-- 步骤五：输出信息 -->
-        <a-collapse-item key="output" header="步骤五：输出信息">
+        <!-- 步骤六：输出信息 -->
+        <a-collapse-item key="output">
+          <template #header>步骤六：输出信息</template>
+          <template #extra>
+            <a-tag v-if="stepStatus.s6 === 'done'" color="green" size="small">已完成</a-tag>
+            <a-tag v-else color="gray" size="small">待配置</a-tag>
+          </template>
+          <!-- 主模型分指定（新增）：模型输出含多个分值时出现 -->
+          <a-form-item
+            v-if="modelOutputs.length > 1"
+            label="主模型分指定"
+            extra="指定哪个分值落入 model_score 固定字段"
+            style="margin-bottom: 12px;"
+          >
+            <a-select
+              v-model="mainScoreField"
+              placeholder="选择主模型分字段"
+              allow-search
+              style="width: 100%; max-width: 360px;"
+            >
+              <a-option v-for="o in modelOutputs" :key="o.name" :value="o.name">
+                {{ o.name }} <span class="col-type">{{ o.type }}</span>
+              </a-option>
+            </a-select>
+          </a-form-item>
           <div class="table-search-row">
             <a-input-search
               v-model="outputSearch"
@@ -338,8 +479,27 @@ const router = useRouter()
 const route = useRoute()
 const submitting = ref(false)
 
-// 折叠面板默认全部展开
-const activeKeys = ref(['model', 'sample', 'required', 'match', 'output'])
+// 折叠面板：默认全部展开，点击标题展开/收起
+const activeKeys = ref(['model', 'target', 'sample', 'required', 'match', 'output'])
+
+// 步骤完成状态
+const stepStatus = computed(() => {
+  const s1 = modelForm.value.serviceName ? 'done' : 'pending'
+  const s2 = (landingForm.value.summary || landingForm.value.singleModel) ? 'done' : 'pending'
+  const s3 = tableInputStatus.value === 'success' ? 'done' : 'pending'
+  const reqMatched = requiredMappings.value.filter(r => r.target).length
+  const reqTotal = requiredMappings.value.length
+  const s4 = reqTotal === 0 ? 'pending' : (reqMatched === reqTotal ? 'done' : 'partial')
+  const mapMatched = inputMappings.value.filter(r => r.target).length
+  const mapTotal = inputMappings.value.length
+  const s5 = mapTotal === 0 ? 'pending' : (mapMatched === mapTotal ? 'done' : 'partial')
+  const s6 = modelOutputs.value.length > 0 ? 'done' : 'pending'
+  const doneCount = [s1, s2, s3, s4, s5, s6].filter(s => s === 'done').length
+  return { s1, s2, s3, s4, s5, s6, reqMatched, reqTotal, mapMatched, mapTotal, doneCount }
+})
+
+// 步骤依赖检查：步骤四~六依赖步骤三样本表验证
+const sampleReady = computed(() => tableInputStatus.value === 'success')
 
 // 获取路由参数
 const routeParams = getBacktrackRouteParams(route)
@@ -383,8 +543,84 @@ const requiredDefs = [
   { title: '说明', dataIndex: 'label', width: 160 },
   { title: '映射到样本字段', dataIndex: 'target', slotName: 'targetCell', width: 260 },
   { title: '关联加密', dataIndex: 'isEncrypted', slotName: 'encryptedCell', width: 100, align: 'center' },
+  { title: '必填', dataIndex: 'required', slotName: 'requiredCell', width: 80, align: 'center' },
   { title: '状态', dataIndex: 'status', slotName: 'statusCell', width: 100, align: 'center' }
 ]
+
+// ============ 回溯任务配置：新增字段 ============
+// 落表目标（默认同时勾选 多模型汇总表 + 单模型独立表）
+const landingForm = ref({
+  summary: true,
+  summaryType: 'general',
+  channelCode: '',
+  singleModel: true,
+  singleTableType: 'realtime'
+})
+
+// 根据落表目标选择生成对应表名预览
+const landingTableNames = computed(() => {
+  const names = []
+  if (landingForm.value.summary) {
+    if (landingForm.value.summaryType === 'general') {
+      names.push({ label: '多模型汇总表（通用）', table: 'dw.risk_model_summary' })
+    } else if (landingForm.value.summaryType === 'channel') {
+      const ch = landingForm.value.channelCode
+      names.push({
+        label: '多模型汇总表（渠道专属）',
+        table: ch ? `dw.risk_model_summary_${ch}` : 'dw.risk_model_summary_{待选渠道}'
+      })
+    } else {
+      names.push({ label: '多模型汇总表', table: 'dw.risk_model_summary' })
+    }
+  }
+  if (landingForm.value.singleModel) {
+    const type = landingForm.value.singleTableType
+    if (type) {
+      names.push({ label: '单模型独立表', table: `dw.risk_model_single_${type}` })
+    }
+  }
+  return names
+})
+
+// 场景标签
+const sceneTags = ref([])
+const sceneTagOptions = ref([])
+// 主模型分指定
+const mainScoreField = ref('')
+// 关联方式
+const associationMethod = ref('flow_id')
+const associationMethods = ref([])
+const landingChannelOptions = ref([])
+const requiredFieldDefs = ref([])
+// 关联方式提示：样本表是否含 flow_id
+const hasFlowIdInTable = ref(false)
+const associationHint = computed(() =>
+  hasFlowIdInTable.value
+    ? '样本表含 flow_id 字段，默认 flow_id 关联'
+    : '样本表无 flow_id 字段，建议改用身份证号关联'
+)
+
+// 落表目标交互：勾选/取消 多模型汇总表
+const onSummaryToggle = (val) => {
+  if (val) {
+    if (!landingForm.value.summaryType) landingForm.value.summaryType = 'general'
+  } else {
+    landingForm.value.summaryType = ''
+    landingForm.value.channelCode = ''
+  }
+}
+const onSummaryTypeChange = (val) => {
+  if (val !== 'channel') landingForm.value.channelCode = ''
+}
+// 落表目标交互：勾选/取消 单模型独立表
+const onSingleModelToggle = (val) => {
+  if (val) {
+    if (!landingForm.value.singleTableType) landingForm.value.singleTableType = 'realtime'
+  } else {
+    landingForm.value.singleTableType = ''
+  }
+}
+// ============ 回溯任务配置：新增字段 END ============
 
 // 观测日期
 const observeForm = ref({ observeDate: '', dateRange: [], featurePersist: false })
@@ -526,6 +762,22 @@ const handleTableValidate = async () => {
       { name: 'status', type: 'varchar(10)', comment: '交易状态' },
       { name: 'merchant_name', type: 'varchar(100)', comment: '商户名称' },
       { name: 'create_time', type: 'datetime', comment: '创建时间' }
+    ],
+    // 含 flow_id / product_id / data_dt 等回溯必填字段的样本表
+    'dw.risk_sample': [
+      { name: 'flow_id', type: 'varchar(32)', comment: '流水号' },
+      { name: 'product_id', type: 'varchar(20)', comment: '产品ID' },
+      { name: 'data_dt', type: 'date', comment: '数据日期' },
+      { name: 'business_code', type: 'varchar(20)', comment: '业务编码' },
+      { name: 'session_number', type: 'varchar(32)', comment: '会话编号' },
+      { name: 'cert_no', type: 'varchar(18)', comment: '证件号码' },
+      { name: 'user_id', type: 'bigint', comment: '用户ID' },
+      { name: 'mobile', type: 'varchar(11)', comment: '手机号' },
+      { name: 'age', type: 'int', comment: '年龄' },
+      { name: 'income', type: 'decimal(18,2)', comment: '收入' },
+      { name: 'credit_history', type: 'varchar(10)', comment: '信用历史' },
+      { name: 'status', type: 'varchar(10)', comment: '状态' },
+      { name: 'update_time', type: 'datetime', comment: '更新时间' }
     ]
   }
   try {
@@ -534,6 +786,13 @@ const handleTableValidate = async () => {
     if (cols.length > 0) {
       tableColumns.value = cols
       tableInputStatus.value = 'success'
+      // 关联方式探测：样本表是否含 flow_id
+      hasFlowIdInTable.value = tableColumns.value.some(c => c.name === 'flow_id')
+      if (!hasFlowIdInTable.value) {
+        associationMethod.value = 'cert_no'
+      } else if (associationMethod.value !== 'cert_no') {
+        associationMethod.value = 'flow_id'
+      }
       requiredMappings.value = requiredMappings.value.map(r => {
         const same = tableColumns.value.find(c => c.name === r.name)
         const target = r.target || (same ? same.name : '')
@@ -588,6 +847,15 @@ const loadServices = async () => {
 }
 loadServices()
 
+// 加载回溯配置枚举（场景标签 / 渠道 / 必填字段定义 / 关联方式）
+const loadEnumOptions = () => {
+  sceneTagOptions.value = backtrackAPI.getSceneTags() || []
+  landingChannelOptions.value = backtrackAPI.getLandingChannels() || []
+  associationMethods.value = backtrackAPI.getAssociationMethods() || []
+  requiredFieldDefs.value = backtrackAPI.getRequiredFieldDefs() || []
+}
+loadEnumOptions()
+
 const prefillFromCopy = async (copyFromId) => {
   try {
     const res = await backtrackAPI.getBacktrackDetail(copyFromId)
@@ -628,6 +896,23 @@ const prefillFromCopy = async (copyFromId) => {
         return { ...r, target, status: target ? 'matched' : 'unmatched', isEncrypted: !!found?.isEncrypted }
       })
     }
+
+    // 回填落表目标
+    if (cfg.landingForm) {
+      landingForm.value = {
+        summary: !!cfg.landingForm.summary,
+        summaryType: cfg.landingForm.summaryType || '',
+        channelCode: cfg.landingForm.channelCode || '',
+        singleModel: cfg.landingForm.singleModel !== false,
+        singleTableType: cfg.landingForm.singleTableType || (cfg.landingForm.singleModel !== false ? 'realtime' : '')
+      }
+    }
+    // 回填场景标签
+    sceneTags.value = Array.isArray(cfg.sceneTags) ? [...cfg.sceneTags] : []
+    // 回填主模型分
+    if (cfg.mainScoreField) mainScoreField.value = cfg.mainScoreField
+    // 回填关联方式
+    if (cfg.associationMethod) associationMethod.value = cfg.associationMethod
 
     if (mode === CREATE_MODES.PERIODIC) {
       sampleForm.value.periodicity = ''
@@ -696,13 +981,36 @@ const onServiceChange = async (serviceName) => {
         seen.add(k)
         return true
       })
-      const pkSet = Array.from(new Set(['cert_no', ...(((p && p.pkFields) || []))]))
-      requiredMappings.value = pkSet.map(name => {
-        const same = tableColumns.value.find(c => c.name === name)
-        const label = name === 'cert_no' ? '证件号' : name
+      // 必填字段映射：改用固定枚举（product_id/flow_id/data_dt 强制 + business_code/session_number 选填）
+      const defs = (requiredFieldDefs.value && requiredFieldDefs.value.length)
+        ? requiredFieldDefs.value
+        : [
+          { field: 'product_id', label: '产品ID', required: true },
+          { field: 'flow_id', label: '流水号', required: true },
+          { field: 'data_dt', label: '数据日期', required: true },
+          { field: 'business_code', label: '业务编码', required: false },
+          { field: 'session_number', label: '会话编号', required: false }
+        ]
+      requiredMappings.value = defs.map(d => {
+        const same = tableColumns.value.find(c => c.name === d.field)
         const target = same ? same.name : ''
-        return { name, label, target, status: target ? 'matched' : 'unmatched', isEncrypted: false }
+        return {
+          name: d.field,
+          label: d.label,
+          required: d.required,
+          target,
+          status: target ? 'matched' : 'unmatched',
+          isEncrypted: false
+        }
       })
+      // 主模型分初始化：默认取第一个分类型输出
+      if (modelOutputs.value.length > 1) {
+        if (!modelOutputs.value.some(o => o.name === mainScoreField.value)) {
+          mainScoreField.value = modelOutputs.value[0]?.name || ''
+        }
+      } else {
+        mainScoreField.value = modelOutputs.value[0]?.name || ''
+      }
       Message.info(`必填映射 ${requiredMappings.value.length} 项，入参 ${modelInputs.value.length} 项`)
     }
   } catch (e) {}
@@ -731,7 +1039,16 @@ const handleSubmit = async () => {
     if (!sampleForm.value.tableNameInput) errors.push('请输入样本表名')
     if (!modelForm.value.serviceName) errors.push('请选择回溯模型')
     if (routeParams.copyFrom && !modelForm.value.taskName) errors.push('请输入任务名称')
-    if ((requiredMappings.value || []).some(r => !r.target)) errors.push('请完成必填字段映射')
+    // 必填字段校验：仅强制项缺失阻断提交（红色报错）
+    const missingRequired = (requiredMappings.value || []).filter(r => r.required && !r.target)
+    if (missingRequired.length) {
+      errors.push(`必填字段未映射: ${missingRequired.map(r => r.name).join('、')}`)
+    }
+    // 选填字段缺失仅弱提示，不阻断
+    const missingOptional = (requiredMappings.value || []).filter(r => !r.required && !r.target)
+    if (missingOptional.length) {
+      Message.info(`选填字段未映射（可忽略）: ${missingOptional.map(r => r.name).join('、')}`)
+    }
     if (createMode.value === CREATE_MODES.PERIODIC) {
       if (!sampleForm.value.taskStartDate) errors.push('请选择任务执行开始时间')
       if (!sampleForm.value.taskEndDate) errors.push('请选择任务执行结束时间')
@@ -756,7 +1073,20 @@ const handleSubmit = async () => {
       featurePersist: !!observeForm.value.featurePersist,
       inputMappings: mappings,
       outputs: modelOutputs.value,
-      requiredFieldMappings: requiredMappings.value.map(r => ({ field: r.name, target: r.target, isEncrypted: !!r.isEncrypted })),
+      requiredFieldMappings: requiredMappings.value.map(r => ({
+        field: r.name,
+        target: r.target,
+        isEncrypted: !!r.isEncrypted,
+        required: !!r.required
+      })),
+      // 落表目标
+      landingForm: { ...landingForm.value },
+      // 场景标签
+      sceneTags: [...sceneTags.value],
+      // 主模型分指定
+      mainScoreField: mainScoreField.value,
+      // 关联方式
+      associationMethod: associationMethod.value,
       periodicity: sampleForm.value.periodicity,
       weekDays: sampleForm.value.weekDays || [],
       monthDays: sampleForm.value.monthDays || [],
@@ -909,4 +1239,99 @@ const handleCancel = () => {
 
 /* select option 类型 */
 .col-type { color: var(--color-text-3); font-size: 12px; margin-left: 6px; }
+
+/* 落表目标选择 */
+.landing-block {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+}
+.landing-group {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 16px;
+  background: var(--color-fill-1);
+  border: 1px solid var(--color-neutral-3);
+  border-radius: 6px;
+}
+.landing-sub {
+  margin-top: 8px;
+  padding-left: 28px;
+}
+.landing-sub .arco-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 表名预览 */
+.landing-table-preview {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--color-fill-1);
+  border-radius: 6px;
+  border: 1px dashed var(--color-neutral-3);
+}
+.preview-title {
+  font-size: 12px;
+  color: var(--color-text-3);
+  margin-bottom: 6px;
+}
+.preview-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+.preview-item + .preview-item {
+  margin-top: 4px;
+}
+.preview-label {
+  font-size: 12px;
+  color: var(--color-text-2);
+  white-space: nowrap;
+}
+.preview-table {
+  font-size: 13px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: rgb(var(--arcoblue-6));
+  font-weight: 500;
+}
+.preview-table.pending {
+  color: var(--color-text-3);
+  font-style: italic;
+}
+
+/* 顶部步骤进度条 */
+.step-progress-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 8px 0;
+}
+.progress-track {
+  flex: 1;
+  height: 8px;
+  background: var(--color-fill-2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, rgb(var(--arcoblue-5)), rgb(var(--green-5)));
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+.progress-label {
+  font-size: 13px;
+  color: var(--color-text-2);
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+/* collapse extra slot 状态标签对齐 */
+:deep(.arco-collapse-item-header-extra) {
+  margin-right: 8px;
+}
 </style>

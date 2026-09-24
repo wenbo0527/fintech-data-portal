@@ -10,7 +10,7 @@
     <a-tabs type="card" :active-key="activeTab" @change="activeTab=$event">
       <!-- Tab1：配置信息（只读，对齐创建页步骤一~五结构） -->
       <a-tab-pane key="config" title="配置信息">
-        <a-collapse :default-active-key="['model','sample','required','match','output']" :bordered="false">
+        <a-collapse v-model:active-key="collapseKeys" :bordered="false">
           <!-- 步骤一：选择回溯模型 -->
           <a-collapse-item key="model" header="步骤一：选择回溯模型">
             <a-descriptions :column="2" bordered size="small">
@@ -40,8 +40,49 @@
             </a-descriptions>
           </a-collapse-item>
 
-          <!-- 步骤二：样本数据 / 周期回溯配置 -->
-          <a-collapse-item key="sample" :header="detail.config?.mode === 'periodic' ? '步骤二：配置周期回溯' : '步骤二：选择样本数据'">
+          <!-- 步骤二：落表目标与场景配置 -->
+          <a-collapse-item key="landing" header="步骤二：落表目标与场景配置">
+            <a-descriptions :column="2" bordered size="small">
+              <a-descriptions-item label="多模型汇总表" :span="2">
+                <a-tag v-if="detail.config?.landingForm?.summary" color="green">已勾选</a-tag>
+                <a-tag v-else color="gray">未勾选</a-tag>
+                <template v-if="detail.config?.landingForm?.summary">
+                  <span style="margin-left: 12px;">
+                    类型：
+                    <a-tag size="small">
+                      {{ detail.config.landingForm.summaryType === 'general' ? '通用汇总表' :
+                         detail.config.landingForm.summaryType === 'channel' ? '渠道专属汇总表' : '—' }}
+                    </a-tag>
+                    <template v-if="detail.config.landingForm.summaryType === 'channel' && detail.config.landingForm.channelCode">
+                      <a-tag size="small" color="blue" style="margin-left: 4px;">{{ channelLabel(detail.config.landingForm.channelCode) }}</a-tag>
+                    </template>
+                  </span>
+                </template>
+              </a-descriptions-item>
+              <a-descriptions-item label="单模型独立表" :span="2">
+                <a-tag v-if="detail.config?.landingForm?.singleModel" color="green">已勾选</a-tag>
+                <a-tag v-else color="gray">未勾选</a-tag>
+                <template v-if="detail.config?.landingForm?.singleModel">
+                  <span style="margin-left: 12px;">
+                    类型：
+                    <a-tag size="small">
+                      {{ detail.config.landingForm.singleTableType === 'realtime' ? '实时表' :
+                         detail.config.landingForm.singleTableType === 'offline' ? '离线表' : '—' }}
+                    </a-tag>
+                  </span>
+                </template>
+              </a-descriptions-item>
+              <a-descriptions-item label="场景标签" :span="2">
+                <template v-if="detail.config?.sceneTags?.length">
+                  <a-tag v-for="tag in detail.config.sceneTags" :key="tag" color="arcoblue" style="margin-right: 6px;">{{ tag }}</a-tag>
+                </template>
+                <span v-else>—</span>
+              </a-descriptions-item>
+            </a-descriptions>
+          </a-collapse-item>
+
+          <!-- 步骤三：样本数据 / 周期回溯配置 -->
+          <a-collapse-item key="sample" :header="detail.config?.mode === 'periodic' ? '步骤三：配置周期回溯' : '步骤三：选择样本数据'">
             <template v-if="detail.config?.mode === 'periodic'">
               <a-divider orientation="left">周期执行配置</a-divider>
               <a-descriptions :column="3" bordered size="small">
@@ -69,11 +110,14 @@
               <a-descriptions-item label="WHERE 条件" :span="2">
                 <code class="readonly-sql">{{ detail.config?.sqlWhere || '（无）' }}</code>
               </a-descriptions-item>
+              <a-descriptions-item label="关联方式" :span="2">
+                <a-tag color="arcoblue">{{ associationLabel(detail.config?.associationMethod) }}</a-tag>
+              </a-descriptions-item>
             </a-descriptions>
           </a-collapse-item>
 
-          <!-- 步骤三：必填字段映射 -->
-          <a-collapse-item key="required" header="步骤三：必填字段映射">
+          <!-- 步骤四：必填字段映射 -->
+          <a-collapse-item key="required" header="步骤四：必填字段映射">
             <a-table
               :data="detail.config?.requiredFieldMappings || []"
               :columns="requiredCols"
@@ -81,14 +125,19 @@
               size="small"
               :pagination="false"
             >
+              <template #requiredCell="{ record }">
+                <a-tag :color="record.required ? 'red' : 'gray'" size="small">
+                  {{ record.required ? '必填' : '选填' }}
+                </a-tag>
+              </template>
               <template #encryptedCell="{ record }">
                 <a-tag :color="record.isEncrypted ? 'blue' : 'gray'">{{ record.isEncrypted ? '是' : '否' }}</a-tag>
               </template>
             </a-table>
           </a-collapse-item>
 
-          <!-- 步骤四：入参匹配 -->
-          <a-collapse-item key="match" header="步骤四：入参匹配">
+          <!-- 步骤五：入参匹配 -->
+          <a-collapse-item key="match" header="步骤五：入参匹配">
             <div class="section-tip">
               已匹配 {{ matchedInputCount }} / {{ (detail.config?.inputMappings || []).length }}，未匹配 {{ (detail.config?.inputMappings || []).length - matchedInputCount }}
             </div>
@@ -107,8 +156,16 @@
             </a-table>
           </a-collapse-item>
 
-          <!-- 步骤五：输出信息 -->
-          <a-collapse-item key="output" header="步骤五：输出信息">
+          <!-- 步骤六：输出信息 -->
+          <a-collapse-item key="output" header="步骤六：输出信息">
+            <a-descriptions v-if="detail.config?.mainScoreField" :column="2" bordered size="small" style="margin-bottom: 12px;">
+              <a-descriptions-item label="主模型分指定">
+                <a-tag color="arcoblue">{{ detail.config.mainScoreField }}</a-tag>
+              </a-descriptions-item>
+              <a-descriptions-item label="出参总数">
+                {{ (detail.config?.outputs || []).length }} 个
+              </a-descriptions-item>
+            </a-descriptions>
             <a-table
               :data="detail.config?.outputs || []"
               :columns="outputCols"
@@ -189,6 +246,9 @@ const rawTab = routeParams.tab
 const activeTab = ref((rawTab && rawTab !== 'config') ? 'log' : 'config')
 const detail = ref({ id, status: 'running', config: {}, progress: [], result: {} })
 
+// 配置信息折叠面板展开项（响应式，确保所有面板可点击展开/收起）
+const collapseKeys = ref(['model', 'landing', 'sample', 'required', 'match', 'output'])
+
 // 来源模块信息
 const isFromRisk = computed(() => isFromRiskModule(route))
 const isFromOffline = computed(() => isFromOfflineModule(route))
@@ -196,7 +256,8 @@ const isFromOffline = computed(() => isFromOfflineModule(route))
 // 只读列配置
 const requiredCols = [
   { title: '字段', dataIndex: 'field', width: 160 },
-  { title: '映射到样本字段', dataIndex: 'target', width: 240 },
+  { title: '映射到样本字段', dataIndex: 'target', width: 200 },
+  { title: '必填/选填', slotName: 'requiredCell', width: 100, align: 'center' },
   { title: '关联加密', dataIndex: 'isEncrypted', slotName: 'encryptedCell', width: 120, align: 'center' }
 ]
 const inputCols = [
@@ -253,6 +314,18 @@ const formatRange = (range) => {
   const [s, e] = range
   if (!s && !e) return '—'
   return `${s || '—'} ~ ${e || '—'}`
+}
+
+// 渠道标签翻译
+const channelLabel = (code) => {
+  const map = { alipay: '支付宝', wechat: '微信', jd: '京东', douyin: '抖音' }
+  return map[code] || code || '—'
+}
+
+// 关联方式标签翻译
+const associationLabel = (method) => {
+  const map = { flow_id: 'flow_id 关联', cert_no: '身份证号关联' }
+  return map[method] || method || '—'
 }
 
 // 模块C P0：日志类型 + 解析后的执行结果

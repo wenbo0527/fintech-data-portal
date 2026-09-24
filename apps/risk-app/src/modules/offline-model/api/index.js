@@ -140,7 +140,13 @@ export const backtrackAPI = {
   getOperationLogs: (backtrackId) => {
     const result = mockAPI.backtrack.getOperationLogs(backtrackId)
     return Promise.resolve(mockAPI.createResponse(result))
-  }
+  },
+
+  // 回溯配置相关枚举（场景标签 / 渠道 / 必填字段 / 关联方式）
+  getSceneTags: () => mockAPI.backtrack.SCENE_TAGS,
+  getLandingChannels: () => mockAPI.backtrack.LANDING_CHANNELS,
+  getRequiredFieldDefs: () => mockAPI.backtrack.REQUIRED_FIELD_DEFS,
+  getAssociationMethods: () => mockAPI.backtrack.ASSOCIATION_METHODS
 }
 
 // 任务管理相关API（待实现）

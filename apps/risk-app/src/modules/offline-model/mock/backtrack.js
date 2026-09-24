@@ -15,6 +15,32 @@ export const BACKTRACK_STATUS = {
   PARTIAL_SUCCESS: 'partial_success'
 }
 
+// 场景标签枚举（仅展示标记，不参与逻辑校验）
+export const SCENE_TAGS = ['授信', '支用', '反欺诈', '贷后', '营销']
+
+// 落表目标-渠道枚举（渠道专属汇总表下拉用）
+export const LANDING_CHANNELS = [
+  { value: 'alipay', label: '支付宝' },
+  { value: 'wechat', label: '微信' },
+  { value: 'jd', label: '京东' },
+  { value: 'douyin', label: '抖音' }
+]
+
+// 必填字段定义：required=true 缺失阻断提交，required=false 缺失仅弱提示
+export const REQUIRED_FIELD_DEFS = [
+  { field: 'product_id', label: '产品ID', required: true },
+  { field: 'flow_id', label: '流水号', required: true },
+  { field: 'data_dt', label: '数据日期', required: true },
+  { field: 'business_code', label: '业务编码', required: false },
+  { field: 'session_number', label: '会话编号', required: false }
+]
+
+// 关联方式枚举
+export const ASSOCIATION_METHODS = [
+  { value: 'flow_id', label: 'flow_id 关联' },
+  { value: 'cert_no', label: '身份证号关联' }
+]
+
 // 构造结构化日志——嵌套日志（stages 在顶层 + main_model + sub_models）
 // 用于详情页日志结构化展示（模块C P0）
 function buildNestedLog(now) {
@@ -153,10 +179,20 @@ function buildSingleModelLog(now) {
       ],
       outputs: seedOutputs,
       requiredFieldMappings: [
-        { field: 'cert_no', target: 'cert_no', isEncrypted: true },
-        { field: 'flow_id', target: 'flow_id', isEncrypted: false },
-        { field: 'report_id', target: 'report_id', isEncrypted: false }
-      ]
+        { field: 'product_id', target: 'product_id', isEncrypted: false, required: true },
+        { field: 'flow_id', target: 'flow_id', isEncrypted: false, required: true },
+        { field: 'data_dt', target: 'data_dt', isEncrypted: false, required: true },
+        { field: 'business_code', target: '', isEncrypted: false, required: false },
+        { field: 'session_number', target: '', isEncrypted: false, required: false }
+      ],
+      // 落表目标（单模型独立表-实时）
+      landingForm: { summary: false, summaryType: '', channelCode: '', singleModel: true, singleTableType: 'realtime' },
+      // 场景标签
+      sceneTags: ['授信'],
+      // 主模型分指定（outputs 含 score/label 多分值）
+      mainScoreField: 'score',
+      // 关联方式
+      associationMethod: 'flow_id'
     }
   }
   tasks.unshift(t)
@@ -198,9 +234,20 @@ function buildSingleModelLog(now) {
       ],
       outputs: seedOutputs,
       requiredFieldMappings: [
-        { field: 'cert_no', target: 'cert_no', isEncrypted: true },
-        { field: 'flow_id', target: 'flow_id', isEncrypted: false }
+        { field: 'product_id', target: 'product_id', isEncrypted: false, required: true },
+        { field: 'flow_id', target: 'flow_id', isEncrypted: false, required: true },
+        { field: 'data_dt', target: 'data_dt', isEncrypted: false, required: true },
+        { field: 'business_code', target: 'risk_biz', isEncrypted: false, required: false },
+        { field: 'session_number', target: '', isEncrypted: false, required: false }
       ],
+      // 落表目标（多模型通用汇总表 + 单模型离线，并行写入）
+      landingForm: { summary: true, summaryType: 'general', channelCode: '', singleModel: true, singleTableType: 'offline' },
+      // 场景标签（周期任务首次配置沿用）
+      sceneTags: ['支用', '反欺诈'],
+      // 主模型分指定
+      mainScoreField: 'score',
+      // 关联方式（无 flow_id 时走身份证号）
+      associationMethod: 'cert_no',
       periodicity: 'daily',
       weekDays: ['1', '2', '3', '4', '5'],
       monthDays: [],
@@ -278,10 +325,20 @@ function buildSingleModelLog(now) {
       ],
       outputs: seedOutputs,
       requiredFieldMappings: [
-        { field: 'cert_no', target: 'cert_no', isEncrypted: true },
-        { field: 'flow_id', target: 'flow_id', isEncrypted: false },
-        { field: 'report_id', target: 'report_id', isEncrypted: false }
-      ]
+        { field: 'product_id', target: 'product_id', isEncrypted: false, required: true },
+        { field: 'flow_id', target: 'flow_id', isEncrypted: false, required: true },
+        { field: 'data_dt', target: 'data_dt', isEncrypted: false, required: true },
+        { field: 'business_code', target: '', isEncrypted: false, required: false },
+        { field: 'session_number', target: '', isEncrypted: false, required: false }
+      ],
+      // 落表目标（多模型渠道专属汇总表-支付宝）
+      landingForm: { summary: true, summaryType: 'channel', channelCode: 'alipay', singleModel: false, singleTableType: '' },
+      // 场景标签
+      sceneTags: ['反欺诈'],
+      // 主模型分指定
+      mainScoreField: 'score',
+      // 关联方式
+      associationMethod: 'flow_id'
     }
   }
   tasks.unshift(t3)
@@ -336,9 +393,20 @@ function buildSingleModelLog(now) {
       ],
       outputs: seedOutputs,
       requiredFieldMappings: [
-        { field: 'cert_no', target: 'cert_no', isEncrypted: true },
-        { field: 'flow_id', target: 'flow_id', isEncrypted: false }
+        { field: 'product_id', target: 'product_id', isEncrypted: false, required: true },
+        { field: 'flow_id', target: 'flow_id', isEncrypted: false, required: true },
+        { field: 'data_dt', target: 'data_dt', isEncrypted: false, required: true },
+        { field: 'business_code', target: '', isEncrypted: false, required: false },
+        { field: 'session_number', target: '', isEncrypted: false, required: false }
       ],
+      // 落表目标（单模型独立表-离线）
+      landingForm: { summary: false, summaryType: '', channelCode: '', singleModel: true, singleTableType: 'offline' },
+      // 场景标签（周期任务首次配置沿用）
+      sceneTags: ['贷后'],
+      // 主模型分指定
+      mainScoreField: 'score',
+      // 关联方式
+      associationMethod: 'flow_id',
       periodicity: 'daily',
       weekDays: ['1', '2', '3', '4', '5'],
       monthDays: [],
@@ -492,5 +560,9 @@ export default {
   updateBacktrackProgress,
   logOperation,
   getOperationLogs,
-  BACKTRACK_STATUS
+  BACKTRACK_STATUS,
+  SCENE_TAGS,
+  LANDING_CHANNELS,
+  REQUIRED_FIELD_DEFS,
+  ASSOCIATION_METHODS
 }

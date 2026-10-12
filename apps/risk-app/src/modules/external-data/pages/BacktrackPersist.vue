@@ -2,12 +2,9 @@
   <div class="backtrack-persist">
     <a-page-header title="外数回溯落库申请" subtitle="回溯返回非标准数据经任务匹配与字段映射标准化落库 Hive">
       <template #extra>
-        <a-space>
-          <a-tag v-if="currentStatusText" :color="statusColor" bordered size="large">
-            当前状态：{{ currentStatusText }}
-          </a-tag>
-          <a-button @click="goBack">返回</a-button>
-        </a-space>
+        <a-tag v-if="currentStatusText" :color="statusColor" bordered size="large">
+          当前状态：{{ currentStatusText }}
+        </a-tag>
       </template>
     </a-page-header>
 
@@ -79,11 +76,14 @@
                   <template #cell="{ record }">{{ record.rows.toLocaleString() }}</template>
                 </a-table-column>
                 <a-table-column title="更新时间" data-index="updateTime" :width="170" />
-                <a-table-column title="状态" :width="110">
+                <a-table-column title="状态" :width="180">
                   <template #cell="{ record }">
-                    <a-tag :color="record.decrypted ? 'green' : 'orange'">
-                      {{ record.decrypted ? '已解密' : '待解密' }}
-                    </a-tag>
+                    <a-space size="mini">
+                      <a-tag :color="record.decrypted ? 'green' : 'orange'">
+                        {{ record.decrypted ? '已解密' : '待解密' }}
+                      </a-tag>
+                      <a-tag v-if="getProcessRecords(record.id).length" color="purple">已处理</a-tag>
+                    </a-space>
                   </template>
                 </a-table-column>
                 <a-table-column title="操作" :width="110" align="center">
@@ -98,7 +98,8 @@
 
             <div v-else class="table-tip" style="margin-top: 24px">
               定期拉取任务（一天 / 半天一次）会将厂商回溯返回文件落到对应渠道 SFTP 目录；
-              百行 / 钱塘密钥不固定（钱塘随机生成），加密文件需人工解密。选择已解密文件行即可进入下一步。
+              百行 / 钱塘密钥不固定（钱塘随机生成），加密文件需人工解密。选择已解密文件行即可进入下一步；
+              标记「已处理」的文件再次点击时会弹窗展示历史处理记录，确认后可选择重新写入。
             </div>
           </div>
 
@@ -158,8 +159,13 @@
                 <template #columns>
                   <a-table-column title="行号" data-index="rowNo" :width="70" />
                   <a-table-column title="q_id" data-index="q_id" />
-                  <a-table-column title="name_hash" data-index="name_hash" />
-                  <a-table-column title="query_date" data-index="query_date" />
+                  <a-table-column title="id_md5" ellipsis tooltip>
+                    <template #cell="{ record }">
+                      <span style="font-family: monospace">{{ idMd5Display(record.id_md5) }}</span>
+                      <a-tag v-if="idMd5ConvertedMap[record.id_md5]" color="green" size="small">已转换MD5</a-tag>
+                    </template>
+                  </a-table-column>
+                  <a-table-column title="review_data" data-index="review_data" />
                   <a-table-column title="loan_cnt_12m" data-index="loan_cnt_12m" />
                   <a-table-column title="max_overdue_amt" data-index="max_overdue_amt" />
                 </template>
@@ -204,6 +210,60 @@
             </a-col>
           </a-row>
 
+          <a-alert v-if="fieldMappings.length" :type="requiredTwoPassed ? 'success' : 'warning'" style="margin-bottom: 12px">
+            <template #title>必选字段映射（2 项）：标准字段固定，下拉选择文件中等同的出参字段</template>
+            <a-space :size="24" wrap align="start" style="margin-bottom: 4px">
+              <div v-for="r in requiredMappingStatus" :key="r.std" class="required-mapping-item">
+                <div class="required-mapping-label">
+                  标准字段 <b>{{ r.std }}</b>（{{ r.stdLabel }}）
+                  <a-tag :color="r.ok ? 'green' : 'red'" size="small">
+                    {{ r.ok ? `等同字段：${r.sel}` : r.sel ? `「${r.sel}」非等同字段` : '未选择等同字段' }}
+                  </a-tag>
+                </div>
+                <a-select
+                  v-model="requiredSourceSelection[r.std]"
+                  size="small"
+                  allow-search
+                  placeholder="选择文件中等同的出参字段"
+                  style="width: 240px"
+                  @change="onRequiredSourceChange(r.std)"
+                >
+                  <a-option v-for="f in catalogSourceFields" :key="f" :value="f">{{ f }}（{{ sourceFieldComment(f) }}）</a-option>
+                </a-select>
+                <div class="table-tip" style="margin-top: 2px">等同判定：{{ r.rule }}；选中字段说明：{{ sourceFieldComment(r.sel) }}</div>
+                <!-- id_md5 解析转换：源 SM3/SHA256 密文统一转换为 MD5 后落库 -->
+                <template v-if="r.std === 'id_md5'">
+                  <div class="idmd5-convert-row">
+                    <a-select v-model="idMd5SourceAlgo" size="small" style="width: 210px" @change="resetIdMd5Convert">
+                      <a-option value="AUTO">源加密算法：自动识别</a-option>
+                      <a-option value="MD5">MD5（32 位·无需转换）</a-option>
+                      <a-option value="SHA256">SHA256（64 位）</a-option>
+                      <a-option value="SM3">SM3（64 位·国密）</a-option>
+                    </a-select>
+                    <a-button
+                      v-if="idMd5NeedConvert"
+                      type="outline"
+                      size="small"
+                      :disabled="idMd5ConvertDone"
+                      @click="runIdMd5Convert"
+                    >
+                      <template #icon><icon-refresh /></template>
+                      {{ idMd5ConvertDone ? '已解析转换为 MD5' : '解析转换为 MD5' }}
+                    </a-button>
+                    <a-tag v-if="idMd5ConvertDone" color="green" size="small">已转换 {{ Object.keys(idMd5ConvertedMap).length }} 行 → MD5（32 位）</a-tag>
+                    <a-tag v-else-if="idMd5NeedConvert" color="orange" size="small">待转换 {{ idMd5NeedConvertPendingRows.length }} 行</a-tag>
+                  </div>
+                  <div class="table-tip" style="margin-top: 4px">{{ idMd5DetectText }}</div>
+                  <div v-if="idMd5ConvertDone" class="table-tip" style="margin-top: 2px">
+                    转换样例：{{ previewRows[0]?.id_md5.slice(0, 12) }}… → {{ idMd5ConvertedMap[previewRows[0]?.id_md5]?.slice(0, 12) }}…
+                    （哈希不可逆，实际由加密平台按密文映射/原文重加密转换）
+                  </div>
+                </template>
+              </div>
+            </a-space>
+            <div class="table-tip">id_md5（加密MD5字段）与 review_date（回溯日期）为固定标准字段，需从文件出参中选到含义等同的字段（默认 id_md5 / review_data，源密文为 SM3/SHA256 时还须先解析转换为 MD5），未满足时无法进入下一步；其余字段照旧在下方列表中碰撞/映射。</div>
+          </a-alert>
+
           <a-table
             v-if="fieldMappings.length"
             :data="pagedFieldMappings"
@@ -214,7 +274,7 @@
             @page-size-change="onMappingPageSizeChange"
           >
             <template #columns>
-              <a-table-column title="外数出参字段" data-index="sourceField" :width="220" />
+              <a-table-column title="外数出参字段" data-index="sourceField" :width="220" ellipsis tooltip />
               <a-table-column title="字段说明" data-index="comment" :width="200" ellipsis tooltip />
               <a-table-column title="标准库字段" :width="260">
                 <template #cell="{ record }">
@@ -251,7 +311,7 @@
             </template>
           </a-table>
           <div v-if="fieldMappings.length" class="table-tip">
-            已映射 {{ mappedCount }} / {{ fieldMappings.length }} 项（其中非标准化透传 {{ nonStdCount }} 项）。可先自动碰撞，再上传映射表批量补齐，最后人工修正剩余字段；匹配后「待匹配」字段自动排在最前，便于逐页处理。
+            映射列表已映射 {{ mappedCount }} / {{ fieldMappings.length }} 项（另有 id_md5 / review_date 两项标准字段在上方独立区选定文件中等同的出参字段；其中非标准化透传 {{ nonStdCount }} 项）。可先自动碰撞，再上传映射表批量补齐，最后人工修正剩余字段；匹配后「待匹配」字段自动排在最前，便于逐页处理。
           </div>
         </div>
 
@@ -335,34 +395,50 @@
 
         <!-- 步骤4：落 Hive 标准库 -->
         <div v-show="currentStep === 3">
-          <a-descriptions :column="2" bordered style="margin-bottom: 16px">
-            <a-descriptions-item label="征信机构">{{ taskConfig.channel }}</a-descriptions-item>
-            <a-descriptions-item label="来源文件">{{ selectedFile?.name }}</a-descriptions-item>
-            <a-descriptions-item label="落库批次">
-              <a-space wrap>
-                <a-tag v-for="b in persistBatches" :key="b.backid" size="small" color="purple">{{ b.backid }}</a-tag>
+          <a-descriptions :column="1" bordered style="margin-bottom: 16px">
+            <a-descriptions-item label="源表">
+              <a-space wrap :size="4">
+                <template v-if="sourceTables.length">
+                  <a-tag v-for="t in sourceTables" :key="t" size="small" color="orangered">{{ t }}</a-tag>
+                  <span class="table-tip">（临时库批次表，共 {{ persistBatches.length }} 个）</span>
+                </template>
+                <span v-else class="table-tip">上一步未落临时库，暂无源表</span>
               </a-space>
             </a-descriptions-item>
-            <a-descriptions-item label="外数产品">
-              {{ mappingProduct }}<template v-if="currentProduct?.interfaceId">（接口号 {{ currentProduct.interfaceId }}）</template><template v-else-if="isCustomProduct">（未收录，人工命名落库）</template>
-            </a-descriptions-item>
-            <a-descriptions-item label="目标 Hive 表">
-              <a-select v-model="hiveTable" style="width: 300px" allow-search allow-create placeholder="选择已有表名，或输入命名新表">
+            <a-descriptions-item label="目标表">
+              <a-select v-model="hiveTable" style="width: 320px" allow-search allow-create placeholder="选择已有表名，或输入命名新表">
                 <a-option v-for="t in hiveTableOptions" :key="t" :value="t">{{ t }}</a-option>
               </a-select>
+              <div class="table-tip">
+                征信机构 {{ taskConfig.channel }} · 外数产品 {{ mappingProduct }}
+                <template v-if="currentProduct?.interfaceId">（接口号 {{ currentProduct.interfaceId }}）</template>
+                <template v-else-if="isCustomProduct">（未收录，人工命名落库）</template>
+              </div>
             </a-descriptions-item>
-            <a-descriptions-item label="分区规则">按回溯日期按天分区（dt=yyyy-MM-dd），大表按月拆分存储</a-descriptions-item>
-            <a-descriptions-item label="映射字段数">{{ mappedCount - nonStdCount }} 个标准字段 + {{ nonStdCount }} 个非标准化透传</a-descriptions-item>
-            <a-descriptions-item label="一致性校验">已通过（一致率 {{ consistencyRate.toFixed(2) }}%）</a-descriptions-item>
+            <a-descriptions-item label="写入条数">
+              <span class="std-write-count">{{ totalWriteRows.toLocaleString() }}</span> 条
+              <div class="table-tip">
+                来源文件 {{ selectedFile?.name || '—' }} · 回溯返回 {{ (selectedFile?.rows || 0).toLocaleString() }} 行
+                · 一致性校验{{ checkPassed ? `已通过（一致率 ${consistencyRate.toFixed(2)}%）` : '未通过 / 未执行（不阻断，异常随数据落库）' }}
+              </div>
+            </a-descriptions-item>
+            <a-descriptions-item label="字段匹配情况">
+              <a-space wrap :size="4">
+                <a-tag size="small" color="green">标准字段落表列 {{ mappedCount - nonStdCount + requiredPassedCount }}</a-tag>
+                <a-tag size="small" color="orange">非标 JSON 透传 {{ nonStdCount }}</a-tag>
+                <a-tag size="small" color="gray">映射总数 {{ mappedCount + requiredPassedCount }} / {{ fieldMappings.length + REQUIRED_FIELD_MATCH.length }}（含必选独立区 {{ requiredPassedCount }} / {{ REQUIRED_FIELD_MATCH.length }}）</a-tag>
+                <a-tag v-if="idMd5ConvertDone" size="small" color="cyan">id_md5 已由 {{ idMd5SourceAlgo === 'AUTO' ? 'SM3/SHA256' : idMd5SourceAlgo }} 解析转换为 MD5（{{ Object.keys(idMd5ConvertedMap).length }} 行/样例）</a-tag>
+              </a-space>
+              <div class="table-tip">非标准化字段统一序列化写入 extra_param 列（key 为外数出参字段名）；id_md5 / review_date 两项标准字段以独立区选定的文件等同出参字段随标准列落库<template v-if="idMd5ConvertDone">，id_md5 以转换后的 32 位 MD5 值写入</template></div>
+            </a-descriptions-item>
+            <a-descriptions-item label="分区字段">
+              <a-space wrap :size="4">
+                <a-tag size="small" color="arcoblue">dt（回溯日期）</a-tag>
+                <a-tag v-for="p in partitionPreview" :key="p" size="small" color="purple">{{ p }}</a-tag>
+              </a-space>
+              <div class="table-tip">按回溯日期按天分区（dt=yyyy-MM-dd），大表按月拆分存储</div>
+            </a-descriptions-item>
           </a-descriptions>
-
-          <a-alert v-if="nonStdCount" type="info" style="margin-bottom: 16px">
-            {{ nonStdCount }} 个非标准化字段将序列化为 JSON 统一写入标准库 extra_param 列（key 为外数出参字段名），标准字段正常落表字段列。
-          </a-alert>
-
-          <a-space>
-            <a-button type="primary" :loading="writing" @click="writeHive">确认落 Hive 标准库并通知需求方</a-button>
-          </a-space>
 
           <a-result v-if="hiveWritten" status="success" title="已落库 Hive 标准库，通知已发送" class="hive-result">
             <template #subtitle>
@@ -377,12 +453,17 @@
         </div>
       </div>
 
-      <div class="step-footer">
-        <a-button v-if="currentStep > 0 && !hiveWritten" @click="prevStep">上一步</a-button>
+      <!-- 统一操作区：落库前 左=上一步，右=取消申请 + 主操作；落库成功后 footer 隐藏，出口只剩结果区 -->
+      <div v-if="!hiveWritten" class="step-footer">
+        <a-button v-if="currentStep > 0" @click="prevStep">上一步</a-button>
         <span v-else />
         <a-space>
-          <a-button @click="goBack">取消</a-button>
+          <a-button @click="goBack">取消申请</a-button>
           <a-button v-if="currentStep < stepsList.length - 1" type="primary" @click="nextStep">下一步</a-button>
+          <a-button v-else type="primary" :loading="writing" @click="writeHive">
+            <template #icon><icon-save /></template>
+            确认落 Hive 标准库并通知需求方
+          </a-button>
         </a-space>
       </div>
     </a-card>
@@ -395,6 +476,28 @@
         </a-form-item>
         <a-alert type="warning">百行 / 钱塘密钥不固定，钱塘为随机生成；解密失败需通知渠道对接方重新获取密钥。</a-alert>
       </a-form>
+    </a-modal>
+
+    <!-- 已处理文件提醒弹窗（展示历史处理记录，确认后可重新写入） -->
+    <a-modal v-model:visible="processedModalVisible" title="该文件已处理过" :width="680" @cancel="pendingProcessedFile = null">
+      <a-alert type="warning">
+        该回溯返回文件此前已完成落库处理。继续操作将对其「重新写入」，并生成新的 backid 批次，请确认是否需要重跑。
+      </a-alert>
+      <a-table :data="processedRecords" :pagination="false" size="small" row-key="backid" style="margin-top: 12px">
+        <template #columns>
+          <a-table-column title="处理文件名" data-index="fileName" ellipsis tooltip />
+          <a-table-column title="处理时间" data-index="processTime" :width="160" />
+          <a-table-column title="操作人" data-index="operator" :width="150" ellipsis tooltip />
+          <a-table-column title="backid" data-index="backid" :width="160" />
+        </template>
+      </a-table>
+      <template #footer>
+        <a-button @click="processedModalVisible = false">取消</a-button>
+        <a-button type="primary" status="warning" @click="confirmRewrite">
+          <template #icon><icon-refresh /></template>
+          重新写入并继续
+        </a-button>
+      </template>
     </a-modal>
 
     <!-- 完成弹窗 -->
@@ -416,7 +519,7 @@ import { ref, reactive, computed, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import type { UploadFile } from '@arco-design/web-vue'
-import { IconSearch, IconSave, IconUpload, IconSafe, IconFindReplace, IconFolder } from '@arco-design/web-vue/es/icon'
+import { IconSearch, IconSave, IconUpload, IconSafe, IconFindReplace, IconFolder, IconRefresh } from '@arco-design/web-vue/es/icon'
 
 const router = useRouter()
 const currentStep = ref(0)
@@ -466,6 +569,29 @@ const dirFileCatalog: Record<string, RetroFile[]> = {
     { id: 'f5', name: 'QT_resp_20260916.txt', channel: '钱塘', size: '19.3 MB', rows: 26880, updateTime: '2026-09-16 08:00:02', decrypted: true }
   ]
 }
+
+/* mock：历史处理记录——部分 SFTP 文件此前已完成落库，点击时需弹窗提醒并支持选择重新写入 */
+interface ProcessRecord {
+  fileName: string
+  processTime: string
+  operator: string
+  backid: string
+}
+
+const processedFileRecords: Record<string, ProcessRecord[]> = {
+  f2: [
+    { fileName: 'BH_RETRO_20260922_01.csv', processTime: '2026-09-24 10:32:05', operator: '王琳（风控数据组）', backid: 'BACK20260924-017' }
+  ],
+  f3: [
+    { fileName: 'PD_BACK_0929_2.zip', processTime: '2026-09-30 09:15:42', operator: '陈昊（模型算法组）', backid: 'BACK20260930-003' },
+    { fileName: 'PD_BACK_0929_2.zip', processTime: '2026-10-02 14:20:11', operator: '陈昊（模型算法组）', backid: 'BACK20261002-011' }
+  ],
+  f5: [
+    { fileName: 'QT_resp_20260916.txt', processTime: '2026-09-18 11:05:36', operator: '李思远（贷中管理团队）', backid: 'BACK20260918-006' }
+  ]
+}
+
+const getProcessRecords = (fileId: string): ProcessRecord[] => processedFileRecords[fileId] || []
 
 const querying = ref(false)
 const fileList = ref<RetroFile[]>([])
@@ -543,14 +669,14 @@ const enterFromUpload = () => {
   currentStep.value = 1
 }
 
-// 点击文件行 → 选中该文件并进入下一步（未解密则先提示解密）
-const onFileRowClick = (record: RetroFile) => {
-  if (!record.decrypted) {
-    Message.warning('该文件尚未解密，请先「人工解密」')
-    return
-  }
+/* 已处理文件弹窗提醒 */
+const processedModalVisible = ref(false)
+const processedRecords = ref<ProcessRecord[]>([])
+let pendingProcessedFile: RetroFile | null = null
+
+// 选中文件并联动默认外数产品与 Hive 表，进入下一步（reWrite=true 表示对已处理文件重新写入）
+const proceedWithFile = (record: RetroFile, reWrite = false) => {
   selectedFile.value = record
-  // 联动默认外数产品与 Hive 表
   const product = productOptions.find(p => p.name.includes(record.channel))
   if (product && mappingProduct.value !== product.name) {
     mappingProduct.value = product.name
@@ -559,8 +685,37 @@ const onFileRowClick = (record: RetroFile) => {
   if (record.channel === '百行') hiveTable.value = 'ods_ext_bh_retro_std'
   else if (record.channel === '普道') hiveTable.value = 'ods_ext_pd_retro_std'
   else hiveTable.value = 'ods_ext_qt_retro_std'
-  Message.success(`已选择文件 ${record.name}，进入任务匹配`)
+  Message.success(
+    reWrite
+      ? `文件 ${record.name} 已处理过，本次将重新写入并生成新的 backid 批次`
+      : `已选择文件 ${record.name}，进入任务匹配`
+  )
   currentStep.value = 1
+}
+
+// 点击文件行 → 未解密先提示解密；已处理过则弹窗展示处理记录，确认后支持重新写入
+const onFileRowClick = (record: RetroFile) => {
+  if (!record.decrypted) {
+    Message.warning('该文件尚未解密，请先「人工解密」')
+    return
+  }
+  const records = getProcessRecords(record.id)
+  if (records.length) {
+    pendingProcessedFile = record
+    processedRecords.value = records
+    processedModalVisible.value = true
+    return
+  }
+  proceedWithFile(record)
+}
+
+// 弹窗确认：对该文件重新写入，继续进入任务匹配
+const confirmRewrite = () => {
+  processedModalVisible.value = false
+  if (pendingProcessedFile) {
+    proceedWithFile(pendingProcessedFile, true)
+    pendingProcessedFile = null
+  }
 }
 
 /* ---------- 解密 ---------- */
@@ -601,10 +756,11 @@ const outboundTasks = ref([
 
 const matchedTaskIds = ref<string[]>([])
 
+// mock：厂商出参 id_md5 实际为 SM3/SHA256 加密的 64 位十六进制密文，落库前需解析转换为 32 位 MD5
 const previewRows = ref([
-  { rowNo: 1, q_id: 'Q88f2c...', name_hash: '3a91e0...', query_date: '2026-09-06', loan_cnt_12m: 7, max_overdue_amt: 12400.0 },
-  { rowNo: 2, q_id: 'Q91ab7...', name_hash: 'c05d22...', query_date: '2026-09-07', loan_cnt_12m: 2, max_overdue_amt: 0.0 },
-  { rowNo: 3, q_id: 'Qa04f9...', name_hash: '77be13...', query_date: '2026-09-07', loan_cnt_12m: 15, max_overdue_amt: 45800.5 }
+  { rowNo: 1, q_id: 'Q88f2c...', id_md5: 'b1e4f2c9a7d3805c6f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70', review_data: '2026-09-06', loan_cnt_12m: 7, max_overdue_amt: 12400.0 },
+  { rowNo: 2, q_id: 'Q91ab7...', id_md5: 'd3a9c1e7f5b2048a6c9d1e2f3a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d', review_data: '2026-09-07', loan_cnt_12m: 2, max_overdue_amt: 0.0 },
+  { rowNo: 3, q_id: 'Qa04f9...', id_md5: '7c2f5a9d1e3b6c8f0a2d4e6f8b1c3d5a79e2c4f6a8b0d1e3f5a7c9b2d4e6f8a1', review_data: '2026-09-07', loan_cnt_12m: 15, max_overdue_amt: 45800.5 }
 ])
 
 const mappingProduct = ref('百行-多头借贷汇总 V4')
@@ -633,35 +789,37 @@ const collisionDict: Record<string, string> = {
   loan_cnt_12m: 'std_loan_cnt_12m',
   max_overdue_amt: 'std_overdue_amt_max',
   overdue_cnt_24m: 'std_overdue_cnt_24m',
-  credit_score: 'std_credit_score',
-  query_date: 'std_backtrack_date'
+  credit_score: 'std_credit_score'
 }
 
 const sourceFieldCatalog: Record<string, { sourceField: string; comment: string }[]> = {
   '百行-多头借贷汇总 V4': [
+    { sourceField: 'id_md5', comment: '主体标识（MD5加密）' },
     { sourceField: 'inst_cnt_1m', comment: '近1月申请机构数' },
     { sourceField: 'loan_cnt_1m', comment: '近1月贷款审批次数' },
     { sourceField: 'loan_cnt_3m', comment: '近3月贷款审批次数' },
     { sourceField: 'loan_cnt_12m', comment: '近12月贷款审批次数' },
     { sourceField: 'max_overdue_amt', comment: '最大逾期金额' },
     { sourceField: 'risk_band', comment: '风险分层档位' },
-    { sourceField: 'query_date', comment: '查询回溯日期' }
+    { sourceField: 'review_data', comment: '回溯日期' }
   ],
   '普道-历史逾期明细': [
+    { sourceField: 'id_md5', comment: '主体标识（MD5加密）' },
     { sourceField: 'overdue_cnt_24m', comment: '近24月逾期次数' },
     { sourceField: 'max_overdue_amt', comment: '最大逾期金额' },
-    { sourceField: 'query_date', comment: '查询回溯日期' }
+    { sourceField: 'review_data', comment: '回溯日期' }
   ],
   '钱塘-授信评分回溯': [
+    { sourceField: 'id_md5', comment: '主体标识（MD5加密）' },
     { sourceField: 'credit_score', comment: '授信评分' },
     { sourceField: 'risk_band', comment: '风险分层档位' },
-    { sourceField: 'query_date', comment: '查询回溯日期' }
+    { sourceField: 'review_data', comment: '回溯日期' }
   ],
   // 未收录产品：直接以回溯返回文件的出参列为待映射字段
   '未收录外数产品': [
     { sourceField: 'q_id', comment: '查询流水号' },
-    { sourceField: 'name_hash', comment: '姓名哈希' },
-    { sourceField: 'query_date', comment: '查询回溯日期' },
+    { sourceField: 'id_md5', comment: '主体标识（MD5加密）' },
+    { sourceField: 'review_data', comment: '回溯日期' },
     { sourceField: 'loan_cnt_12m', comment: '近12月贷款审批次数' },
     { sourceField: 'max_overdue_amt', comment: '最大逾期金额' },
     { sourceField: 'ext_score_v2', comment: '定制评分V2（非标）' },
@@ -670,13 +828,125 @@ const sourceFieldCatalog: Record<string, { sourceField: string; comment: string 
 }
 
 const stdFieldOptions = [
+  'id_md5', 'review_date',
   'std_loan_cnt_1m', 'std_loan_cnt_3m', 'std_loan_cnt_12m', 'std_overdue_amt_max',
   'std_apply_inst_cnt_1m', 'std_overdue_cnt_24m', 'std_credit_score',
-  'std_risk_level_code', 'std_backtrack_date'
+  'std_risk_level_code'
 ]
 
 // 标准库字段下拉中的特殊选项：无对应标准字段时按「非标准化字段」原样透传落库
 const NON_STD_FIELD = '__non_standard__'
+
+/* 字段映射必选项（2 项）：标准库字段固定为 id_md5 / review_date，
+   下拉从当前文件出参中选择「含义等同」的字段（厂商命名可能不同，默认 id_md5 / review_data） */
+const REQUIRED_FIELD_MATCH = [
+  {
+    std: 'id_md5',
+    stdLabel: '加密MD5字段',
+    defaultSource: 'id_md5',
+    rule: '主体标识密文字段（字段名含 md5 / hash）',
+    matcher: (f: string) => /md5|hash/i.test(f)
+  },
+  {
+    std: 'review_date',
+    stdLabel: '回溯日期',
+    defaultSource: 'review_data',
+    rule: '回溯基准日期字段（字段名含 date / time / review_data）',
+    matcher: (f: string) => /date|time/i.test(f) || f === 'review_data'
+  }
+]
+// key = 标准字段，value = 选中的文件出参字段
+const requiredSourceSelection = reactive<Record<string, string>>({
+  id_md5: 'id_md5',
+  review_date: 'review_data'
+})
+// 当前产品文件出参字段清单（含被必选区占用的字段）
+const catalogSourceFields = computed(() => (sourceFieldCatalog[mappingProduct.value] || []).map(f => f.sourceField))
+const sourceFieldComment = (f: string) =>
+  (sourceFieldCatalog[mappingProduct.value] || []).find(x => x.sourceField === f)?.comment || '—'
+// 必选区已占用的出参字段：不再进入下方映射列表
+const occupiedSourceFields = computed(() => Object.values(requiredSourceSelection).filter(Boolean))
+const requiredMappingStatus = computed(() =>
+  REQUIRED_FIELD_MATCH.map(r => {
+    const sel = requiredSourceSelection[r.std]
+    return { ...r, sel, ok: !!sel && catalogSourceFields.value.includes(sel) && r.matcher(sel) }
+  })
+)
+const requiredTwoPassed = computed(() => requiredMappingStatus.value.every(r => r.ok))
+const requiredPassedCount = computed(() => requiredMappingStatus.value.filter(r => r.ok).length)
+// 切换产品后校验已选字段是否存在，不存在则回退到该产品中首个含义等同字段
+const ensureRequiredSelection = () => {
+  REQUIRED_FIELD_MATCH.forEach(r => {
+    const opts = catalogSourceFields.value
+    const cur = requiredSourceSelection[r.std]
+    if (!opts.includes(cur)) {
+      requiredSourceSelection[r.std] = opts.find(f => r.matcher(f)) || r.defaultSource
+      resetIdMd5Convert()
+    }
+  })
+}
+
+/* ---------- id_md5 解析转换（SM3 / SHA256 → MD5） ----------
+   哈希不可逆，真实场景由加密平台按「原文重新加密 / 密文映射表」转换；此处 mock 稳定生成 32 位 MD5 */
+type IdMd5Algo = 'AUTO' | 'MD5' | 'SHA256' | 'SM3'
+const idMd5SourceAlgo = ref<IdMd5Algo>('AUTO')
+// 源密文 → 转换后 MD5 的映射（执行解析转换后填充）
+const idMd5ConvertedMap = ref<Record<string, string>>({})
+
+// mock：按源密文稳定生成 32 位十六进制 MD5（同一密文多次转换结果一致）
+const mockMd5FromCipher = (src: string): string => {
+  let seed = 5381
+  for (let i = 0; i < src.length; i++) seed = ((seed << 5) + seed + src.charCodeAt(i)) >>> 0
+  let out = ''
+  for (let i = 0; i < 32; i++) {
+    seed = (seed * 1103515245 + 12345) >>> 0
+    out += '0123456789abcdef'[(seed >>> (i % 16)) % 16]
+  }
+  return out
+}
+
+// 按预览文件 id_md5 实际长度自动识别源算法
+const idMd5LenSet = computed(() => new Set(previewRows.value.map(r => r.id_md5.length)))
+const idMd5AutoAlgo = computed(() => {
+  const lens = idMd5LenSet.value
+  if (lens.size === 1 && lens.has(32)) return 'MD5'
+  if (lens.size === 1 && lens.has(64)) return 'SHA256/SM3'
+  return 'MIXED'
+})
+// 生效算法：手动指定优先，AUTO 时取识别结果
+const idMd5EffectiveAlgo = computed(() =>
+  idMd5SourceAlgo.value !== 'AUTO' ? idMd5SourceAlgo.value : idMd5AutoAlgo.value
+)
+const idMd5NeedConvert = computed(() => idMd5EffectiveAlgo.value !== 'MD5')
+const idMd5ConvertExecuted = ref(false)
+const idMd5NeedConvertPendingRows = computed(() => previewRows.value.filter(r => r.id_md5.length !== 32 && !idMd5ConvertedMap.value[r.id_md5]))
+const idMd5ConvertDone = computed(() => idMd5ConvertExecuted.value && idMd5NeedConvertPendingRows.value.length === 0)
+const idMd5DetectText = computed(() => {
+  if (idMd5SourceAlgo.value !== 'AUTO') return `已指定源算法：${idMd5SourceAlgo.value}`
+  if (idMd5AutoAlgo.value === 'MD5') return '自动识别：32 位十六进制 → MD5，无需转换'
+  if (idMd5AutoAlgo.value === 'SHA256/SM3') return '自动识别：64 位十六进制 → SHA256 或 SM3（长度无法区分，请与数据源确认）'
+  return '自动识别：密文长度混杂（32/64 位并存），请人工确认源算法'
+})
+
+const resetIdMd5Convert = () => {
+  idMd5ConvertedMap.value = {}
+  idMd5ConvertExecuted.value = false
+}
+
+const runIdMd5Convert = () => {
+  const map: Record<string, string> = {}
+  previewRows.value.forEach(r => {
+    if (r.id_md5.length !== 32) map[r.id_md5] = mockMd5FromCipher(r.id_md5)
+  })
+  idMd5ConvertedMap.value = map
+  idMd5ConvertExecuted.value = true
+  const n = Object.keys(map).length
+  if (n) Message.success(`已解析转换 ${n} 行 SM3/SHA256 密文为 MD5（32 位），落库时替换写入 id_md5 列`)
+  else Message.info('源密文均已是 32 位 MD5，无需转换')
+}
+
+// 预览展示值：已转换的显示 MD5，否则显示源密文
+const idMd5Display = (raw: string) => idMd5ConvertedMap.value[raw] || raw
 
 const fieldMappings = ref<FieldMapping[]>([])
 
@@ -691,12 +961,15 @@ const bulkFieldCount: Record<string, number> = {
 const featCommentPool = ['多头申请次数', '放款金额汇总', '逾期发生次数', '授信额度使用率', '查询机构数']
 
 const loadProductFields = () => {
-  const base = (sourceFieldCatalog[mappingProduct.value] || []).map(f => ({
-    sourceField: f.sourceField,
-    comment: f.comment,
-    targetField: '',
-    matchedBy: '' as FieldMapping['matchedBy']
-  }))
+  // 必选区已占用的出参字段不进入表格，其余字段照旧碰撞/映射
+  const base = (sourceFieldCatalog[mappingProduct.value] || [])
+    .filter(f => !occupiedSourceFields.value.includes(f.sourceField))
+    .map(f => ({
+      sourceField: f.sourceField,
+      comment: f.comment,
+      targetField: '',
+      matchedBy: '' as FieldMapping['matchedBy']
+    }))
   const extra = bulkFieldCount[mappingProduct.value] || 0
   for (let i = 1; i <= extra; i++) {
     const code = String(base.length + i).padStart(4, '0')
@@ -729,10 +1002,17 @@ const loadProductFields = () => {
   mappingPagination.total = base.length
 }
 
-// 切换外数产品：未收录产品需人工命名落库表
+// 切换外数产品：未收录产品需人工命名落库表；先校正必选区已选字段再刷新映射列表
 const onMappingProductChange = () => {
+  ensureRequiredSelection()
   loadProductFields()
   if (mappingProduct.value === CUSTOM_PRODUCT) hiveTable.value = ''
+}
+
+// 必选区改选等同字段：重置转换并按新占用关系刷新映射列表
+const onRequiredSourceChange = (std: string) => {
+  if (std === 'id_md5') resetIdMd5Convert()
+  loadProductFields()
 }
 
 // 匹配方式标签统一展示为「已匹配」，排序时待映射字段置顶，便于逐页处理剩余项
@@ -932,6 +1212,15 @@ const persistToTemp = () => {
 /* ---------- 步骤4：落 Hive 标准库 ---------- */
 const hiveTableOptions = ['ods_ext_bh_retro_std', 'ods_ext_pd_retro_std', 'ods_ext_qt_retro_std']
 const hiveTable = ref('ods_ext_bh_retro_std')
+
+/* 落库信息五项：源表 / 目标表 / 写入条数 / 字段匹配情况 / 分区字段 */
+const sourceTables = computed(() => Array.from(new Set(persistBatches.value.map(b => b.tempTable))))
+const totalWriteRows = computed(() => persistBatches.value.reduce((sum, b) => sum + b.rows, 0))
+const partitionPreview = computed(() => {
+  if (!persistBatches.value.length) return ['dt=—']
+  const dates = persistBatches.value.map(b => b.backid.match(/\d{8}/)?.[0] || '20260930')
+  return Array.from(new Set(dates)).map(d => `dt=${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`)
+})
 const writing = ref(false)
 const hiveWritten = ref(false)
 const hiveWrittenPartitions = ref<string[]>([])
@@ -972,6 +1261,17 @@ const nextStep = () => {
   } else if (currentStep.value === 1) {
     if (!fieldMappings.value.length) {
       Message.warning('请选择外数产品并完成字段映射')
+      return
+    }
+    /* 必选项校验：标准字段 id_md5 / review_date 需在下拉中选到文件中等同的出参字段，否则阻断 */
+    if (!requiredTwoPassed.value) {
+      const miss = requiredMappingStatus.value.filter(r => !r.ok)
+      Message.warning(`必选映射未完成：${miss.map(m => `${m.std}（${m.stdLabel}）未选到等同出参字段，判定：${m.rule}`).join('；')}`)
+      return
+    }
+    /* id_md5 解析转换校验：源密文为 SM3/SHA256 时必须先转换为 MD5 再进入下一步 */
+    if (idMd5NeedConvert.value && !idMd5ConvertDone.value) {
+      Message.warning(`id_md5 源密文（${idMd5EffectiveAlgo.value}）有 ${idMd5NeedConvertPendingRows.value.length} 行尚未解析转换为 MD5，请先在必选字段映射区执行「解析转换为 MD5」`)
       return
     }
     const unmapped = fieldMappings.value.filter(m => !m.targetField)
@@ -1044,6 +1344,24 @@ onBeforeUnmount(() => {
   color: var(--color-text-3);
 }
 
+.required-mapping-item {
+  min-width: 240px;
+}
+
+.required-mapping-label {
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: var(--color-text-1);
+}
+
+.idmd5-convert-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
 .selected-tip {
   display: flex;
   align-items: center;
@@ -1053,6 +1371,12 @@ onBeforeUnmount(() => {
   border: 1px dashed rgb(var(--arcoblue-6));
   border-radius: 6px;
   background: var(--color-primary-lightest);
+}
+
+.std-write-count {
+  font-size: 18px;
+  font-weight: 600;
+  color: rgb(var(--arcoblue-6));
 }
 
 .upload-drop {

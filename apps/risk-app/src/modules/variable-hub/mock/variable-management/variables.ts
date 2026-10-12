@@ -121,20 +121,71 @@ export interface VariableAssetMock {
   oaDocLink?: string                      // OA单据链接（OA回调同步）
   archiveStatus?: string                  // 归档状态
   featureGranularity?: 'identity_only' | 'identity_plus_product'  // 特征粒度
-  // ============ HIVE 表与字段 / 技术关联信息（「补充数据底表」时回填）============
-  /** 底层 HIVE 注册信息（详情页「HIVE 表与字段」卡片的数据源）*/
+  // ============ 离线分析场景 / 变量中心关联信息 / 模型特征底表（详情页「数据来源与技术关联」卡片数据源）============
+  /** 底层 HIVE 注册信息（详情页「离线分析场景」卡片的数据源）*/
   hiveInfo?: VariableHiveInfo
   /** 响应字段（外数品类 API 返回字段）*/
   responseField?: string
   /** 数据底表补充说明（B1 R10 补充时填写）*/
   dataTableRemark?: string
+  // ============ 变量中心关联信息 ============
+  /** API 中文名（变量中心关联信息）*/
+  apiCnName?: string
+  /** 变量中心数据来源类型：HBASE / Doris / Oracle */
+  varCenterDataSourceType?: string
+  /** 变量中心表名 */
+  varCenterTableName?: string
+  /** 变量中心 Host 地址 */
+  varCenterHost?: string
+  /** 变量中心访问 URL */
+  varCenterUrl?: string
+  // ============ 模型特征底表 ============
+  /** 模型特征底表数据来源类型：HIVE / Doris */
+  modelBaseDataSourceType?: string
+  /** 模型关联底表名称（通用底表） */
+  modelBaseTableName?: string
+  /** 模型关联底表对应字段 */
+  modelBaseFieldName?: string
+  /** 模型特征底表 - 月分区表名称 */
+  modelBaseMonthlyTableName?: string
+  /** 模型特征底表 - 月分区表对应字段 */
+  modelBaseMonthlyFieldName?: string
+  /** 模型特征底表 - 日分区表名称 */
+  modelBaseDailyTableName?: string
+  /** 模型特征底表 - 日分区表对应字段 */
+  modelBaseDailyFieldName?: string
+  // ============ 策略回溯关联底表 ============
+  /** 策略回溯-月分区表名称 */
+  strategyBacktrackMonthlyTableName?: string
+  /** 策略回溯-月分区表对应字段 */
+  strategyBacktrackMonthlyFieldName?: string
+  /** 策略回溯-日分区表名称 */
+  strategyBacktrackDailyTableName?: string
+  /** 策略回溯-日分区表对应字段 */
+  strategyBacktrackDailyFieldName?: string
+  /** 关联策略规则ID列表 */
+  strategyRuleIds?: string[]
 }
 
 /**
- * 详情页「HIVE 表与字段」卡片字段（标准化前 = 原始上游，标准化后 = 当前 HIVE 注册表）
+ * 详情页「离线分析场景」卡片字段（标准化前 = 原始上游，标准化后 = 当前 HIVE 注册表）
  * 注：标准化后的 databaseName / tableName 由 VariableAssetMock.dataTableName（「库.表」一个串）拆分派生，
- * 不再单独登记，避免与技术关联信息里的「数据底表名称」重复填写。
+ * 不再单独登记，避免与「数据底表名称」重复填写。
  */
+/** 字段级映射关系（多来源表之间的字段对应关系） */
+export interface VariableFieldMapping {
+  /** 来源表名（库.表） */
+  sourceTable: string
+  /** 来源字段名 */
+  sourceField: string
+  /** 目标表名（库.表） */
+  targetTable: string
+  /** 目标字段名 */
+  targetField: string
+  /** 加工/转换逻辑 */
+  transformLogic?: string
+}
+
 export interface VariableHiveInfo {
   /** 标准化前 HIVE 数据库名（原始上游库）*/
   sourceDbName?: string
@@ -152,6 +203,8 @@ export interface VariableHiveInfo {
   partitionFields?: string[]
   /** 更新频率 */
   updateFrequency?: string
+  /** 字段级映射关系（多来源表之间的字段对应关系） */
+  fieldMappings?: VariableFieldMapping[]
 }
 
 const now = new Date()
@@ -308,6 +361,61 @@ export const variableAssets: VariableAssetMock[] = [
     duplicateCheckedAt: fmt(new Date(now.getTime() - 26 * 86400000)),
     oaDocLink: 'https://oa.example.com/doc/OA-PROD-20260803-0003',
     archiveStatus: 'archived',
+    // ============ 离线分析场景（HIVE 表与字段）============
+    hiveInfo: {
+      sourceDbName: 'risk_dw',
+      sourceTableName: 'dwd_trade_detail',
+      sourceFieldName: 'big_txn_cnt_30d',
+      databaseName: 'risk_dw',
+      tableName: 'ads_midloan_bigtxn_30d',
+      isPartitioned: true,
+      partitionFields: ['ds'],
+      updateFrequency: 'T+1 日更新',
+      // 字段级映射关系：原始上游 → 标准化HIVE → 变量中心 → 模型底表
+      fieldMappings: [
+        {
+          sourceTable: 'risk_dw.dwd_trade_detail',
+          sourceField: 'big_txn_cnt_30d',
+          targetTable: 'risk_dw.ads_midloan_bigtxn_30d',
+          targetField: 'big_txn_cnt_30d',
+          transformLogic: '过滤 amount >= 5000 的成功记录，按 user_id 维度统计 30 天滚动窗口'
+        },
+        {
+          sourceTable: 'risk_dw.ads_midloan_bigtxn_30d',
+          sourceField: 'big_txn_cnt_30d',
+          targetTable: 'midloan_behavior:bigtxn_cnt_30d',
+          targetField: 'big_txn_cnt_30d',
+          transformLogic: 'HIVE → HBASE 同步，字段名不变'
+        },
+        {
+          sourceTable: 'risk_dw.ads_midloan_bigtxn_30d',
+          sourceField: 'big_txn_cnt_30d',
+          targetTable: 'risk_dw.ads_midloan_bigtxn_30d_m',
+          targetField: 'big_txn_cnt_30d',
+          transformLogic: '按月分区聚合，ds → yyyy_mm'
+        }
+      ]
+    },
+    // ============ 变量中心关联信息 ============
+    apiCnName: '近30日大额交易次数查询',
+    varCenterDataSourceType: 'HBASE',
+    varCenterTableName: 'midloan_behavior:bigtxn_cnt_30d',
+    varCenterHost: 'hb-ds-4fe6f2f6-001.hbase.rds.aliyuncs.com',
+    varCenterUrl: 'https://var-center.risk.internal/api/v1/variables/bigtxn_cnt_30d',
+    // ============ 模型特征底表 ============
+    modelBaseDataSourceType: 'HIVE',
+    modelBaseTableName: 'risk_dw.ads_midloan_bigtxn_30d',
+    modelBaseFieldName: 'big_txn_cnt_30d',
+    modelBaseMonthlyTableName: 'risk_dw.ads_midloan_bigtxn_30d_m',
+    modelBaseMonthlyFieldName: 'big_txn_cnt_30d',
+    modelBaseDailyTableName: 'risk_dw.ads_midloan_bigtxn_30d_d',
+    modelBaseDailyFieldName: 'big_txn_cnt_30d',
+    // ============ 策略回溯关联底表 ============
+    strategyBacktrackMonthlyTableName: 'risk_dw.strategy_midloan_bigtxn_30d_m',
+    strategyBacktrackMonthlyFieldName: 'big_txn_cnt_30d',
+    strategyBacktrackDailyTableName: 'risk_dw.strategy_midloan_bigtxn_30d_d',
+    strategyBacktrackDailyFieldName: 'big_txn_cnt_30d',
+    strategyRuleIds: ['STR-RULE-0001', 'STR-RULE-0007'],
     effectMetrics: { iv: 0.38, ks: 0.28, auc: 0.74, coverage: 0.97, lift: 15 },
     costMetrics: { pricePerCall: 0, monthlyCalls: 180000, monthlyCost: 0, costTrend: 'stable' }
   },
@@ -470,13 +578,13 @@ export const variableAssets: VariableAssetMock[] = [
     dataTableName: '',
     dwTaskId: '',
     devOaOrderId: '',
-    /** 当前状态=已注册（D.3 状态时间戳）*/
+    /** 当前状态=已提交（D.3 状态时间戳）*/
     registeredAt: fmt(new Date(now.getTime() - 3 * 86400000)),
     upstreamTable: 'dwd_loan_usage_detail',
     effectMetrics: { iv: 0.22, ks: 0.18, auc: 0.66, coverage: 0.91, lift: 7 },
     costMetrics: { pricePerCall: 0, monthlyCalls: 70000, monthlyCost: 0, costTrend: 'stable' }
   },
-  // ============ 补齐：registered（已注册，可提开发OA单）============
+  // ============ 补齐：registered（已提交，可提开发OA单）============
   {
     id: 'MIDLOAN-FEAT-0021',
     name: '近30日提前还款次数',

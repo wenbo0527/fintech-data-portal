@@ -39,7 +39,7 @@ export interface MidloanStatusMeta {
 
 export const MIDLOAN_STATUS_MAP: Record<MidloanStatus, MidloanStatusMeta> = {
   requirement_proposal:     { label: '需求提出',         color: 'gray',         description: '业务直接发起需求，等待管理员审核补充标准化附件', dataForm: 'offline_analysis' },
-  registered:               { label: '已注册',          color: 'blue',         description: '特征已注册，等待提开发OA单', dataForm: 'offline_analysis' },
+  registered:               { label: '已提交',          color: 'blue',         description: '特征已提交，等待提开发OA单', dataForm: 'offline_analysis' },
   developing_oa:            { label: '开发中（OA单）',  color: 'purple',       description: '已提开发OA单，数仓开发中', dataForm: 'offline_analysis' },
   dw_online:                { label: '数仓已上线',      color: 'cyan-dark',    description: '数仓任务已上线，等待业务验证', dataForm: 'offline_analysis' },
   business_acceptance:      { label: '待业务验证',      color: 'gold',         description: '数仓已上线，业务验证人需在台账内确认（不走OA单）', dataForm: 'offline_analysis' },
@@ -295,7 +295,7 @@ export const allowedActionsByStatus = (status: string, _data?: any, role?: strin
   switch (status) {
     // ============ 主流程操作 ============
     case 'requirement_proposal':
-      // 需求提出：管理员在注册特征抽屉内补充/确认字段后提交，进入「已注册」状态
+      // 需求提出：管理员在注册特征抽屉内补充/确认字段后提交，进入「已提交」状态
       result = [
         { key: 'submit_requirement', label: '注册特征', type: 'primary', category: 'main' },
         { key: 'archive_variable', label: '特征归档', type: 'warning', category: 'admin' }
@@ -538,11 +538,14 @@ export const getLockedFields = (status: string): FieldEditPolicy[] => {
  * 判断当前状态下，整个特征是否允许编辑入口
  * （用于编辑按钮的 disabled 控制）
  *
- * 用户反馈：所有变量都要开放编辑功能——已上线 / 已下线 / 已归档同样进入编辑抽屉，
- * 只是抽屉内按字段级策略（canEditField）灰显锁定：
- * 治理标签（黑/白/灰名单）与元数据始终可改，核心字段投产后锁定。
+ * API 上线后禁止从特征台账发起变更：
+ * 已上线 / 已下线 / 已归档状态下，编辑入口禁用（按钮 disabled），
+ * 不再进入编辑抽屉。其余状态正常开放编辑入口。
  */
-export const canEdit = (_status: string): boolean => true
+export const canEdit = (status: string): boolean => {
+  if (status === 'online' || status === 'offline' || status === 'archived') return false
+  return true
+}
 
 /**
  * 编辑保护说明（用于 UI 提示）
@@ -550,11 +553,11 @@ export const canEdit = (_status: string): boolean => true
 export const getEditLockReason = (status: string): string => {
   switch (status) {
     case 'online':
-      return '已上线：投产调用字段（英文名/类型/加工逻辑/默认值等）已锁定；名单标签（黑/白/灰）与描述类元数据仍可修改'
+      return 'API已上线：禁止从特征台账发起变更。如需修改特征信息，请走变更流程'
     case 'offline':
-      return '已下线：核心与数仓补充字段已锁定；可调整名单标签（黑/白/灰）与描述类元数据'
+      return 'API已下线：禁止从特征台账发起变更'
     case 'archived':
-      return '已归档：主流程字段已锁定；仅名单标签（黑/白/灰）与描述类元数据可维护'
+      return '已归档：禁止从特征台账发起变更'
     case 'param_preparing':
     case 'syncing_internal':
     case 'syncing_variable':
@@ -579,7 +582,7 @@ export const getEditLockReason = (status: string): string => {
     case 'oa_production_reviewing':
       return 'OA 投产审批中：流程字段暂不开放，可维护名单标签与描述类元数据'
     case 'registered':
-      return '已注册：所有字段均可编辑'
+      return '已提交：所有字段均可编辑'
     default:
       return '可编辑：核心字段按状态锁定，名单标签（黑/白/灰）与描述类元数据始终可改'
   }
@@ -654,8 +657,7 @@ export const tableActionsByStatus = (
     topActions.push({ key: 'submit_online', label: '提交上线', type: 'primary' })
   }
 
-  // 编辑：所有状态都开放入口（用户反馈：所有变量都要开放编辑功能）
-  // 具体字段是否可改由 canEditField 在抽屉内逐个灰显：投产后核心字段锁定，名单标签/元数据始终可改
+  // 编辑：API上线后（online/offline/archived）禁止从特征台账发起变更，不展示编辑按钮
   if (canEdit(status)) {
     topActions.push({ key: 'edit', label: '编辑', type: 'primary' })
   }

@@ -17,7 +17,7 @@ export type DerivationStatus = 'requirement_accepted' | 'rejected'
 
 export const DERIVATION_STATUS_LABELS: Record<DerivationDisplayStatus, string> = {
   requirement_accepted: '需求受理',
-  registered: '已注册',
+  registered: '已提交',
   rejected: '需求驳回'
 }
 

@@ -39,7 +39,9 @@ const mockFeatures = [
     missingRate: 0.8,
     uniqueValueCount: 1200,
     modelType: 'daily',
-    defaultValue: '0'
+    defaultValue: '0',
+    // 关联变量中心特征编码（为空表示尚未在变量中心注册）
+    midloanFeatureId: ''
   },
   {
     id: 2,
@@ -79,7 +81,9 @@ const mockFeatures = [
     missingRate: 15.3,
     uniqueValueCount: 850,
     modelType: 'monthly',
-    defaultValue: '-1'
+    defaultValue: '-1',
+    // 已关联到变量中心特征 MIDLOAN-FEAT-0001（近30日大额交易次数）
+    midloanFeatureId: 'MIDLOAN-FEAT-0001'
   },
   {
     id: 4,

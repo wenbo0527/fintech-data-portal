@@ -34,7 +34,7 @@ export interface MidloanStatusMeta {
 
 export const MIDLOAN_STATUS_LABELS: Record<MidloanStatus, string> = {
   requirement_proposal: '需求提出',
-  registered: '已注册',
+  registered: '已提交',
   developing_oa: '开发中（OA单）',
   dw_online: '数仓已上线',
   business_acceptance: '待业务验证',

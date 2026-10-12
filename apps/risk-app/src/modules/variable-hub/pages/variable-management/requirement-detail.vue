@@ -21,7 +21,7 @@
             <div class="title-wrapper">
               <h1 class="title">{{ record.name }}</h1>
               <a-tag v-if="registered" color="green" size="medium" class="status-tag">
-                已注册
+                已提交
               </a-tag>
               <a-tag v-else :color="statusColor" size="medium" class="status-tag">
                 {{ statusLabel }}
@@ -246,7 +246,7 @@ const changeRecords = computed(() => {
     items.push({
       time: record.value.registeredAt,
       title: '注册完成',
-      desc: `已注册到特征台账，关联特征ID：${record.value.featureId || '—'}`
+      desc: `已提交到特征台账，关联特征ID：${record.value.featureId || '—'}`
     })
   }
   if (record.value.status === 'rejected' && record.value.rejectedAt) {

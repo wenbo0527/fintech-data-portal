@@ -45,7 +45,7 @@
       <template v-if="actionKey === 'submit_requirement'">
         <a-alert type="info" :show-icon="false" style="margin-bottom: 12px">
           <p style="margin: 0; font-size: 13px;">
-            管理员正在对 A1 需求进行审核+注册。提交后将自动完成：重复备案校验 + 参数映射 + 进入「已注册」状态。所有字段均可编辑修改，流程不做回退。
+            管理员正在对 A1 需求进行审核+注册。提交后将自动完成：重复备案校验 + 参数映射 + 进入「已提交」状态。所有字段均可编辑修改，流程不做回退。
           </p>
         </a-alert>
 
@@ -566,7 +566,7 @@ const DEVELOPER_OPTIONS = [
 /** 状态修正可选项（管理员专用 · 与 allowedActionsByStatus 中 correctableStatuses 对齐）*/
 const correctableOptions = [
   { value: 'requirement_proposal', label: '需求提出' },
-  { value: 'registered', label: '已注册' },
+  { value: 'registered', label: '已提交' },
   { value: 'developing_oa', label: '开发中（OA）' },
   { value: 'dw_online', label: '数仓已上线' },
   { value: 'business_acceptance', label: '待业务验证' },
@@ -822,7 +822,7 @@ const config = computed(() => {
   const map: Record<string, { title: string; alert: string; alertType?: 'info' | 'success' | 'warning' | 'error' | 'normal' }> = {
     submit_requirement: {
       title: '注册特征（B1 标准化注册）',
-      alert: '管理员正在对 A1 需求进行审核+注册，提交后进入「已注册」状态，流程不做回退。',
+      alert: '管理员正在对 A1 需求进行审核+注册，提交后进入「已提交」状态，流程不做回退。',
       alertType: 'info'
     },
     submit_dev_oa: {

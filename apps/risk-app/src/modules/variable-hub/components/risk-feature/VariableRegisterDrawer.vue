@@ -53,7 +53,7 @@
       {{ alertText }}
     </a-alert>
     <a-alert v-else type="info" :show-icon="false" style="margin-bottom: 16px">
-      提交后将生成特征资产并跳转到详情页，状态为「已注册」，可在详情页继续发起「提开发OA单」等流程。
+      提交后将生成特征资产并跳转到详情页，状态为「已提交」，可在详情页继续发起「提开发OA单」等流程。
     </a-alert>
 
     <a-steps :current="currentStep" size="small" style="margin-bottom: 20px">
@@ -252,6 +252,17 @@
         </a-row>
 
         <a-divider style="margin: 12px 0">Excel 评估报告附件（非必填）</a-divider>
+
+        <!-- 需求列表「去注册」模式：勾选使用需求文档作为评估报告 -->
+        <div v-if="isDerivationMode && props.requirementData?.attachment" style="margin-bottom: 12px">
+          <a-checkbox v-model="form.useRequirementDoc" @change="onUseRequirementDocChange">
+            使用需求文档作为评估报告
+          </a-checkbox>
+          <div v-if="form.useRequirementDoc" style="margin-top: 8px; color: var(--color-text-2); font-size: 12px">
+            <icon-file /> {{ props.requirementData.attachment.name }}
+            （{{ formatSize(props.requirementData.attachment.size) }}，{{ props.requirementData.attachment.uploadedAt || '—' }}）
+          </div>
+        </div>
 
         <a-upload
           :custom-request="customUpload"
@@ -506,10 +517,10 @@ const alertText = computed(() => {
     return `编辑不会改变特征当前流程状态（${props.editData?.midloanStatus || props.editData?.status || '-'}），仅更新已填写的信息；名单类型（黑/白/灰）任何阶段都可调整，其余锁定字段灰显不可修改。`
   }
   if (isDerivationMode.value) {
-    return '需求受理单中已填写的信息已预填到下方表单，可在此基础上补充/修改。提交后将写入特征台账（状态「已注册」），并在需求列表中关联生成的特征ID。'
+    return '需求受理单中已填写的信息已预填到下方表单，可在此基础上补充/修改。提交后将写入特征台账（状态「已提交」），并在需求列表中关联生成的特征ID。'
   }
   if (isReviewMode.value) {
-    return '管理员正在对 A1 需求进行审核+注册。提交后将自动完成：重复备案校验 + 参数映射 + 进入「已注册」状态。所有字段均可编辑修改，流程不做回退。'
+    return '管理员正在对 A1 需求进行审核+注册。提交后将自动完成：重复备案校验 + 参数映射 + 进入「已提交」状态。所有字段均可编辑修改，流程不做回退。'
   }
   return ''
 })
@@ -584,7 +595,8 @@ function createEmptyForm(): RegisterFormPayload {
     developer: '',
     creator: '小李',
     sourceType: 'internal',
-    excelAttachment: undefined
+    excelAttachment: undefined,
+    useRequirementDoc: false
   }
 }
 
@@ -725,6 +737,18 @@ function customUpload(option: any) {
   option.onSuccess?.(file)
 }
 
+/** 勾选「使用需求文档作为评估报告」时，将需求附件填入 excelAttachment */
+function onUseRequirementDocChange() {
+  if (form.useRequirementDoc) {
+    const att = props.requirementData?.attachment
+    if (att) {
+      form.excelAttachment = { ...att }
+    }
+  } else {
+    form.excelAttachment = undefined
+  }
+}
+
 // ============ 提交 / 取消 ============
 function handleCancel() {
   emit('update:visible', false)
@@ -822,6 +846,7 @@ function prefillFromVariable(d: any) {
   form.creator = d.creator || p.creator || '小李'
   form.remark = p.remark || d.remark || ''
   form.excelAttachment = p.excelAttachment || d.excelAttachment || undefined
+  form.useRequirementDoc = false
   form.derivationId = d.derivationId || undefined
 }
 
@@ -850,6 +875,7 @@ function prefillFromDerivation(d: any) {
   form.creator = d.proposer || form.creator
   form.remark = d.remark || ''
   form.excelAttachment = d.attachment ? { ...d.attachment } : undefined
+  form.useRequirementDoc = false
 }
 
 /** 台账审核模式（状态机 submit_requirement）：A1 需求提案 → B1 表单 */

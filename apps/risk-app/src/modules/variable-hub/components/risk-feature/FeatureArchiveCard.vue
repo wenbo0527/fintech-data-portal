@@ -18,7 +18,7 @@
       </a-descriptions-item>
       <a-descriptions-item label="数仓任务ID">{{ data.dwTaskId || '—' }}</a-descriptions-item>
       <a-descriptions-item label="数仓上线时间">{{ data.dwOnlineTime || data.dwOnlineAt || '—' }}</a-descriptions-item>
-      <a-descriptions-item label="已注册时间">{{ data.registeredAt || '—' }}</a-descriptions-item>
+      <a-descriptions-item label="已提交时间">{{ data.registeredAt || '—' }}</a-descriptions-item>
       <a-descriptions-item label="开发中(OA)时间">{{ data.developingOaAt || '—' }}</a-descriptions-item>
       <a-descriptions-item label="业务验证时间">{{ data.verifiedAt || '—' }}</a-descriptions-item>
       <a-descriptions-item label="内数同步时间">{{ data.syncingInternalAt || '—' }}</a-descriptions-item>

@@ -1,6 +1,6 @@
 <template>
   <div class="param-group" :class="`param-group--${layout}`">
-    <div v-if="title" class="param-group-title">{{ title }}</div>
+    <div v-if="title" class="param-group-title" :class="{ 'param-group-title--border': titleBorder }">{{ title }}</div>
 
     <!-- inline：参考「参数详情」样例，标签右对齐 + 值左对齐，无边框网格 -->
     <div
@@ -24,6 +24,7 @@
         <span class="param-inline-value">
           <slot :name="item.key || `item-${idx}`" :item="item">
             <span v-if="item.value === '' || item.value == null" class="param-inline-empty">—</span>
+            <a v-else-if="item.link" :href="item.value" target="_blank" rel="noopener noreferrer" :class="{ 'param-inline-mono': item.mono }" class="param-inline-link">{{ item.value }}</a>
             <span v-else :class="{ 'param-inline-mono': item.mono }">{{ item.value }}</span>
           </slot>
         </span>
@@ -52,8 +53,9 @@ defineProps({
     default: ''
   },
   /**
-   * 字段列表：[{ key, label, value, span, mono, nowrap }]
+   * 字段列表：[{ key, label, value, span, mono, nowrap, link }]
    * span：值占据的列数；nowrap：标签过长，标签列按内容撑开不折行
+   * link：为 true 时值渲染为可点击链接（新窗口打开）
    */
   items: {
     type: Array,
@@ -83,6 +85,11 @@ defineProps({
   labelWidth: {
     type: String,
     default: '7em'
+  },
+  /** 标题是否带左侧竖线（统一分区标题样式） */
+  titleBorder: {
+    type: Boolean,
+    default: false
   }
 })
 </script>
@@ -101,6 +108,11 @@ defineProps({
   font-weight: 600;
   color: var(--color-text-1, #1d2129);
   margin-bottom: 14px;
+}
+
+.param-group-title--border {
+  padding-left: 8px;
+  border-left: 3px solid rgb(var(--primary-6, 22, 93, 255));
 }
 
 .param-group--stacked .param-group-title {
@@ -181,6 +193,15 @@ defineProps({
 .param-inline-mono {
   font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace;
   font-size: 12.5px;
+}
+
+.param-inline-link {
+  color: rgb(var(--primary-6, 22, 93, 255));
+  text-decoration: none;
+  cursor: pointer;
+}
+.param-inline-link:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 1200px) {

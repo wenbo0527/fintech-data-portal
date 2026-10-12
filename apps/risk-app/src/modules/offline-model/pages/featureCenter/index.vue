@@ -147,7 +147,7 @@
           <a-card class="stat-card">
             <div class="stat-content">
               <div class="stat-icon">
-                <icon-warning />
+                <icon-exclamation-circle-fill />
               </div>
               <div class="stat-info">
                 <div class="stat-value">{{ stats.expiredFeatures }}</div>

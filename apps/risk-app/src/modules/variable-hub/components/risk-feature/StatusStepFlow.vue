@@ -44,7 +44,7 @@
     </a-alert>
 
     <!-- ========== 特征档案（顶部摘要 · 1 行）============ -->
-    <a-card v-if="featureArchive" class="feature-archive-card" :bordered="false">
+    <a-card v-if="featureArchive && showArchive" class="feature-archive-card" :bordered="false">
       <a-space wrap>
         <a-tag color="arcoblue" size="small">
           <icon-idcard /> 特征档案
@@ -58,7 +58,7 @@
         <span class="archive-meta">验收人：{{ featureArchive.acceptor || '—' }}</span>
         <a-divider direction="vertical" />
         <a-tag v-if="!featureArchive.dataTableName" color="warning" size="mini">
-          <icon-warning /> 数据底表未补充
+          <icon-exclamation-circle-fill /> 数据底表未补充
         </a-tag>
         <a-tag v-else color="success" size="mini">
           <icon-check /> 数据底表：{{ featureArchive.dataTableName }}
@@ -249,6 +249,8 @@ const props = defineProps({
   offlineBatches: { type: Array, default: () => [] },
   /** 特征档案摘要 */
   featureArchive: { type: Object, default: () => null },
+  /** 是否显示特征档案摘要卡（避免在多 Tab 场景下重复展示）*/
+  showArchive: { type: Boolean, default: true },
   /** 重试次数 */
   retryCount: { type: Number, default: 0 },
   /** 失败原因 */

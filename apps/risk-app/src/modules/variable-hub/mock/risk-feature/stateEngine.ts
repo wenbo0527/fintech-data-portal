@@ -856,6 +856,10 @@ export interface SupplementDataTablePayload {
   remark?: string
   /** 技术关联：数据源名称 */
   dataSourceName?: string
+  /** 技术关联：数据来源类型（HBASE / Doris / Oracle 等） */
+  sourceType?: string
+  /** 技术关联：API 中文名（在线接口登记阶段补充） */
+  apiCnName?: string
   /** HIVE 表与字段（标准化后表名不在此登记，恒等于上方数据底表名称）*/
   hive?: {
     /** 标准化前原始上游「库.表.字段」合并登记，库名可省 */
@@ -864,6 +868,47 @@ export interface SupplementDataTablePayload {
     partitionFields?: string[]
     updateFrequency?: string
   }
+  /** 模型回溯关联底表（月/日分区表 + 对应字段） */
+  modelBase?: {
+    monthlyTableName?: string
+    monthlyFieldName?: string
+    dailyTableName?: string
+    dailyFieldName?: string
+  }
+  /** 策略回溯关联底表（月/日分区表 + 对应字段 + 关联策略规则） */
+  strategyBase?: {
+    monthlyTableName?: string
+    monthlyFieldName?: string
+    dailyTableName?: string
+    dailyFieldName?: string
+    ruleIds?: string[]
+  }
+  /** 字段级映射关系（多来源表之间的字段对应关系） */
+  fieldMappings?: Array<{
+    sourceTable: string
+    sourceField: string
+    targetTable: string
+    targetField: string
+    transformLogic?: string
+  }>
+}
+
+/** 变更记录条目（分阶段补充数据时自动追踪） */
+export interface SupplementChangeLogEntry {
+  /** 变更时间 */
+  time: string
+  /** 操作人 */
+  operator: string
+  /** 变更分组（变量中心关联信息 / 离线分析场景 / 模型回溯关联底表 / 策略回溯关联底表 / 字段映射关系） */
+  section: string
+  /** 变更字段中文名 */
+  field: string
+  /** 变更前值（空值用 '—' 表示） */
+  oldValue: string
+  /** 变更后值 */
+  newValue: string
+  /** 补充说明 */
+  remark?: string
 }
 
 const clean = (s?: string) => (s || '').trim()
@@ -890,6 +935,28 @@ function splitSourceRef(raw?: string): [string, string, string] {
   return [parts.slice(0, -2).join('.'), parts[parts.length - 2], parts[parts.length - 1]]
 }
 
+/** 把三段（库.表.字段）用点号拼接，空段自动跳过 */
+function joinQualified3(db?: string, table?: string, field?: string): string {
+  return [db, table, field].map(s => (s || '').trim()).filter(Boolean).join('.')
+}
+
+/** 变更记录辅助：比较旧值和新值，不同则生成一条变更记录 */
+function diffAndLog(
+  logs: SupplementChangeLogEntry[],
+  operator: string,
+  section: string,
+  field: string,
+  oldVal: unknown,
+  newVal: unknown,
+  remark?: string
+) {
+  const o = oldVal == null || oldVal === '' ? '—' : String(oldVal)
+  const n = newVal == null || newVal === '' ? '—' : String(newVal)
+  if (o !== n) {
+    logs.push({ time: nowStr(), operator, section, field, oldValue: o, newValue: n, remark })
+  }
+}
+
 export function supplementDataTable(
   featureId: string,
   payload: string | SupplementDataTablePayload
@@ -903,24 +970,49 @@ export function supplementDataTable(
   if (!clean(p.tableName)) {
     return { ok: false, reason: '数据底表名称不能为空' }
   }
+
+  // 变更记录收集器
+  const changeLogs: SupplementChangeLogEntry[] = []
+  const operator = (typeof (window as any).__currentOperator === 'string' ? (window as any).__currentOperator : '小李')
+
+  // ============ 变量中心关联信息 ============
+  const oldTableName = v.dataTableName || ''
+  diffAndLog(changeLogs, operator, '变量中心关联信息', '数据底表名称', oldTableName, clean(p.tableName), clean(p.remark))
   v.dataTableName = clean(p.tableName)
   if (p.remark !== undefined) v.dataTableRemark = clean(p.remark)
   v.syncFailedReason = ''
 
-  // ============ 技术关联信息 ============
-  // 接口号 / 响应字段不在此登记：接口号由阶段4 内数同步生成，响应字段属外数品类
-  if (clean(p.dataSourceName)) v.dataSourceName = clean(p.dataSourceName)
+  // 技术关联：数据源名称
+  if (clean(p.dataSourceName)) {
+    diffAndLog(changeLogs, operator, '变量中心关联信息', '数据源名称', v.dataSourceName, clean(p.dataSourceName))
+    v.dataSourceName = clean(p.dataSourceName)
+  }
+  // 技术关联：数据来源类型
+  if (clean(p.sourceType)) {
+    diffAndLog(changeLogs, operator, '变量中心关联信息', '数据来源类型', v.sourceType, clean(p.sourceType))
+    v.sourceType = clean(p.sourceType)
+  }
+  // 技术关联：API 中文名
+  if (p.apiCnName !== undefined) {
+    diffAndLog(changeLogs, operator, '变量中心关联信息', 'API中文名', v.apiCnName, clean(p.apiCnName))
+    v.apiCnName = clean(p.apiCnName)
+  }
 
   // ============ HIVE 表与字段 ============
   const h = p.hive
   if (h) {
-    // 标准化后 HIVE 表 = 数据底表名称（单一事实源），按「库.表」拆库名供 API 注册使用
     const [dbName, stdTable] = splitQualified(v.dataTableName)
-    // 标准化前：原始上游「库.表.字段」合并登记，落库时拆回三段
     const [srcDb, srcTable, srcField] = splitSourceRef(h.sourceRef)
 
     const partitionFields = (h.partitionFields || []).map(clean).filter(Boolean)
     const isPartitioned = h.isPartitioned !== false && partitionFields.length > 0
+
+    const oldHive = v.hiveInfo || {}
+    diffAndLog(changeLogs, operator, '离线分析场景', '原始上游表.字段',
+      joinQualified3(oldHive.sourceDbName, oldHive.sourceTableName, oldHive.sourceFieldName), h.sourceRef || '—')
+    diffAndLog(changeLogs, operator, '离线分析场景', '是否分区表', oldHive.isPartitioned, isPartitioned)
+    diffAndLog(changeLogs, operator, '离线分析场景', '分区字段', (oldHive.partitionFields || []).join(', '), partitionFields.join(', '))
+    diffAndLog(changeLogs, operator, '离线分析场景', '更新频率', oldHive.updateFrequency, clean(h.updateFrequency))
 
     v.hiveInfo = {
       ...(v.hiveInfo || {}),
@@ -934,6 +1026,62 @@ export function supplementDataTable(
       updateFrequency: clean(h.updateFrequency)
     }
     if (clean(h.updateFrequency)) v.updateFrequency = clean(h.updateFrequency)
+  }
+
+  // ============ 模型回溯关联底表 ============
+  const mb = p.modelBase
+  if (mb) {
+    diffAndLog(changeLogs, operator, '模型回溯关联底表', '月分区表名', v.modelBaseMonthlyTableName, clean(mb.monthlyTableName))
+    diffAndLog(changeLogs, operator, '模型回溯关联底表', '月分区字段', v.modelBaseMonthlyFieldName, clean(mb.monthlyFieldName))
+    diffAndLog(changeLogs, operator, '模型回溯关联底表', '日分区表名', v.modelBaseDailyTableName, clean(mb.dailyTableName))
+    diffAndLog(changeLogs, operator, '模型回溯关联底表', '日分区字段', v.modelBaseDailyFieldName, clean(mb.dailyFieldName))
+    if (clean(mb.monthlyTableName)) v.modelBaseMonthlyTableName = clean(mb.monthlyTableName)
+    if (clean(mb.monthlyFieldName)) v.modelBaseMonthlyFieldName = clean(mb.monthlyFieldName)
+    if (clean(mb.dailyTableName)) v.modelBaseDailyTableName = clean(mb.dailyTableName)
+    if (clean(mb.dailyFieldName)) v.modelBaseDailyFieldName = clean(mb.dailyFieldName)
+  }
+
+  // ============ 策略回溯关联底表 ============
+  const sb = p.strategyBase
+  if (sb) {
+    diffAndLog(changeLogs, operator, '策略回溯关联底表', '月分区表名', v.strategyBacktrackMonthlyTableName, clean(sb.monthlyTableName))
+    diffAndLog(changeLogs, operator, '策略回溯关联底表', '月分区字段', v.strategyBacktrackMonthlyFieldName, clean(sb.monthlyFieldName))
+    diffAndLog(changeLogs, operator, '策略回溯关联底表', '日分区表名', v.strategyBacktrackDailyTableName, clean(sb.dailyTableName))
+    diffAndLog(changeLogs, operator, '策略回溯关联底表', '日分区字段', v.strategyBacktrackDailyFieldName, clean(sb.dailyFieldName))
+    if (clean(sb.monthlyTableName)) v.strategyBacktrackMonthlyTableName = clean(sb.monthlyTableName)
+    if (clean(sb.monthlyFieldName)) v.strategyBacktrackMonthlyFieldName = clean(sb.monthlyFieldName)
+    if (clean(sb.dailyTableName)) v.strategyBacktrackDailyTableName = clean(sb.dailyTableName)
+    if (clean(sb.dailyFieldName)) v.strategyBacktrackDailyFieldName = clean(sb.dailyFieldName)
+    if (Array.isArray(sb.ruleIds)) {
+      const newRuleIds = sb.ruleIds.map(clean).filter(Boolean)
+      diffAndLog(changeLogs, operator, '策略回溯关联底表', '关联策略规则', (v.strategyRuleIds || []).join(', '), newRuleIds.join(', '))
+      v.strategyRuleIds = newRuleIds
+    }
+  }
+
+  // ============ 字段映射关系 ============
+  if (Array.isArray(p.fieldMappings)) {
+    const oldMappings = (v.hiveInfo?.fieldMappings || []).map((m: any) => `${m.sourceTable}.${m.sourceField}→${m.targetTable}.${m.targetField}`)
+    const newMappings = p.fieldMappings.map(m => `${clean(m.sourceTable)}.${clean(m.sourceField)}→${clean(m.targetTable)}.${clean(m.targetField)}`)
+    diffAndLog(changeLogs, operator, '字段映射关系', '映射关系条目', oldMappings.join('; '), newMappings.join('; '))
+    v.hiveInfo = {
+      ...(v.hiveInfo || {}),
+      fieldMappings: p.fieldMappings.filter(m =>
+        clean(m.sourceTable) && clean(m.sourceField) && clean(m.targetTable) && clean(m.targetField)
+      ).map(m => ({
+        sourceTable: clean(m.sourceTable),
+        sourceField: clean(m.sourceField),
+        targetTable: clean(m.targetTable),
+        targetField: clean(m.targetField),
+        transformLogic: clean(m.transformLogic)
+      }))
+    }
+  }
+
+  // ============ 变更记录持久化 ============
+  if (changeLogs.length > 0) {
+    if (!Array.isArray(v.supplementChangeLog)) v.supplementChangeLog = []
+    v.supplementChangeLog.push(...changeLogs)
   }
 
   v.updatedAt = nowStr()
@@ -1016,7 +1164,7 @@ export function archiveVariable(featureId: string, payload?: { reason?: string; 
   const curStatus = v.midloanStatus || v.status
   // 仅允许需求提出 / 已注册 阶段发起归档
   if (!['requirement_proposal', 'registered'].includes(curStatus)) {
-    return { ok: false, reason: `当前状态（${midloanStatusMeta(curStatus).label || curStatus}）不允许归档，仅「需求提出」「已注册」阶段可发起` }
+    return { ok: false, reason: `当前状态（${midloanStatusMeta(curStatus).label || curStatus}）不允许归档，仅「需求提出」「已提交」阶段可发起` }
   }
   // 归档原因必填
   if (!payload?.reason || !payload.reason.trim()) {
@@ -1125,7 +1273,7 @@ const STATUS_CHANGE_META: Record<string, { trigger: string; operator: string; op
     trigger: '管理员审核+注册',
     operator: '培培',
     operatorRole: 'risk_data_admin',
-    reason: '管理员审核通过，补充标准化附件，特征已注册'
+    reason: '管理员审核通过，补充标准化附件，特征已提交'
   },
   developing_oa: {
     trigger: '提交开发OA单',
@@ -1370,7 +1518,7 @@ export function retryDwTask(featureId: string, operator = '培培'): { ok: boole
   if (retryCount > 3) {
     recordStatusChange(featureId, v.name, 'dw_online_failed', 'dw_online_failed',
       `数仓任务重试超3次（已重试${retryCount}次），触发人工介入提醒`, operator, 'risk_data_admin',
-      `管理员可通过状态修正功能回退至「已注册」重新提开发单`)
+      `管理员可通过状态修正功能回退至「已提交」重新提开发单`)
     SyncLogStore.push({
       id: logId(),
       featureId,
@@ -1384,7 +1532,7 @@ export function retryDwTask(featureId: string, operator = '培培'): { ok: boole
       retryCount,
       operator
     })
-    return { ok: false, reason: `数仓任务重试超3次（已重试${retryCount}次），需人工介入。管理员可通过状态修正功能回退至「已注册」重新提开发单`, needManualIntervention: true }
+    return { ok: false, reason: `数仓任务重试超3次（已重试${retryCount}次），需人工介入。管理员可通过状态修正功能回退至「已提交」重新提开发单`, needManualIntervention: true }
   }
   // 重试调用数仓回调（复用原OA单）
   const result = dwCallback(featureId, true)

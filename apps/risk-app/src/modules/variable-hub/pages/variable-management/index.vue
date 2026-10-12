@@ -645,7 +645,7 @@
               <icon-info-circle /> 需求是特征台账的入口。一期聚焦「贷中行为」品类，需求流转：
               <a-tag color="blue" size="small">需求受理</a-tag>
               <icon-right />
-              <a-tag color="green" size="small">特征台账：需求提出→已注册</a-tag>
+              <a-tag color="green" size="small">特征台账：需求提出→已提交</a-tag>
               <span style="margin: 0 4px; color: var(--color-text-3)">|</span>
               <a-tag color="blue" size="small">需求受理</a-tag>
               <icon-right />
@@ -675,7 +675,7 @@
           <a-form-item label="状态">
             <a-select v-model="derivationFilter.status" allow-clear placeholder="全部状态" @change="refreshDerivations">
               <a-option value="requirement_accepted">需求受理</a-option>
-              <a-option value="registered">已注册</a-option>
+              <a-option value="registered">已提交</a-option>
               <a-option value="rejected">需求驳回</a-option>
             </a-select>
           </a-form-item>
@@ -2288,7 +2288,7 @@ onMounted(() => {
 // ============ 需求列表 Tab 数据 ============
 const derivationStatusMap = {
   requirement_accepted: { label: '需求受理', color: 'blue' },
-  registered:           { label: '已注册', color: 'green' },
+  registered:           { label: '已提交', color: 'green' },
   rejected:             { label: '需求驳回', color: 'red' }
 }
 // 计算展示状态：requirement_accepted + featureId → registered
@@ -2438,7 +2438,7 @@ function completeDerivationRegister(payload) {
     Message.error('注册失败：未找到需求记录')
     return
   }
-  Message.success(`已注册特征 ${rec.featureId}，状态：已注册`)
+  Message.success(`已提交特征 ${rec.featureId}，状态：已提交`)
   registerDrawerVisible.value = false
   registerDrawerRequirementData.value = null
   registerDrawerSource.value = 'ledger'

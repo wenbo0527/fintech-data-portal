@@ -67,6 +67,8 @@ export interface RegisterFormPayload {
   dwTaskId?: string
   /** Excel 评估报告附件（文件名/大小）*/
   excelAttachment?: { name: string; size: number; uploadedAt: string }
+  /** 使用需求文档作为评估报告（需求列表「去注册」时可勾选）*/
+  useRequirementDoc?: boolean
   /** 关联的风险特征需求 ID（需求列表「去注册」时写入，用于台账与需求双向定位）*/
   derivationId?: string
 }
@@ -246,7 +248,7 @@ function buildAssetFromPayload(
     // 协作信息（写入 profile 便于详情页展示）
     profile: {
       dataType: payload.category === 'credit' ? '征信' : payload.category === 'external' ? '外数' : '行为',
-      onlineStatus: '已注册',
+      onlineStatus: '已提交',
       productScope: payload.productScope,
       listType: payload.listType,
       batch: payload.batch,

@@ -77,7 +77,7 @@ export interface DerivationRecord {
 // localStorage 持久化（带版本号，版本变更时自动清除旧缓存）
 const STORAGE_KEY = 'variable.management.derivations'
 const STORAGE_VERSION_KEY = 'variable.management.derivations.version'
-const STORAGE_VERSION = '6' // v5: excelData/attachment → v6: 丰富 Excel 字段
+const STORAGE_VERSION = '7' // v6: 丰富 Excel 字段 → v7: 未注册需求补充附件
 
 function safeParse(raw: string | null): DerivationRecord[] {
   if (!raw) return []
@@ -283,6 +283,7 @@ const SEED_DATA: DerivationRecord[] = [
     proposer: '小李',
     handler: '业务方-王五',
     syncLevel: 'A',
+    attachment: { name: '支用行为特征需求_202608.xlsx', size: 153600, uploadedAt: '2026-08-04 16:20:00' },
     createdAt: '2026-08-04 16:30:00',
     updatedAt: '2026-08-04 16:30:00'
   },
@@ -314,6 +315,7 @@ const SEED_DATA: DerivationRecord[] = [
     proposer: '小李',
     handler: '业务方-赵六',
     syncLevel: 'B',
+    attachment: { name: '设备变更风险特征需求_202608.xlsx', size: 128000, uploadedAt: '2026-08-05 09:25:00' },
     createdAt: '2026-08-05 09:30:00',
     updatedAt: '2026-08-05 09:30:00'
   },

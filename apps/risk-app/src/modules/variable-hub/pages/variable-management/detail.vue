@@ -83,9 +83,9 @@
             <template #icon><IconExperiment /></template>
             提交上线申请
           </a-button>
-          <!-- 编辑：所有状态开放入口，抽屉内按字段级策略灰显（名单标签/元数据始终可改）-->
+          <!-- 编辑：API上线后禁止从特征台账发起变更 -->
           <a-tooltip :content="getEditLockReason(variableData.midloanStatus || variableData.status)">
-            <a-button type="primary" @click="handleEdit">
+            <a-button type="primary" :disabled="!canEdit(variableData.midloanStatus || variableData.status)" @click="handleEdit">
               <template #icon><IconEdit /></template>
               编辑
             </a-button>
@@ -139,7 +139,7 @@
           <!-- ========= 长文本区（业务含义 + 技术口径 + 备注） ========= -->
           <a-card title="业务含义与技术口径" class="detail-card">
             <div class="longtext-block">
-              <div class="longtext-label"><icon-file-document /> 业务含义 / 使用场景</div>
+              <div class="longtext-label"><icon-file /> 业务含义 / 使用场景</div>
               <a-typography-paragraph
                 :ellipsis="{ rows: 6, expandable: true, showTooltip: true }"
                 class="longtext-value"
@@ -152,7 +152,7 @@
             </div>
             <a-divider style="margin: 16px 0" />
             <div class="longtext-block">
-              <div class="longtext-label"><icon-edit-2 /> 备注</div>
+              <div class="longtext-label"><icon-edit /> 备注</div>
               <a-typography-paragraph
                 :ellipsis="{ rows: 4, expandable: true }"
                 class="longtext-value"
@@ -160,32 +160,20 @@
             </div>
           </a-card>
 
-          <!-- ========= HIVE 表与字段 + 技术关联信息（样例图分组样式：无边框 label/value 网格） ========= -->
+          <!-- ========= 离线分析场景 + 变量中心关联信息 + 模型特征底表 ========= -->
           <a-card title="数据来源与技术关联" class="detail-card">
             <a-alert v-if="!hiveInfo.registered" type="warning" :show-icon="true" style="margin-bottom: 16px">
               <template #title>
-                数据底表（标准化后 HIVE 表）未登记
+                数据底表未登记
                 <a-button size="mini" type="primary" style="margin-left: 8px" @click="openSupplementTable">
                   补充数据底表
                 </a-button>
               </template>
-              <div>数据开发完成后，需由数仓同学补充「数据底表 + HIVE 表与字段」，补齐后才能进入业务验收。</div>
-            </a-alert>
-            <a-alert v-else type="info" :show-icon="true" style="margin-bottom: 16px">
-              <template #title>HBase 数据由 HIVE 提供，下方为底层 HIVE 表注册信息</template>
-              <div>
-                标准化前 = 原始上游「库.表.字段」；标准化后 HIVE 表即「技术关联信息」中的数据底表，不重复登记
-              </div>
+              <div>数据开发完成后，需由数仓同学补充「离线分析场景」信息，补齐后才能进入业务验收。</div>
             </a-alert>
 
-            <!-- 原始上游 库.表.字段 + 分区 + 更新频率；标准化后 HIVE 表见「技术关联信息 · 数据底表名称」 -->
-            <ParamGroup title="HIVE 表与字段" layout="inline" :columns="3" label-width="9em" :items="hiveItems">
-              <template #sourceRef>
-                <a-space :size="6">
-                  <code class="mono">{{ hiveInfo.sourceRefLabel }}</code>
-                  <a-button size="mini" type="text" @click="copyText(hiveInfo.sourceRefLabel, '标准化前表名/字段')">复制</a-button>
-                </a-space>
-              </template>
+            <!-- 离线分析场景：数据底表名称、标准化前表名、标准化前字段名、是否分区表、分区字段、更新频率 -->
+            <ParamGroup title="离线分析场景" title-border layout="inline" :columns="3" label-width="9em" :items="hiveItems">
               <template #partitionFields>
                 <a-tag v-for="p in hiveInfo.partitionFields" :key="p" color="purple" size="mini">
                   {{ p }}
@@ -194,16 +182,84 @@
               </template>
             </ParamGroup>
 
-            <ParamGroup title="技术关联信息" layout="inline" :columns="3" label-width="9em" :items="techLinkItems">
-              <template #dataTableName>
-                <a-space :size="6">
-                  <code v-if="techLink.dataTableName" class="mono strong">{{ techLink.dataTableName }}</code>
-                  <span v-else class="missing-table">未补充（必填）</span>
-                  <a-button size="mini" type="primary" v-if="!techLink.dataTableName" @click="openSupplementTable">补充</a-button>
-                  <a-button size="mini" v-else @click="openSupplementTable">修改</a-button>
-                </a-space>
+            <a-divider style="margin: 16px 0" />
+
+            <!-- 变量中心关联信息：API名称、API中文名、数据来源类型(HBASE/Doris/Oracle)、表名、Host、URL -->
+            <ParamGroup title="变量中心关联信息" title-border layout="inline" :columns="3" label-width="9em" :items="techLinkItems" />
+
+            <a-divider style="margin: 16px 0" />
+
+            <!-- 模型回溯关联底表：月分区表 + 日分区表 -->
+            <div class="model-base-section">
+              <div class="model-base-title">模型回溯关联底表</div>
+              <ParamGroup title="月分区表" title-border layout="inline" :columns="3" label-width="9em" :items="modelBaseMonthlyItems" />
+              <a-divider style="margin: 12px 0" />
+              <ParamGroup title="日分区表" title-border layout="inline" :columns="3" label-width="9em" :items="modelBaseDailyItems" />
+            </div>
+
+            <a-divider style="margin: 16px 0" />
+
+            <!-- 策略回溯关联底表：月分区表 + 日分区表 + 关联策略规则 -->
+            <div class="model-base-section">
+              <div class="model-base-title">
+                策略回溯关联底表
+                <a-tag color="orange" size="mini" style="margin-left: 8px">新增</a-tag>
+              </div>
+              <ParamGroup title="月分区表" title-border layout="inline" :columns="3" label-width="9em" :items="strategyBaseMonthlyItems" />
+              <a-divider style="margin: 12px 0" />
+              <ParamGroup title="日分区表" title-border layout="inline" :columns="3" label-width="9em" :items="strategyBaseDailyItems" />
+              <a-divider style="margin: 12px 0" />
+              <!-- 关联策略规则 -->
+              <div class="strategy-rules-row">
+                <span class="strategy-rules-label">关联策略规则</span>
+                <span class="strategy-rules-value">
+                  <a-tag v-for="rid in strategyBase.ruleIds" :key="rid" color="arcoblue" size="mini" style="cursor: pointer">
+                    {{ rid }}
+                  </a-tag>
+                  <span v-if="strategyBase.ruleIds.length === 0" class="param-empty">—</span>
+                </span>
+              </div>
+            </div>
+          </a-card>
+
+          <!-- 字段级映射关系（多来源表之间的字段对应关系） -->
+          <a-card v-if="fieldMappings.length > 0" title="字段映射关系" class="detail-card">
+            <a-alert type="info" :show-icon="false" style="margin-bottom: 12px">
+              展示单一特征在不同来源表之间的字段级映射关系，包括原始上游 → 标准化HIVE → 变量中心 → 模型/策略底表的全链路。
+            </a-alert>
+            <a-table :data="fieldMappings" :pagination="false" row-key="sourceTable">
+              <template #columns>
+                <a-table-column title="来源表" data-index="sourceTable" :width="260" />
+                <a-table-column title="来源字段" data-index="sourceField" :width="160" />
+                <a-table-column title="→" :width="40" align="center">
+                  <template #cell><span style="color: #86909c">→</span></template>
+                </a-table-column>
+                <a-table-column title="目标表" data-index="targetTable" :width="260" />
+                <a-table-column title="目标字段" data-index="targetField" :width="160" />
+                <a-table-column title="加工/转换逻辑" data-index="transformLogic" />
               </template>
-            </ParamGroup>
+            </a-table>
+          </a-card>
+
+          <!-- 被引用情况（反向链接：哪些模型/策略使用了此特征） -->
+          <a-card v-if="featureUsageRows.length > 0" title="被引用情况" class="detail-card">
+            <a-alert type="info" :show-icon="false" style="margin-bottom: 12px">
+              作为元数据唯一入口，反向展示此特征被哪些模型回溯、策略规则、在线决策引擎引用。
+            </a-alert>
+            <a-table :data="featureUsageRows" :pagination="false" row-key="key">
+              <template #columns>
+                <a-table-column title="引用类型" data-index="type" :width="120">
+                  <template #cell="{ record }">
+                    <a-tag
+                      :color="record.type === '模型回溯' ? 'arcoblue' : record.type === '策略规则' ? 'orange' : 'green'"
+                      size="small"
+                    >{{ record.type }}</a-tag>
+                  </template>
+                </a-table-column>
+                <a-table-column title="引用详情" data-index="detail" />
+                <a-table-column title="来源" data-index="source" :width="180" />
+              </template>
+            </a-table>
           </a-card>
 
           <!-- 关键时间戳 & 运维信息已内嵌到离线分析/API调用两个 tab 的 StatusStepFlow 中，无需重复展示 -->
@@ -274,6 +330,7 @@
               <StatusStepFlow
                 :status="currentMidloanStatus"
                 scope="online_interface"
+                :show-archive="false"
                 :status-change-list="statusChangeList"
                 :sync-logs="syncLogList"
                 :offline-batches="offlineBatchSummary?.list || []"
@@ -376,11 +433,11 @@
       </a-space>
     </a-drawer>
 
-    <!-- ========== 补充数据底表（B1 R10 · 卡片级局部补录，用弹窗承载：技术关联信息 + HIVE 表与字段）========== -->
+    <!-- ========== 补充数据底表（卡片级局部补录，用弹窗承载：离线分析场景 + 变量中心关联信息）========== -->
     <a-modal
       v-model:visible="supplementTableVisible"
-      :title="supplementTableForm.tableName ? '修改数据底表与 HIVE 登记信息' : '补充数据底表与 HIVE 登记信息'"
-      :width="800"
+      :title="supplementTableForm.tableName ? '修改数据底表与登记信息' : '补充数据底表与登记信息'"
+      :width="920"
       :ok-loading="supplementTableSubmitting"
       ok-text="保存并回填"
       cancel-text="取消"
@@ -389,11 +446,11 @@
     >
       <a-alert type="warning" :show-icon="false" style="margin-bottom: 16px">
         数据底表名称是内数 API 注册（INT-01）的必填参数，填「HIVE 库名.表名」（如 risk_dw.ads_xxx）即可，
-        它同时就是标准化后的 HIVE 表，无需重复填写。保存后同步回填详情页「技术关联信息」与「HIVE 表与字段」两张卡片。
+        它同时就是标准化后的 HIVE 表，无需重复填写。保存后同步回填详情页「数据来源与技术关联」卡片，并自动记录变更。
       </a-alert>
       <div class="supp-scroll">
       <a-form :model="supplementTableForm" layout="vertical" :disabled="supplementTableSubmitting">
-        <a-card title="技术关联信息" size="small" class="supp-block">
+        <a-card title="变量中心关联信息" size="small" class="supp-block">
           <a-row :gutter="16">
             <a-col :span="12">
               <a-form-item label="数据底表名称（HIVE 库.表）" required>
@@ -410,15 +467,31 @@
                 <a-input v-model="supplementTableForm.dataSourceName" placeholder="例如：数仓（内数）" allow-clear />
               </a-form-item>
             </a-col>
-            <a-col :span="24">
+            <a-col :span="8">
+              <a-form-item label="数据来源类型">
+                <a-select v-model="supplementTableForm.sourceType" placeholder="HBASE / Doris / Oracle 等" allow-clear>
+                  <a-option value="HBASE" label="HBASE" />
+                  <a-option value="Doris" label="Doris" />
+                  <a-option value="Oracle" label="Oracle" />
+                  <a-option value="HIVE" label="HIVE" />
+                  <a-option value="MySQL" label="MySQL" />
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item label="API 中文名">
+                <a-input v-model="supplementTableForm.apiCnName" placeholder="在线接口登记阶段补充" allow-clear />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
               <a-form-item label="补充说明">
-                <a-textarea v-model="supplementTableForm.remark" placeholder="可说明补全原因、口径变更等" :rows="2" />
+                <a-input v-model="supplementTableForm.remark" placeholder="可说明补全原因、口径变更等" />
               </a-form-item>
             </a-col>
           </a-row>
         </a-card>
 
-        <a-card title="HIVE 表与字段" size="small" class="supp-block">
+        <a-card title="离线分析场景" size="small" class="supp-block">
           <a-alert type="info" :show-icon="false" style="margin-bottom: 12px">
             标准化后的 HIVE 表就是上方「数据底表名称」，此处不再重复登记，只填原始上游来源。
           </a-alert>
@@ -458,6 +531,147 @@
               </a-form-item>
             </a-col>
           </a-row>
+        </a-card>
+
+        <!-- 模型回溯关联底表 -->
+        <a-card title="模型回溯关联底表" size="small" class="supp-block">
+          <a-alert type="info" :show-icon="false" style="margin-bottom: 12px">
+            模型回溯使用的月/日分区底表，由离线模型分析回溯任务关联。非必填，可在回溯任务创建后补充。
+          </a-alert>
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="月分区表名">
+                <a-input v-model="supplementTableForm.modelBase.monthlyTableName" placeholder="例如：risk_dw.ads_midloan_bigtxn_30d_m" allow-clear />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="月分区字段">
+                <a-input v-model="supplementTableForm.modelBase.monthlyFieldName" placeholder="例如：big_txn_cnt_30d" allow-clear />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="日分区表名">
+                <a-input v-model="supplementTableForm.modelBase.dailyTableName" placeholder="例如：risk_dw.ads_midloan_bigtxn_30d_d" allow-clear />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="日分区字段">
+                <a-input v-model="supplementTableForm.modelBase.dailyFieldName" placeholder="例如：big_txn_cnt_30d" allow-clear />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </a-card>
+
+        <!-- 策略回溯关联底表 -->
+        <a-card title="策略回溯关联底表" size="small" class="supp-block">
+          <a-alert type="info" :show-icon="false" style="margin-bottom: 12px">
+            策略回溯使用的月/日分区底表及关联策略规则。非必填，可在策略回溯分析任务创建后补充。
+          </a-alert>
+          <a-row :gutter="16">
+            <a-col :span="12">
+              <a-form-item label="月分区表名">
+                <a-input v-model="supplementTableForm.strategyBase.monthlyTableName" placeholder="例如：risk_dw.strategy_midloan_bigtxn_30d_m" allow-clear />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="月分区字段">
+                <a-input v-model="supplementTableForm.strategyBase.monthlyFieldName" placeholder="例如：big_txn_cnt_30d" allow-clear />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="日分区表名">
+                <a-input v-model="supplementTableForm.strategyBase.dailyTableName" placeholder="例如：risk_dw.strategy_midloan_bigtxn_30d_d" allow-clear />
+              </a-form-item>
+            </a-col>
+            <a-col :span="12">
+              <a-form-item label="日分区字段">
+                <a-input v-model="supplementTableForm.strategyBase.dailyFieldName" placeholder="例如：big_txn_cnt_30d" allow-clear />
+              </a-form-item>
+            </a-col>
+            <a-col :span="24">
+              <a-form-item label="关联策略规则ID">
+                <a-input-tag
+                  v-model="supplementTableForm.strategyBase.ruleIds"
+                  placeholder="输入策略规则ID后回车添加，例如 STR-RULE-0001"
+                  allow-clear
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </a-card>
+
+        <!-- 字段映射关系（可编辑表格） -->
+        <a-card title="字段映射关系" size="small" class="supp-block">
+          <a-alert type="info" :show-icon="false" style="margin-bottom: 12px">
+            记录单一特征在不同来源表之间的字段级映射关系（原始上游 → 标准化HIVE → 变量中心 → 模型/策略底表）。
+          </a-alert>
+          <a-table :data="supplementTableForm.fieldMappings" :pagination="false" size="small" :bordered="{ cell: true }">
+            <template #columns>
+              <a-table-column title="来源表" :width="200">
+                <template #cell="{ record, rowIndex }">
+                  <a-input v-model="supplementTableForm.fieldMappings[rowIndex].sourceTable" placeholder="库.表" size="small" />
+                </template>
+              </a-table-column>
+              <a-table-column title="来源字段" :width="120">
+                <template #cell="{ rowIndex }">
+                  <a-input v-model="supplementTableForm.fieldMappings[rowIndex].sourceField" placeholder="字段名" size="small" />
+                </template>
+              </a-table-column>
+              <a-table-column title="目标表" :width="200">
+                <template #cell="{ rowIndex }">
+                  <a-input v-model="supplementTableForm.fieldMappings[rowIndex].targetTable" placeholder="库.表" size="small" />
+                </template>
+              </a-table-column>
+              <a-table-column title="目标字段" :width="120">
+                <template #cell="{ rowIndex }">
+                  <a-input v-model="supplementTableForm.fieldMappings[rowIndex].targetField" placeholder="字段名" size="small" />
+                </template>
+              </a-table-column>
+              <a-table-column title="加工/转换逻辑">
+                <template #cell="{ rowIndex }">
+                  <a-input v-model="supplementTableForm.fieldMappings[rowIndex].transformLogic" placeholder="例如：按月分区聚合" size="small" />
+                </template>
+              </a-table-column>
+              <a-table-column title="操作" :width="60" align="center">
+                <template #cell="{ rowIndex }">
+                  <a-button type="text" size="mini" status="danger" @click="supplementTableForm.fieldMappings.splice(rowIndex, 1)">
+                    删除
+                  </a-button>
+                </template>
+              </a-table-column>
+            </template>
+            <template #empty>
+              <span style="color: var(--color-text-3)">暂无映射关系，点击下方按钮添加</span>
+            </template>
+          </a-table>
+          <div style="margin-top: 8px">
+            <a-button type="outline" size="small" @click="supplementTableForm.fieldMappings.push({ sourceTable: '', sourceField: '', targetTable: '', targetField: '', transformLogic: '' })">
+              添加映射
+            </a-button>
+          </div>
+        </a-card>
+
+        <!-- 变更记录 -->
+        <a-card v-if="supplementChangeLog.length > 0" title="变更记录" size="small" class="supp-block">
+          <a-alert type="info" :show-icon="false" style="margin-bottom: 12px">
+            分阶段补充数据时自动记录变更，便于审计追溯。
+          </a-alert>
+          <a-timeline>
+            <a-timeline-item v-for="(log, idx) in supplementChangeLog" :key="idx" :dot-color="log.section === '变量中心关联信息' ? 'arcoblue' : log.section === '离线分析场景' ? 'green' : log.section === '模型回溯关联底表' ? 'purple' : log.section === '策略回溯关联底表' ? 'orange' : 'gray'">
+              <div style="font-size: 13px;">
+                <span style="color: var(--color-text-1); font-weight: 500;">{{ log.field }}</span>
+                <span style="color: var(--color-text-3); margin-left: 8px;">{{ log.section }}</span>
+              </div>
+              <div style="color: var(--color-text-2); margin-top: 2px;">
+                <span style="color: var(--color-text-3)">{{ log.oldValue }}</span>
+                <span style="margin: 0 6px;">→</span>
+                <span style="color: var(--color-text-1); font-weight: 500;">{{ log.newValue }}</span>
+              </div>
+              <div style="color: var(--color-text-3); font-size: 12px; margin-top: 2px;">
+                {{ log.operator }} · {{ log.time }}
+              </div>
+            </a-timeline-item>
+          </a-timeline>
         </a-card>
       </a-form>
       </div>
@@ -528,7 +742,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch, shallowRef } from 'vue'
+import { ref, reactive, computed, onMounted, watch, shallowRef, watchEffect, nextTick, toRaw } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import { useVariableStore } from '@/modules/variable-hub/store/variable'
@@ -703,41 +917,100 @@ const longtextProcessingLogic = computed(() => {
 const longtextRemark = computed(() => profile.value.remark || variableData.value.remark || '')
 
 /**
- * HIVE 表与字段（标准化前原始上游「库.表.字段」合并展示、是否分区、分区字段、更新频率）
+ * 离线分析场景（标准化前原始上游「库.表.字段」合并展示、是否分区、分区字段、更新频率）
  * 数据源：「补充数据底表」表单登记的 v.hiveInfo；未登记时只从 B1 源表字段推断，
  * 不再用 risk_dw / ods_raw / ['ds'] 等假数据兜底，避免看不出"是否真的补充过"。
- * 注意：标准化后 HIVE 表 = 技术关联信息里的「数据底表名称」，本卡片不重复展示。
  */
 const hiveInfo = computed(() => {
   const v = variableData.value
   const h = v.hiveInfo || {}
   // 标准化前：原始上游「库.表」+「字段」，登记值优先，其次 B1「标准化前源表 / 源字段」
-  const sourceTable = joinQualified(h.sourceDbName, h.sourceTableName) || v.sourceTableBefore || ''
+  const sourceTable = joinQualified(h.sourceDbName, h.sourceTableName) || v.sourceTableBefore || v.upstreamTable || ''
   const sourceField = h.sourceFieldName || v.sourceField || ''
-  // 合并为一个串展示：库.表.字段（缺段时按已有段展示）
-  const sourceRefLabel = joinQualified(sourceTable, sourceField) || '—'
   // 标准化后：单一事实源 = v.dataTableName；老数据只有拆分值时按 hiveInfo 拼回
-  const stdTable = v.dataTableName || joinQualified(h.databaseName, h.tableName) || v.sourceTableAfter || '—'
+  const stdTable = v.dataTableName || joinQualified(h.databaseName, h.tableName) || v.sourceTableAfter || ''
 
   const partitionFields = (h.partitionFields || []).filter(Boolean)
 
   return {
     /** 是否已完成 HIVE 登记（决定卡片是否展示"未补充"引导）*/
-    registered: stdTable !== '—',
-    sourceRefLabel,
+    registered: stdTable !== '',
+    /** 数据底表名称（标准化后 HIVE 表）*/
+    dataTableName: stdTable || '—',
+    /** 标准化前表名（原始上游 库.表）*/
+    sourceTableName: sourceTable || '—',
+    /** 标准化前字段名（原始上游字段）*/
+    sourceFieldName: sourceField || '—',
     isPartitioned: h.isPartitioned === true,
     partitionFields: h.isPartitioned === true ? partitionFields : [],
     updateFrequency: h.updateFrequency || v.updateFrequency || '—'
   }
 })
 
-/** 技术关联信息（精简：数据源名 + 数据底表） */
+/** 变量中心关联信息（API名称、API中文名、存储类型、表名、Host、URL） */
 const techLink = computed(() => {
   const v = variableData.value
   return {
-    dataSourceName: v.dataSourceName || '—',
-    dataTableName: v.dataTableName || ''
+    apiName: v.apiName || '—',
+    apiCnName: v.apiCnName || v.featureCnName || v.name || '—',
+    /** 存储类型：HBASE / Doris / Oracle（API 调用时的存储引擎）*/
+    varCenterDataSourceType: v.varCenterDataSourceType || (v.dataSource ? v.dataSource.toUpperCase() : '—'),
+    varCenterTableName: v.varCenterTableName || '—',
+    varCenterHost: v.varCenterHost || '—',
+    varCenterUrl: v.varCenterUrl || '—'
   }
+})
+
+/** 模型特征底表（月分区表 + 日分区表） */
+const modelBase = computed(() => {
+  const v = variableData.value
+  return {
+    /** 月分区表 */
+    monthlyTableName: v.modelBaseMonthlyTableName || '—',
+    monthlyFieldName: v.modelBaseMonthlyFieldName || '—',
+    /** 日分区表 */
+    dailyTableName: v.modelBaseDailyTableName || '—',
+    dailyFieldName: v.modelBaseDailyFieldName || '—'
+  }
+})
+
+/** 策略回溯关联底表（月分区表 + 日分区表 + 关联规则） */
+const strategyBase = computed(() => {
+  const v = variableData.value
+  return {
+    monthlyTableName: v.strategyBacktrackMonthlyTableName || '—',
+    monthlyFieldName: v.strategyBacktrackMonthlyFieldName || '—',
+    dailyTableName: v.strategyBacktrackDailyTableName || '—',
+    dailyFieldName: v.strategyBacktrackDailyFieldName || '—',
+    ruleIds: v.strategyRuleIds || []
+  }
+})
+
+/** 字段级映射关系（多来源表之间的字段对应关系） */
+const fieldMappings = computed(() => {
+  const h = variableData.value?.hiveInfo || {}
+  return h.fieldMappings || []
+})
+
+/** 被引用情况（反向链接：哪些模型/策略使用了此特征） */
+const featureUsage = computed(() => {
+  const v = variableData.value || {}
+  const items = []
+  // 模型回溯引用
+  if (v.referenceDetail) {
+    items.push({ type: '模型回溯', detail: v.referenceDetail, source: '变量中心注册信息' })
+  }
+  // 策略规则引用
+  if (v.strategyRuleIds && v.strategyRuleIds.length) {
+    v.strategyRuleIds.forEach(rid => {
+      items.push({ type: '策略规则', detail: `策略规则 ${rid}`, source: '策略回溯关联底表' })
+    })
+  }
+  // 决策引擎引用
+  if (v.apiNo) {
+    items.push({ type: '在线决策', detail: `API ${v.apiNo}：${v.apiCnName || v.name || ''}`, source: '变量中心 API' })
+  }
+  return items
 })
 
 /** 基础与人员信息（注册即确定 + 后期部分回填） */
@@ -762,34 +1035,84 @@ const basePersonItems = computed(() => {
   return [
     { key: 'createdAt', label: '创建时间', value: info.createdAt },
     { key: 'updatedAt', label: '更新时间', value: info.updatedAt },
-    { key: 'proposer', label: '需求提出人', value: info.proposer },
+    // 需求提出人已在顶部 headerPublic 公共信息区展示，此处不再重复
     { key: 'adminManager', label: '管理人', value: info.adminManager },
     { key: 'developer', label: '数仓开发人员', value: info.developer },
-    { key: 'acceptor', label: '验收人', value: info.acceptor },
+    // 验收人已在 Tab2/Tab3 StatusStepFlow 特征档案摘要卡展示，此处不再重复
     // 名单标签（黑/白/灰）：治理标签，任何状态都可在编辑抽屉内调整
     { key: 'listType', label: '名单类型', value: info.listType, text: info.listTypeLabel }
   ]
 })
 
-/** HIVE 表与字段 → ParamGroup(inline) 字段项（长标签项 nowrap，宽值项 span 2） */
+/** 离线分析场景 → ParamGroup(inline) 字段项 */
 const hiveItems = computed(() => {
   const h = hiveInfo.value
   return [
-    { key: 'sourceRef', label: '标准化前表名/字段（原始上游）', span: 2, nowrap: true },
+    { key: 'dataTableName', label: '数据底表名称', value: h.dataTableName, span: 2, nowrap: true, mono: true },
+    { key: 'sourceTableName', label: '标准化前表名', value: h.sourceTableName, span: 2, nowrap: true, mono: true },
+    { key: 'sourceFieldName', label: '标准化前字段名', value: h.sourceFieldName, mono: true },
     { key: 'isPartitioned', label: '是否分区表', value: h.isPartitioned ? '是' : '否' },
     { key: 'partitionFields', label: '分区字段', span: 2 },
     { key: 'updateFrequency', label: '更新频率', value: h.updateFrequency }
   ]
 })
 
-/** 技术关联信息 → ParamGroup(inline) 字段项 */
+/** 变量中心关联信息 → ParamGroup(inline) 字段项 */
 const techLinkItems = computed(() => {
   const t = techLink.value
   return [
-    { key: 'dataSourceName', label: '数据源名称', value: t.dataSourceName },
-    { key: 'dataTableName', label: '数据底表名称（= 标准化后 HIVE 表）', span: 2, nowrap: true }
+    { key: 'apiName', label: 'API名称', value: t.apiName, span: 2, nowrap: true, mono: true },
+    { key: 'apiCnName', label: 'API中文名', value: t.apiCnName, span: 2, nowrap: true },
+    { key: 'varCenterDataSourceType', label: '存储类型', value: t.varCenterDataSourceType },
+    { key: 'varCenterTableName', label: '表名', value: t.varCenterTableName, span: 2, nowrap: true, mono: true },
+    { key: 'varCenterHost', label: 'Host', value: t.varCenterHost, span: 2, nowrap: true, mono: true },
+    { key: 'varCenterUrl', label: 'URL', value: t.varCenterUrl, span: 2, nowrap: true, mono: true, link: t.varCenterUrl !== '—' ? t.varCenterUrl : undefined }
   ]
 })
+
+/** 模型特征底表 → 月分区表字段项 */
+const modelBaseMonthlyItems = computed(() => {
+  const m = modelBase.value
+  return [
+    { key: 'monthlyTableName', label: '月分区表名称', value: m.monthlyTableName, span: 2, nowrap: true, mono: true },
+    { key: 'monthlyFieldName', label: '对应字段', value: m.monthlyFieldName, mono: true }
+  ]
+})
+
+/** 模型特征底表 → 日分区表字段项 */
+const modelBaseDailyItems = computed(() => {
+  const m = modelBase.value
+  return [
+    { key: 'dailyTableName', label: '日分区表名称', value: m.dailyTableName, span: 2, nowrap: true, mono: true },
+    { key: 'dailyFieldName', label: '对应字段', value: m.dailyFieldName, mono: true }
+  ]
+})
+
+/** 策略回溯关联底表 → 月分区表字段项 */
+const strategyBaseMonthlyItems = computed(() => {
+  const s = strategyBase.value
+  return [
+    { key: 'strMonthlyTableName', label: '月分区表名称', value: s.monthlyTableName, span: 2, nowrap: true, mono: true },
+    { key: 'strMonthlyFieldName', label: '对应字段', value: s.monthlyFieldName, mono: true }
+  ]
+})
+
+/** 策略回溯关联底表 → 日分区表字段项 */
+const strategyBaseDailyItems = computed(() => {
+  const s = strategyBase.value
+  return [
+    { key: 'strDailyTableName', label: '日分区表名称', value: s.dailyTableName, span: 2, nowrap: true, mono: true },
+    { key: 'strDailyFieldName', label: '对应字段', value: s.dailyFieldName, mono: true }
+  ]
+})
+
+/** 被引用情况 → 表格行 */
+const featureUsageRows = computed(() => featureUsage.value.map((item, idx) => ({
+  key: idx,
+  type: item.type,
+  detail: item.detail,
+  source: item.source
+})))
 
 /** 复制文本的通用方法（加 toast 提示） */
 async function copyText(text, label = '内容') {
@@ -1136,7 +1459,7 @@ const usageTypeMap = {
 }
 
 // 基本信息已统一到 ① 顶部 headerPublic / ② 基础人员信息卡（基础与人员信息）/
-// ③ 业务含义与技术口径 / ④ HIVE 表与字段 / ⑤ 技术关联信息 / ⑥ 后期补充卡
+// ③ 业务含义与技术口径 / ④ 离线分析场景 / ⑤ 变量中心关联信息 / ⑥ 模型特征底表 / ⑦ 后期补充卡
 // 此处删除重复 computed（basicInfo/technicalInfo/longTextInfo/sourceInfo/effectSummary）。
 
 // 获取状态标签
@@ -1810,6 +2133,10 @@ const UPDATE_FREQUENCY_OPTIONS = ['实时（秒级）', '准实时（分钟级�
 const supplementTableForm = reactive({
   tableName: '',
   dataSourceName: '',
+  /** 数据来源类型（HBASE / Doris / Oracle 等） */
+  sourceType: '',
+  /** API 中文名（在线接口登记阶段补充） */
+  apiCnName: '',
   remark: '',
   hive: {
     /** 标准化前原始上游「库.表.字段」，一个串登记 */
@@ -1817,7 +2144,30 @@ const supplementTableForm = reactive({
     isPartitioned: true,
     partitionFields: [],
     updateFrequency: ''
-  }
+  },
+  /** 模型回溯关联底表 */
+  modelBase: {
+    monthlyTableName: '',
+    monthlyFieldName: '',
+    dailyTableName: '',
+    dailyFieldName: ''
+  },
+  /** 策略回溯关联底表 */
+  strategyBase: {
+    monthlyTableName: '',
+    monthlyFieldName: '',
+    dailyTableName: '',
+    dailyFieldName: '',
+    ruleIds: []
+  },
+  /** 字段映射关系（可编辑表格） */
+  fieldMappings: []
+})
+
+/** 变更记录（从变量数据中读取，分阶段补充时自动积累） */
+const supplementChangeLog = computed(() => {
+  const v = variableData.value || {}
+  return v.supplementChangeLog || []
 })
 
 /** 点号拼接（库.表 / 表.字段）：任一段缺省时不留半截值 */
@@ -1832,10 +2182,14 @@ function joinQualified(db, tb) {
 function openSupplementTable() {
   const v = variableData.value || {}
   const h = v.hiveInfo || {}
+  // 设置当前操作人（供 stateEngine 变更记录使用）
+  window.__currentOperator = UserContext.get().name || '小李'
   // 技术关联信息：回填已登记内容，便于"修改"而非从零填写
   // 数据底表名称 = 标准化后 HIVE 表（单一事实源），优先取已登记值
   supplementTableForm.tableName = v.dataTableName || joinQualified(h.databaseName, h.tableName)
   supplementTableForm.dataSourceName = v.dataSourceName === '—' ? '' : v.dataSourceName || ''
+  supplementTableForm.sourceType = v.sourceType || ''
+  supplementTableForm.apiCnName = v.apiCnName || ''
   supplementTableForm.remark = v.dataTableRemark || ''
   // HIVE 表与字段：优先取已登记的 hiveInfo，其次从 B1 源表字段推断（不再用假数据兜底）
   const srcTable = joinQualified(h.sourceDbName, h.sourceTableName) || v.sourceTableBefore || ''
@@ -1845,6 +2199,19 @@ function openSupplementTable() {
   supplementTableForm.hive.partitionFields = [...(h.partitionFields || [])]
   const freq = h.updateFrequency || v.updateFrequency || ''
   supplementTableForm.hive.updateFrequency = UPDATE_FREQUENCY_OPTIONS.includes(freq) ? freq : ''
+  // 模型回溯关联底表
+  supplementTableForm.modelBase.monthlyTableName = v.modelBaseMonthlyTableName || ''
+  supplementTableForm.modelBase.monthlyFieldName = v.modelBaseMonthlyFieldName || ''
+  supplementTableForm.modelBase.dailyTableName = v.modelBaseDailyTableName || ''
+  supplementTableForm.modelBase.dailyFieldName = v.modelBaseDailyFieldName || ''
+  // 策略回溯关联底表
+  supplementTableForm.strategyBase.monthlyTableName = v.strategyBacktrackMonthlyTableName || ''
+  supplementTableForm.strategyBase.monthlyFieldName = v.strategyBacktrackMonthlyFieldName || ''
+  supplementTableForm.strategyBase.dailyTableName = v.strategyBacktrackDailyTableName || ''
+  supplementTableForm.strategyBase.dailyFieldName = v.strategyBacktrackDailyFieldName || ''
+  supplementTableForm.strategyBase.ruleIds = [...(v.strategyRuleIds || [])]
+  // 字段映射关系：深拷贝已登记的 fieldMappings
+  supplementTableForm.fieldMappings = (h.fieldMappings || []).map(m => ({ ...m }))
   supplementTableVisible.value = true
 }
 
@@ -1867,12 +2234,17 @@ function onSupplementTable() {
       tableName,
       remark: supplementTableForm.remark,
       dataSourceName: supplementTableForm.dataSourceName,
+      sourceType: supplementTableForm.sourceType,
+      apiCnName: supplementTableForm.apiCnName,
       hive: {
         sourceRef: h.sourceRef,
         isPartitioned: h.isPartitioned,
         partitionFields: h.partitionFields,
         updateFrequency: h.updateFrequency
-      }
+      },
+      modelBase: { ...supplementTableForm.modelBase },
+      strategyBase: { ...supplementTableForm.strategyBase },
+      fieldMappings: supplementTableForm.fieldMappings
     })
     if (r.ok) {
       Message.success('数据底表与 HIVE 登记信息已保存')
@@ -1908,9 +2280,9 @@ function refreshAfterMutation() {
   }, 0)
 }
 
-// 暴露 demo 全局
-window.__midloanCurrentFeatureId = computed(() => variableData.value?.id)
-window.__midloanVariableList = variableStore.variableList
+// 暴露 demo 全局 — 使用 watchEffect 同步普通值到 window，避免 computed ref 跨组件响应式循环
+watchEffect(() => { window.__midloanCurrentFeatureId = variableData.value?.id })
+window.__midloanVariableList = toRaw(variableStore.variableList)
 window.__refreshMidloanDetail = () => {
   refreshSyncLogs()
   refreshStatusChangeList()
@@ -2075,6 +2447,43 @@ setTimeout(() => {
 
 .detail-card :deep(.arco-card-body) {
   padding: 20px 16px;
+}
+
+/* 模型特征底表区域 */
+.model-base-section {
+  margin-top: 4px;
+}
+.model-base-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-1, #1d2129);
+  margin-bottom: 14px;
+  padding-left: 8px;
+  border-left: 3px solid rgb(var(--primary-6, 22, 93, 255));
+}
+
+/* 策略回溯关联底表 - 关联策略规则行 */
+.strategy-rules-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 8px;
+  border-left: 3px solid rgb(var(--primary-6, 22, 93, 255));
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-1, #1d2129);
+}
+.strategy-rules-label {
+  font-size: 13px;
+  color: var(--color-text-3, #86909c);
+  font-weight: 400;
+  white-space: nowrap;
+}
+.strategy-rules-value {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
 }
 
 :deep(.arco-descriptions-item-label-inline) {

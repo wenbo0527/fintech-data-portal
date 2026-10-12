@@ -148,10 +148,11 @@ function buildSingleModelLog(now) {
       ]
     },
     // 模块A P0：勾选『推理入参入库』时，特征文件追加到推理结果表
+    // midloan_feature_id：关联变量中心特征编码（MIDLOAN-FEAT-*），作为元数据唯一入口的统一 id
     featurePersist: [
-      { feature_name: 'age', feature_value: '28', feature_source: '当前模型', mapped_feature_id: 'user_age', backtrace_id: 'bt_1' },
-      { feature_name: 'income', feature_value: '12000', feature_source: '当前模型', mapped_feature_id: 'user_income', backtrace_id: 'bt_1' },
-      { feature_name: 'credit_history', feature_value: 'good', feature_source: '当前模型', mapped_feature_id: 'credit_history', backtrace_id: 'bt_1' }
+      { feature_name: 'age', feature_value: '28', feature_source: '当前模型', mapped_feature_id: 'user_age', midloan_feature_id: '', backtrace_id: 'bt_1' },
+      { feature_name: 'income', feature_value: '12000', feature_source: '当前模型', mapped_feature_id: 'user_income', midloan_feature_id: 'MIDLOAN-FEAT-0001', backtrace_id: 'bt_1' },
+      { feature_name: 'credit_history', feature_value: 'good', feature_source: '当前模型', mapped_feature_id: 'credit_history', midloan_feature_id: '', backtrace_id: 'bt_1' }
     ],
     // 模块C P0：结构化日志（嵌套日志示例，含子模型）
     logType: 'nested',
@@ -159,10 +160,10 @@ function buildSingleModelLog(now) {
     createTime: now,
     updateTime: now,
     config: {
-      table: 'user_profile',
+      table: 'risk_dw.ads_midloan_bigtxn_30d_m',
       sourceType: 'doris',
       dbName: 'risk_dw',
-      tableName: 'user_profile',
+      tableName: 'risk_dw.ads_midloan_bigtxn_30d_m',
       mode: 'single',
       observeDate: '',
       dateRange: ['2026-07-01', '2026-07-31'],
@@ -172,6 +173,10 @@ function buildSingleModelLog(now) {
       sqlWhere: "dt >= '2026-07-01' AND dt <= '2026-07-31' AND cert_no IS NOT NULL",
       // 模块A：是否勾选『推理入参入库』
       featurePersist: true,
+      // 关联变量中心特征编码（元数据唯一入口统一 id）
+      midloanFeatureIds: ['MIDLOAN-FEAT-0001'],
+      // 底表来源：从变量中心 modelBaseMonthlyTableName 联动
+      midloanBaseTable: 'risk_dw.ads_midloan_bigtxn_30d_m',
       inputMappings: [
         { input: 'age', target: 'user_age', from: '当前模型' },
         { input: 'income', target: 'user_income', from: '当前模型' },
@@ -439,6 +444,8 @@ export function createBacktrack(data) {
         feature_value: '',
         feature_source: '当前模型',
         mapped_feature_id: m.target,
+        // 关联变量中心特征编码（如果该入参已映射到变量中心特征）
+        midloan_feature_id: m.midloan_feature_id || '',
         backtrace_id: `bt_${id}`
       })) : [])
     : []

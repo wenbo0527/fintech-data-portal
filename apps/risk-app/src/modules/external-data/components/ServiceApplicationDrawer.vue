@@ -482,7 +482,8 @@ const submitApproval = async () => {
   
   const payload = {
     name: `${basicForm.relatedProduct}-外数调用`,
-    serviceType: basicForm.callMethod === 'online' ? '在线批量调用' : '外数离线回溯申请',
+    // 优先沿用服务场景入口带入的服务类型，未指定时按调用方式回退
+    serviceType: props.initialServiceType || (basicForm.callMethod === 'online' ? '在线批量调用' : '外数离线回溯申请'),
     relatedProduct: basicForm.relatedProduct,
     applyData: {
       basic: basicForm,

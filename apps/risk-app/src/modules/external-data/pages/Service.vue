@@ -16,6 +16,7 @@
             <a-option value="全量特征回溯申请">全量特征回溯申请</a-option>
             <a-option value="风险合规离线回溯申请">风险合规离线回溯申请</a-option>
             <a-option value="外数线上调用服务申请">外数线上调用服务申请</a-option>
+            <a-option value="外数回溯落库申请">外数回溯落库申请</a-option>
           </a-select>
         </a-form-item>
         <a-form-item field="status" label="状态">
@@ -78,7 +79,7 @@ const store = useExternalDataStore()
 const router = useRouter()
 const route = useRoute()
 
-type ServiceType = '在线批量调用' | '外数离线回溯申请' | '周期跑批任务申请' | '全量特征回溯申请' | '风险合规离线回溯申请' | '外数线上调用服务申请'
+type ServiceType = '在线批量调用' | '外数离线回溯申请' | '周期跑批任务申请' | '全量特征回溯申请' | '风险合规离线回溯申请' | '外数线上调用服务申请' | '外数回溯落库申请'
 
 const supplierOptions = computed(() => {
   const suppliers = new Set<string>()

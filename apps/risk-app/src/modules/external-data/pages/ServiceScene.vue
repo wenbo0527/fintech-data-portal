@@ -37,7 +37,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
-import { IconCloud, IconStorage, IconClockCircle, IconFindReplace, IconSafe, IconImport } from '@arco-design/web-vue/es/icon'
+import { IconCloud, IconStorage, IconClockCircle, IconFindReplace, IconSafe, IconImport, IconSave } from '@arco-design/web-vue/es/icon'
 import ServiceApplicationDrawer from '../components/ServiceApplicationDrawer.vue'
 
 const router = useRouter()
@@ -98,12 +98,23 @@ const scenes = [
     color: '#14C9C9',
     tags: ['文件交互', '线上调用', '样本传输'],
     serviceType: '外数线上调用服务申请'
+  },
+  {
+    id: 'backtrack-persist',
+    title: '外数回溯落库申请',
+    description: '将厂商回溯返回的非标准数据，经任务匹配与字段映射标准化落库Hive。',
+    icon: IconSave,
+    color: '#722ED1',
+    tags: ['文件任务匹配', '字段映射', '一致性校验', 'backid批次'],
+    serviceType: '外数回溯落库申请'
   }
 ]
 
 const handleSceneClick = (scene: any) => {
   if (scene.serviceType === '外数线上调用服务申请') {
     router.push({ name: 'RiskExternalDataOnlineCallApplication' })
+  } else if (scene.serviceType === '外数回溯落库申请') {
+    router.push({ name: 'RiskExternalDataBacktrackPersist' })
   } else {
     currentServiceType.value = scene.serviceType
     drawerVisible.value = true

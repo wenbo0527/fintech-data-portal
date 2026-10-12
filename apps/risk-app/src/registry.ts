@@ -90,6 +90,7 @@ const registry: any = {
     { path: 'variable-hub/external-data/sample-preparation/edit/:id', name: 'RiskExternalDataSamplePreparationEdit', component: './modules/external-data/pages/SamplePreparationCreate.vue', meta: { title: '编辑样本表' } },
     { path: 'variable-hub/external-data/validation-template', name: 'RiskExternalDataValidationTemplate', component: './modules/external-data/pages/ServiceValidationTemplate.vue', meta: { title: '服务校验模版管理' } },
     { path: 'variable-hub/external-data/online-call-application', name: 'RiskExternalDataOnlineCallApplication', component: './modules/external-data/pages/OnlineCallApplication.vue', meta: { title: '外数线上调用服务申请' } },
+    { path: 'variable-hub/external-data/backtrack-persist', name: 'RiskExternalDataBacktrackPersist', component: './modules/external-data/pages/BacktrackPersist.vue', meta: { title: '外数回溯落库申请' } },
     // 预算管理
     { path: 'budget/overview',          name: 'BudgetOverview',          component: './modules/budget/pages/Overview.vue', meta: { title: '预算总览' } },
     { path: 'budget/monitor',           name: 'RiskBudgetMonitorPage',   component: './modules/budget/pages/Monitor.vue', meta: { title: '预算监控' } },

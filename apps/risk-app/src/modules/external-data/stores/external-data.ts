@@ -175,7 +175,7 @@ export const useExternalDataStore = defineStore('externalData', {
     async fetchServices() {
       this.error = null
       try {
-        const types = ['在线批量调用', '外数离线回溯申请', '周期跑批任务申请', '全量特征回溯申请', '风险合规离线回溯申请', '外数线上调用服务申请']
+        const types = ['在线批量调用', '外数离线回溯申请', '周期跑批任务申请', '全量特征回溯申请', '风险合规离线回溯申请', '外数线上调用服务申请', '外数回溯落库申请']
         const statuses = ['draft', 'approving', 'executing', 'completed']
         const creators = ['张三', '李四', '王五', '赵六', '孙七']
         

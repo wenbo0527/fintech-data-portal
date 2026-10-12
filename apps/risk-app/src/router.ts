@@ -201,6 +201,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('./modules/external-data/pages/OnlineCallApplication.vue'),
         meta: { title: '外数线上调用服务申请' }
       },
+      {
+        path: '/variable-hub/external-data/backtrack-persist',
+        name: 'RiskExternalDataBacktrackPersist',
+        component: () => import('./modules/external-data/pages/BacktrackPersist.vue'),
+        meta: { title: '外数回溯落库申请' }
+      },
 
       // ========== 预算管理 ==========
       {

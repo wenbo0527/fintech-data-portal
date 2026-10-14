@@ -96,8 +96,8 @@ const stats = computed(() => {
   let totalClassify = 0
   let tablesWithLinks = 0
   tables.forEach(t => {
-    const c = FieldLinkStore.tableComplianceRate(t.tableName)
-    const k = FieldLinkStore.tableClassifyCoverage(t.tableName)
+    const c = FieldLinkStore.tableComplianceRate(t.name)
+    const k = FieldLinkStore.tableClassifyCoverage(t.name)
     if (c > 0 || k > 0) tablesWithLinks++
     totalCompliance += c
     totalClassify += k

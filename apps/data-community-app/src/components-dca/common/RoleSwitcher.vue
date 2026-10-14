@@ -38,7 +38,7 @@
                 <template #title>
                   <div class="role-title">
                     <span class="role-name">{{ item.item.label }}</span>
-                    <a-tag v-if="item.item.key === roleStore.currentRole" size="mini" color="green">当前</a-tag>
+                    <a-tag v-if="item.item.key === roleStore.currentRole" size="small" color="green">当前</a-tag>
                   </div>
                 </template>
                 <template #description>

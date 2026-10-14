@@ -66,29 +66,35 @@ export const STATUS_DICTIONARY: Record<string, Record<string, StatusMeta>> = {
     disabled: { label: '停用', color: 'red' },
     published: { label: '已发布', color: 'green' }
   },
+  // 券【实例】状态 - 严格 9 态对齐 types/api/coupon.ts (PRD v1.2.8 §11.3)
+  // 5/26 教训链: 模板态/审批态必须独立字典,不再混用
   couponStatus: {
-    // v1.2.8 5/26 教训链修复: 严格对齐 types/api/coupon.ts 9 态 (PRD v1.2.8 §11.3)
-    // 删 'locked'/'used'/'invalid' 幽灵状态(types 9 态已删)
-    // 保留模板状态机(draft/online/offline/paused/active/expired/pending 模板态)
-    // 加 5 个 failed_* + 1 个用户券态 pending(内部态)
-    draft: { label: '草稿', color: 'gray' },                       // 模板态
-    online: { label: '生效中', color: 'green' },                   // 模板态
-    active: { label: '生效中', color: 'green' },                   // 模板态
-    offline: { label: '已下线', color: 'gray' },                   // 模板态
-    paused: { label: '已暂停', color: 'orange' },                  // 模板态
-    pending: { label: '待审核', color: 'blue' },                   // 模板态(approvalStatus) / 用户券内部态(同时存在)
-    received: { label: '未使用', color: 'green' },                 // 用户券态 - v1.2.7 中文化(原"已领取")
-    // locked: types 9 态已删 - 5/26 教训链
-    // used: types 9 态已删 - 5/26 教训链(PRICED_DISCOUNT 无"已使用"状态)
-    expired: { label: '已过期', color: 'gray' },                   // 模板态/用户券态
-    // invalid: types 9 态已删 - 5/26 教训链
-    invalidated: { label: '已作废', color: 'red' },                // 用户券态
-    // v1.2.6 PRD §11.3 5 个失败态(v1.2.7 中文化为 XX失败)
+    pending: { label: '待确认', color: 'arcoblue' },                   // 内部态:Kafka 消费后→核心回执前(对用户不可见)
+    received: { label: '未使用', color: 'blue' },                     // 激活态 - v1.2.7 中文化(原"已领取")
+    invalidated: { label: '已作废', color: 'red' },                    // 被动作废
+    expired: { label: '已过期', color: 'gray' },                      // 自然过期
+    // v1.2.6 PRD §11.3 5 个失败态(v1.2.7 中文化) - 可补发
     failed_1001_core_rejected: { label: '核心拒收失败', color: 'red' },
     failed_1002_timeout: { label: '超时失败', color: 'red' },
     failed_1003_invalidation: { label: '存量作废失败', color: 'red' },
     failed_1004_kafka_push: { label: '推送失败', color: 'red' },
-    failed_1005_kafka_consume: { label: '消费失败', color: 'red' },
+    failed_1005_kafka_consume: { label: '消费失败', color: 'red' }
+  },
+  // 券【模板】状态 - 模板级生命周期(独立字典,避免与实例态 pending 混用)
+  templateStatus: {
+    draft: { label: '草稿', color: 'gray' },
+    online: { label: '生效中', color: 'green' },
+    active: { label: '生效中', color: 'green' },   // 兼容 alias: 部分模板历史数据
+    offline: { label: '已下线', color: 'gray' },
+    paused: { label: '已暂停', color: 'orange' },
+    expired: { label: '已过期', color: 'red' }
+  },
+  // 审批状态(模板审批流) - 独立字典
+  approvalStatus: {
+    pending: { label: '待审批', color: 'blue' },
+    approved: { label: '已通过', color: 'green' },
+    rejected: { label: '已拒绝', color: 'red' },
+    cancelled: { label: '已撤销', color: 'gray' }
   },
   alertRuleStatus: {
     active: { label: '启用', color: 'green' },

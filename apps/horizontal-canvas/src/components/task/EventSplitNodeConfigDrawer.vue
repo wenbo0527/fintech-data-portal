@@ -124,6 +124,7 @@
 import { computed, ref, watch } from 'vue'
 import BaseDrawer from './BaseDrawer.vue'
 import { useBaseDrawer } from '@/composables/useBaseDrawer.js'
+import { TOUCH_COMBOS, getNodeLabel } from '@/utils/nodeTypes.js'
 
 const props = defineProps({ visible: { type: Boolean, default: false }, nodeData: { type: Object, default: () => ({}) }, readOnly: { type: Boolean, default: false } })
 const emit = defineEmits(['update:visible', 'confirm', 'cancel'])
@@ -146,12 +147,11 @@ const formRules = {
   // 节点级已不再需要 eventType；移除校验
 }
 
-const isFromCombo = computed(() => Boolean(props.nodeData?.config?.comboType) && (props.nodeData?.config?.comboType === 'sms-touch-combo' || props.nodeData?.config?.comboType === 'ai-touch-combo'))
+// 组合节点判定以 TOUCH_COMBOS 为单一数据源：新增高级节点时此处无需再改动
+const isFromCombo = computed(() => Boolean(TOUCH_COMBOS[props.nodeData?.config?.comboType]))
 const comboOriginLabel = computed(() => {
   const t = props.nodeData?.config?.comboType
-  if (t === 'sms-touch-combo') return '短信触达成功'
-  if (t === 'ai-touch-combo') return 'AI外呼触达成功'
-  return ''
+  return TOUCH_COMBOS[t] ? getNodeLabel(t) : ''
 })
 
 const nodeDefaultEventType = computed(() => {

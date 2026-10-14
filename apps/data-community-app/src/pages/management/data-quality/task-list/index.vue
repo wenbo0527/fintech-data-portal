@@ -53,6 +53,24 @@
             <a-option value="sum">金额汇总校验</a-option>
           </a-select>
         </a-col>
+        <a-col :span="4">
+          <a-select
+            v-model="searchForm.dimension"
+            placeholder="质量维度"
+            allow-clear
+            @change="handleSearch"
+          >
+            <a-option v-for="dim in QUALITY_DIMENSIONS" :key="dim" :value="dim">
+              {{ QUALITY_DIM_LABELS[dim] }}
+            </a-option>
+          </a-select>
+        </a-col>
+        <a-col :span="6">
+          <a-link class="dim-weights-hint" @click="goQualityDashboard">
+            <IconDashboard />
+            <span>查看质量看板（评分回流资产目录）</span>
+          </a-link>
+        </a-col>
       </a-row>
     </div>
 
@@ -105,6 +123,21 @@
                 {{ r.type === 'count' ? 'count' : 'sum' }}
               </a-tag>
             </div>
+          </div>
+        </template>
+
+        <!-- 质量维度（五维标签） -->
+        <template #dimensions="{ record }">
+          <div class="rules-tags">
+            <a-tag
+              v-for="dim in dimsOfTask(record)"
+              :key="dim"
+              :color="QUALITY_DIM_COLORS[dim]"
+              size="small"
+            >
+              {{ QUALITY_DIM_LABELS[dim] }}
+            </a-tag>
+            <span v-if="!dimsOfTask(record).length" class="text-gray">未标注</span>
           </div>
         </template>
 
@@ -166,12 +199,17 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
-import { IconPlus, IconSearch } from '@arco-design/web-vue/es/icon'
+import { IconPlus, IconSearch, IconDashboard } from '@arco-design/web-vue/es/icon'
 import {
   getQualityTasks,
   deleteQualityTask,
   toggleQualityTask,
-  triggerTask
+  triggerTask,
+  QUALITY_DIMENSIONS,
+  QUALITY_DIM_LABELS,
+  QUALITY_DIM_COLORS,
+  dimOfRule,
+  type QualityDimension
 } from '../../../../mock/api/dataQuality'
 
 const router = useRouter()
@@ -182,7 +220,8 @@ const dataList = ref<any[]>([])
 const searchForm = reactive({
   name: '',
   status: '' as '' | 'active' | 'inactive',
-  checkMethod: '' as '' | 'count' | 'sum'
+  checkMethod: '' as '' | 'count' | 'sum',
+  dimension: '' as '' | QualityDimension
 })
 
 const pagination = reactive({
@@ -198,7 +237,8 @@ const columns = [
   { title: '任务名称', dataIndex: 'name', slotName: 'name', width: 220 },
   { title: '源端表', slotName: 'sourceTable', width: 200 },
   { title: '目标端表', slotName: 'targetTable', width: 200 },
-  { title: '校验规则', slotName: 'rules', width: 130 },
+  { title: '校验规则', slotName: 'rules', width: 110 },
+  { title: '质量维度', slotName: 'dimensions', width: 170 },
   { title: '调度周期', slotName: 'schedule', width: 130 },
   { title: '上次运行', slotName: 'lastRunStatus', width: 120 },
   { title: '状态', slotName: 'status', width: 100 },
@@ -209,6 +249,18 @@ const runStatusMap: Record<string, { status: any; text: string }> = {
   consistent: { status: 'success', text: '一致' },
   inconsistent: { status: 'warning', text: '不一致' },
   failed: { status: 'danger', text: '执行失败' }
+}
+
+/** 任务覆盖的质量维度（去重，按五维固定顺序；历史规则未打标时按校验类型兜底） */
+const dimsOfTask = (task: any): QualityDimension[] => {
+  const set = new Set<QualityDimension>(
+    (task?.rules || []).map((r: any) => dimOfRule(r))
+  )
+  return QUALITY_DIMENSIONS.filter(d => set.has(d))
+}
+
+const goQualityDashboard = () => {
+  router.push('/management/quality/dashboard')
 }
 
 const handleCreate = () => {
@@ -239,8 +291,14 @@ const handleToggle = async (record: any) => {
 const handleTrigger = async (record: any) => {
   record._triggering = true
   try {
-    const data = await triggerTask(record.id)
-    Message.success('触发成功，已生成校验实例')
+    const inst = await triggerTask(record.id)
+    const results = (inst as any)?.results || []
+    const breach = results.filter((r: any) => !r.isConsistent).length
+    Message.success(
+      breach
+        ? `执行完成：${results.length} 条规则中 ${breach} 条超阈值，已推送告警`
+        : `执行完成：${results.length} 条规则全部通过`
+    )
     loadData()
   } catch (e: any) {
     Message.error(e?.message || '触发失败')
@@ -283,7 +341,8 @@ const loadData = async () => {
       pageSize: pagination.pageSize,
       name: searchForm.name || undefined,
       status: searchForm.status || undefined,
-      checkMethod: searchForm.checkMethod || undefined
+      checkMethod: searchForm.checkMethod || undefined,
+      dimension: searchForm.dimension || undefined
     })
     dataList.value = (data?.list || []).map((t: any) => ({ ...t, _toggling: false, _triggering: false }))
     pagination.total = data?.total || 0
@@ -392,6 +451,14 @@ onMounted(() => {
 .schedule-detail {
   font-size: 12px;
   color: #86909c;
+}
+
+.dim-weights-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #4e5969;
 }
 
 .text-gray {

@@ -50,6 +50,7 @@
         :data="dataList"
         :loading="loading"
         :pagination="pagination"
+        :scroll="{ x: 1310 }"
         @page-change="handlePageChange"
         @page-size-change="handlePageSizeChange"
         :bordered="{ wrapper: true, cell: true }"
@@ -67,6 +68,26 @@
             :status="statusMap[record.status]?.status"
             :text="statusMap[record.status]?.text"
           />
+        </template>
+
+        <!-- 目标资产（评分回流的表） -->
+        <template #targetTable="{ record }">
+          <span class="table-name">{{ record.targetTable || '—' }}</span>
+        </template>
+
+        <!-- 覆盖的质量维度 -->
+        <template #dims="{ record }">
+          <div class="dim-tags">
+            <a-tag
+              v-for="dim in dimsOfInstance(record)"
+              :key="dim"
+              :color="QUALITY_DIM_COLORS[dim]"
+              size="small"
+            >
+              {{ QUALITY_DIM_LABELS[dim] }}
+            </a-tag>
+            <span v-if="!dimsOfInstance(record).length" class="text-gray">—</span>
+          </div>
         </template>
 
         <!-- 校验方式 -->
@@ -110,7 +131,15 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { IconArrowLeft } from '@arco-design/web-vue/es/icon'
-import { getTaskInstances, getQualityTasks } from '../../../../mock/api/dataQuality'
+import {
+  getTaskInstances,
+  getQualityTasks,
+  QUALITY_DIMENSIONS,
+  QUALITY_DIM_LABELS,
+  QUALITY_DIM_COLORS,
+  dimOfRule,
+  type QualityDimension
+} from '../../../../mock/api/dataQuality'
 
 const router = useRouter()
 const route = useRoute()
@@ -134,8 +163,10 @@ const pagination = reactive({
 })
 
 const columns = [
-  { title: '任务名称', slotName: 'taskName', width: 250 },
-  { title: '运行状态', slotName: 'status', width: 120 },
+  { title: '任务名称', slotName: 'taskName', width: 230 },
+  { title: '运行状态', slotName: 'status', width: 110 },
+  { title: '目标资产', slotName: 'targetTable', width: 170 },
+  { title: '覆盖维度', slotName: 'dims', width: 180 },
   { title: '规则数', slotName: 'checkMethod', width: 100 },
   { title: '差异概要', slotName: 'diffSummary', width: 140 },
   { title: '执行耗时', slotName: 'duration', width: 100 },
@@ -152,6 +183,16 @@ const statusMap: Record<string, { status: any; text: string }> = {
 const getInconsistentCount = (record: any) => {
   if (!record.results) return 0
   return record.results.filter((r: any) => !r.isConsistent).length
+}
+
+// 实例覆盖的质量维度：按检查结果规则维度去重（未标注时按校验类型兜底）
+const dimsOfInstance = (record: any): QualityDimension[] => {
+  const set = new Set<QualityDimension>(
+    (record?.results || []).map(
+      (r: any) => dimOfRule(r)
+    )
+  )
+  return QUALITY_DIMENSIONS.filter((d) => set.has(d))
 }
 
 const goBack = () => {
@@ -274,5 +315,17 @@ onMounted(() => {
 
 .text-gray {
   color: #86909c;
+}
+
+.table-name {
+  font-family: Menlo, Consolas, monospace;
+  font-size: 13px;
+  color: #1d2129;
+}
+
+.dim-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 </style>

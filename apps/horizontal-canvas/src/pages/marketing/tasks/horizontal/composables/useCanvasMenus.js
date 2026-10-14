@@ -16,7 +16,6 @@ import { PerformanceUtils } from '@/utils/performanceUtils.js'
  *   { nodeActionsMenu, edgeActionsMenu, portActionsMenu,
  *     nodeActionsMenuEl, nodeActionsMenuHovering, isStartNodeMenu,
  *     getNodeActionsMenuRect, getHeaderMenuCooldownUntil,
- *     onContentMouseOver, onContentMouseOut,
  *     renameCurrentNode, copyCurrentNode, deleteCurrentNode,
  *     deleteCurrentEdge, deleteCurrentPortEdge,
  *     closeEdgeMenu, closePortMenu }
@@ -187,7 +186,6 @@ export function useCanvasMenus(deps) {
     nodeActionsMenu, edgeActionsMenu, portActionsMenu,
     nodeActionsMenuEl, nodeActionsMenuHovering, isStartNodeMenu,
     getNodeActionsMenuRect, getHeaderMenuCooldownUntil,
-    onContentMouseOver, onContentMouseOut,
     renameCurrentNode, copyCurrentNode, deleteCurrentNode,
     deleteCurrentEdge, deleteCurrentPortEdge,
     closeEdgeMenu, closePortMenu

@@ -175,6 +175,7 @@ interface LoanRecord {
   remainingPenalty?: number
   remainingTotal?: number
   overdueDays?: number
+  status?: string
 }
 
 interface Props {

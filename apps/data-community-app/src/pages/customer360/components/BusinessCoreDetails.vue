@@ -24,7 +24,7 @@
           <a-tag color="arcoblue" size="small">
             {{ currentCreditProduct?.productName || '未选择产品' }}
           </a-tag>
-          <a-tag v-if="currentCreditProduct?.creditProductId" color="gray" size="mini">
+          <a-tag v-if="currentCreditProduct?.creditProductId" color="gray" size="small">
             {{ currentCreditProduct.creditProductId }}
           </a-tag>
         </div>
@@ -330,8 +330,10 @@ const loanTagsVisible = ref(false)
 const initialPlanVisible = ref(false)
 
 // 当前选中的数据
-const currentCreditData = ref(null)
-const currentLoanData = ref(null)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const currentCreditData = ref<any>(null)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const currentLoanData = ref<any>(null)
 
 // 表格列定义
 const creditColumns = [

@@ -82,3 +82,33 @@
   --dca-page-max-width-narrow: 1200px;
   --dca-page-padding: 24px;
 }
+
+/* ───── 表头拖动换列（useDraggableColumns 共享样式，需在 Arco 内部渲染生效故放全局） ───── */
+.dca-drag-th {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: grab;
+  user-select: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background-color 0.15s, opacity 0.15s;
+}
+.dca-drag-th:hover {
+  background-color: var(--color-fill-3, #e5e6eb);
+}
+.dca-drag-th.is-dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+.dca-drag-th.is-over {
+  background-color: var(--color-primary-light-1, #e8f3ff);
+  outline: 1px dashed rgb(var(--arcoblue-6, 22, 93, 255));
+}
+.dca-drag-th-handle::before {
+  content: '⠿';
+  color: var(--dca-text-tertiary, #86909c);
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: -1px;
+}

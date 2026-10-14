@@ -20,7 +20,19 @@
       <a-descriptions :column="2" :data="tableMetaList" />
     </a-card>
 
-    <!-- 区域 2：字段分级列表（字段粒度） -->
+    <!-- 区域 2：血缘（上下游） -->
+    <TableLineageCard
+      class="lineage-card"
+      :upstream="lineageUpstream"
+      :downstream="lineageDownstream"
+      @node-click="onLineageNode"
+    >
+      <template #tip>
+        按仓内分层推演的演示 mock 血缘（ODS 贴源供数 → 本表 → 同系统下游加工），非真实调度链路；「在目录」节点可点击进入对应表详情。
+      </template>
+    </TableLineageCard>
+
+    <!-- 区域 3：字段分级列表（字段粒度） -->
     <a-card class="fields-card">
       <template #title>
         <div class="fields-header">
@@ -51,49 +63,34 @@
         <a-tab-pane key="fields" title="字段列表">
           <a-table
             :data="filteredFields"
+            :columns="fieldColumns"
             :pagination="{ showTotal: true, pageSize: 20 }"
             row-key="field_name"
             :bordered="false"
+            :column-resizable="true"
             :scroll="{ x: '100%' }"
           >
-            <template #columns>
-              <a-table-column title="字段名" data-index="field_name" :width="140" fixed>
-                <template #cell="{ record }">
-                  <a-tag color="gray">{{ record.field_name }}</a-tag>
-                </template>
-              </a-table-column>
-              <a-table-column title="字段注释" data-index="field_comment" :width="140" />
-              <a-table-column title="业务属于" :width="100">
-                <template #cell="{ record }">
-                  <a-tag>{{ record.business_belonging }}</a-tag>
-                </template>
-              </a-table-column>
-              <a-table-column title="分级" :width="80">
-                <template #cell="{ record }">
-                  <a-tag :color="record.grade === '关键' ? 'red' : record.grade === '重要' ? 'orange' : 'gray'">
-                    {{ record.grade }}
-                  </a-tag>
-                </template>
-              </a-table-column>
-              <a-table-column title="敏感级别" :width="110">
-                <template #cell="{ record }">
-                  <a-tag :color="SENSITIVITY_COLORS[record.sensitivity_level]">
-                    {{ record.sensitivity_level }}
-                  </a-tag>
-                </template>
-              </a-table-column>
-              <a-table-column title="一级业务目录" data-index="category_l1" :width="100" />
-              <a-table-column title="二级业务目录" data-index="category_l2" :width="120" />
-              <a-table-column title="三级业务目录" data-index="category_l3" :width="120" />
-              <a-table-column title="四级业务目录" data-index="category_l4" :width="120" />
-              <a-table-column title="操作" :width="100" fixed="right">
-                <template #cell="{ record }">
-                  <a-tooltip v-if="!canEdit" content="仅数据治理员可编辑">
-                    <a-button type="text" size="mini" disabled>编辑</a-button>
-                  </a-tooltip>
-                  <a-button v-else type="text" size="mini" @click="openEdit(record)">编辑</a-button>
-                </template>
-              </a-table-column>
+            <template #cell-name="{ record }">
+              <a-tag color="gray">{{ record.field_name }}</a-tag>
+            </template>
+            <template #cell-belonging="{ record }">
+              <a-tag>{{ record.business_belonging }}</a-tag>
+            </template>
+            <template #cell-grade="{ record }">
+              <a-tag :color="record.grade === '关键' ? 'red' : record.grade === '重要' ? 'orange' : 'gray'">
+                {{ record.grade }}
+              </a-tag>
+            </template>
+            <template #cell-sensitivity="{ record }">
+              <a-tag :color="SENSITIVITY_COLORS[record.sensitivity_level as SensitivityLevel]">
+                {{ record.sensitivity_level }}
+              </a-tag>
+            </template>
+            <template #cell-op="{ record }">
+              <a-tooltip v-if="!canEdit" content="仅数据治理员可编辑">
+                <a-button type="text" size="mini" disabled>编辑</a-button>
+              </a-tooltip>
+              <a-button v-else type="text" size="mini" @click="openEdit(record)">编辑</a-button>
             </template>
           </a-table>
         </a-tab-pane>
@@ -128,12 +125,15 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import type { TableColumnData } from '@arco-design/web-vue'
 import PageHeader from '@/components-dca/common/PageHeader.vue'
+import TableLineageCard, { type LineageNode } from '@/components-dca/common/TableLineageCard.vue'
+import { useDraggableColumns } from '@/composables/useDraggableColumns'
 import ClassifyEditModal from './components/ClassifyEditModal.vue'
 import { classifySystemsData } from '@/mock-shared/classify-modules'
 import { classifyEditHistory } from '@/mock-shared/classify-edit-history'
 import { SENSITIVITY_COLORS, SENSITIVITY_NAMES, GRADE_OPTIONS, BELONGING_OPTIONS, MOCK_ROLES } from '@/mock-shared/classify-constants'
-import type { ClassifyField, ClassifyTable } from '@/mock-shared/classify-types'
+import type { ClassifyField, ClassifyTable, SensitivityLevel } from '@/mock-shared/classify-types'
 
 const route = useRoute()
 const router = useRouter()
@@ -149,6 +149,31 @@ const tableData = computed<ClassifyTable | undefined>(() =>
 
 const goHome = () => router.push('/management/metadata/classify/sources')
 const goToTables = () => router.push(`/management/metadata/classify/tables/${systemId.value}`)
+
+// ---------- 血缘（演示 mock：ODS 贴源上游 + 同系统后续表下游） ----------
+const lineageUpstream = computed<LineageNode[]>(() => {
+  if (!tableData.value) return []
+  // ODS 贴源层不在本分级目录内，仅作展示不可点击
+  return [{ name: `ods.${tableName.value}`, cnName: 'ODS 贴源供数', resolved: false }]
+})
+
+const lineageDownstream = computed<LineageNode[]>(() => {
+  if (!currentSystem.value || !tableData.value) return []
+  const idx = currentSystem.value.tables.findIndex(
+    t => t.schema === schema.value && t.table_name === tableName.value
+  )
+  if (idx < 0) return []
+  return currentSystem.value.tables.slice(idx + 1, idx + 3).map(t => ({
+    name: t.table_name,
+    cnName: t.table_comment,
+    resolved: true
+  }))
+})
+
+function onLineageNode(node: LineageNode) {
+  const hit = currentSystem.value?.tables.find(t => t.table_name === node.name)
+  if (hit) router.push(`/management/metadata/classify/table/${systemId.value}/${hit.schema}/${hit.table_name}`)
+}
 
 // 表元信息（与数据发现域 TableDetailPage 保持 8 项结构 + 2 列布局）
 const tableMetaList = computed(() => {
@@ -192,6 +217,20 @@ const filteredFields = computed(() => {
   })
 })
 
+// 字段列定义（表头可拖动换序 + 列宽可拖动，见 useDraggableColumns）
+const fieldColumns = useDraggableColumns((): TableColumnData[] => [
+  { title: '字段名', dataIndex: 'field_name', slotName: 'cell-name', width: 140, fixed: 'left' },
+  { title: '字段注释', dataIndex: 'field_comment', width: 140 },
+  { title: '业务属于', slotName: 'cell-belonging', width: 100 },
+  { title: '分级', slotName: 'cell-grade', width: 80 },
+  { title: '敏感级别', slotName: 'cell-sensitivity', width: 110 },
+  { title: '一级业务目录', dataIndex: 'category_l1', width: 100 },
+  { title: '二级业务目录', dataIndex: 'category_l2', width: 120 },
+  { title: '三级业务目录', dataIndex: 'category_l3', width: 120 },
+  { title: '四级业务目录', dataIndex: 'category_l4', width: 120 },
+  { title: '操作', slotName: 'cell-op', width: 100, fixed: 'right' }
+])
+
 // 角色（用于权限 demo）
 const canEdit = ref(true) // 默认治理员角色
 
@@ -217,6 +256,6 @@ const onEditSaved = (updated: ClassifyField) => {
 <style scoped>
 .classify-table-detail-page { padding: 16px 24px 24px; }
 .breadcrumb { margin-bottom: 8px; }
-.meta-card { margin-bottom: 16px; }
+.meta-card, .lineage-card { margin-bottom: 16px; }
 .fields-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 </style>

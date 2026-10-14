@@ -193,6 +193,7 @@ const pagination = ref({
 })
 
 import { templateMockData } from '@/mock/coupon'
+import { STATUS_DICTIONARY } from '@/constants/status'
 
 // 获取表格数据
 const fetchData = async () => {
@@ -337,28 +338,17 @@ const searchProduct = ref('')
 const searchStatus = ref('')
 const searchName = ref('')
 
-/** MockTemplate.status enum 6 态 中文映射 (PRD v1.2.4 §11.1 3 态 + 扩展)
- *  v1.2.8 注: 本映射是【券模板】状态(业务态),非【用户券】状态。
- *  用户券失败态(pending/5 个 failed_*) 见 detail.vue:218 getStatusText。
- *  5/26 教训链: 模板状态机只有 draft/online/offline/active/paused/expired
- *  加 failed_* 是状态错位,会出列渲染异常。
+/** MockTemplate.status 6 态 → 复用 constants/status.ts templateStatus 字典
+ *  v1.2.8 统一收口: 模板态独立字典,不再混用 couponStatus
+ *  本地视图模式 (v-if 分支) 仍按 value 判断,与字典解耦
  */
-const statusTextMap = {
-  draft: '草稿',
-  online: '生效中',
-  offline: '已下线',
-  active: '生效中',
-  paused: '已暂停',
-  expired: '已过期',
-}
-const statusColorMap = {
-  draft: 'gray',
-  online: 'green',
-  offline: 'orange',
-  active: 'green',
-  paused: 'gray',
-  expired: 'red',
-}
+// 视图层仍按 record.status 直接查 label/color,这里把字典展开成两个扁平映射
+const statusTextMap = Object.fromEntries(
+  Object.entries(STATUS_DICTIONARY.templateStatus).map(([k, v]) => [k, v.label])
+)
+const statusColorMap = Object.fromEntries(
+  Object.entries(STATUS_DICTIONARY.templateStatus).map(([k, v]) => [k, v.color])
+)
 
 // 处理搜索（按类型 + 产品 + 状态 + 名称筛选）
 const handleSearch = () => {

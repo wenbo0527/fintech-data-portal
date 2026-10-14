@@ -35,13 +35,13 @@
           <span class="lp-app-label">
             授信申请ID: <strong>{{ appGroup.creditApplicationId }}</strong>
           </span>
-          <a-tag color="gray" size="mini">
+          <a-tag color="gray" size="small">
             归属：{{ getCreditProductName(appGroup.creditProductId) }} · {{ appGroup.creditProductId }}
           </a-tag>
-          <a-tag color="arcoblue" size="mini">
+          <a-tag color="arcoblue" size="small">
             {{ appGroup.loanProducts.length }} 个用信产品
           </a-tag>
-          <a-tag color="green" size="mini">
+          <a-tag color="green" size="small">
             {{ appGroup.totalLoanCount }} 笔借款
           </a-tag>
           <span class="lp-app-amount">
@@ -59,7 +59,7 @@
             <div class="lp-product-head">
               <IconBookmark class="lp-product-icon" />
               <span class="lp-product-name">{{ lp.loanProductName }}</span>
-              <a-tag size="mini" color="gray">{{ lp.loanProductId }}</a-tag>
+              <a-tag size="small" color="gray">{{ lp.loanProductId }}</a-tag>
             </div>
             <div v-if="lp.loans.length > 0" class="lp-product-loans">
               <div class="loan-row-header">
@@ -84,13 +84,13 @@
                 <span class="loan-cell">{{ loan.loanDate || '-' }}</span>
                 <span class="loan-cell">{{ loan.bankCardNo || '-' }}</span>
                 <span class="loan-cell">
-                  <a-tag :color="getResultColor(loan.result)" size="mini">{{ loan.result || '-' }}</a-tag>
+                  <a-tag :color="getResultColor(loan.result)" size="small">{{ loan.result || '-' }}</a-tag>
                 </span>
                 <span class="loan-cell" :class="{ 'text-red': loan.rejectReason }">{{ loan.rejectReason || '-' }}</span>
                 <span class="loan-cell loan-id">{{ loan.iouNo || '-' }}</span>
                 <span class="loan-cell loan-id">{{ loan.thirdPartyIouNo || '-' }}</span>
                 <span class="loan-cell">
-                  <a-tag :color="getIouStatusColor(loan.iouStatus)" size="mini">{{ loan.iouStatus || '-' }}</a-tag>
+                  <a-tag :color="getIouStatusColor(loan.iouStatus)" size="small">{{ loan.iouStatus || '-' }}</a-tag>
                 </span>
                 <span class="loan-cell amount">¥{{ formatAmount(loan.amount) }}</span>
                 <span class="loan-cell">{{ loan.installments ? loan.installments + '期' : '-' }}</span>

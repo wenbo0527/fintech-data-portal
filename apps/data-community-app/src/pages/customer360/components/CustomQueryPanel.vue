@@ -13,8 +13,8 @@
               <div>
                 <div class="name-line">
                   <span class="name">{{ customerInfo.name }}</span>
-                  <a-tag size="mini" :color="customerInfo.customerLevel === 'VIP' ? 'gold' : 'arcoblue'">{{ customerInfo.customerLevel }}</a-tag>
-                  <a-tag size="mini" :color="customerInfo.status === '正常' ? 'green' : 'red'">{{ customerInfo.status }}</a-tag>
+                  <a-tag size="small" :color="customerInfo.customerLevel === 'VIP' ? 'gold' : 'arcoblue'">{{ customerInfo.customerLevel }}</a-tag>
+                  <a-tag size="small" :color="customerInfo.status === '正常' ? 'green' : 'red'">{{ customerInfo.status }}</a-tag>
                 </div>
                 <div class="muted">
                   {{ customerInfo.userId }} ·
@@ -25,7 +25,7 @@
               </div>
             </div>
             <div class="summary-tags">
-              <a-tag size="mini" color="cyan">{{ customerInfo.thirdPartyCustomerId || '无三方ID' }}</a-tag>
+              <a-tag size="small" color="cyan">{{ customerInfo.thirdPartyCustomerId || '无三方ID' }}</a-tag>
             </div>
           </div>
           <a-divider style="margin: 8px 0" />
@@ -91,10 +91,10 @@
               <div class="product-row1">
                 <a-radio :model-value="true" @click.stop />
                 <span class="product-name">{{ selectedProductSummary?.productName }}</span>
-                <a-tag size="mini" :color="productTypeColor(selectedProductSummary?.productType)">{{ selectedProductSummary?.productType }}</a-tag>
+                <a-tag size="small" :color="productTypeColor(selectedProductSummary?.productType)">{{ selectedProductSummary?.productType }}</a-tag>
               </div>
               <div class="product-row2">
-                <a-tag size="mini" :color="creditStatusColor(selectedProductSummary?.creditStatus)">{{ selectedProductSummary?.creditStatus || '正常' }}</a-tag>
+                <a-tag size="small" :color="creditStatusColor(selectedProductSummary?.creditStatus)">{{ selectedProductSummary?.creditStatus || '正常' }}</a-tag>
                 <span class="product-meta">授信 ¥{{ formatMoney(selectedProductSummary?.amount) }} · 余额 ¥{{ formatMoney(selectedProductSummary?.balance) }}</span>
               </div>
             </div>
@@ -114,10 +114,10 @@
                 <div class="product-row1">
                   <a-radio :model-value="filters.selectedProductKey === p.productKey" @change="selectRepaymentProduct(p.productKey)" @click.stop />
                   <span class="product-name">{{ p.productName }}</span>
-                  <a-tag size="mini" :color="productTypeColor(p.productType)">{{ p.productType }}</a-tag>
+                  <a-tag size="small" :color="productTypeColor(p.productType)">{{ p.productType }}</a-tag>
                 </div>
                 <div class="product-row2">
-                  <a-tag size="mini" :color="creditStatusColor(p.creditStatus)">{{ p.creditStatus || '正常' }}</a-tag>
+                  <a-tag size="small" :color="creditStatusColor(p.creditStatus)">{{ p.creditStatus || '正常' }}</a-tag>
                   <span class="product-meta">授信 ¥{{ formatMoney(p.amount) }} · 余额 ¥{{ formatMoney(p.balance) }}</span>
                 </div>
               </div>
@@ -131,7 +131,7 @@
             <div class="repay-step-title">
               <span class="step-badge" :class="{ done: filters.selectedLoanNo }">2</span>
               <span>选择用信借据 <span class="required" v-if="!filters.selectedLoanNo">*</span></span>
-              <a-tag v-if="loansForSelectedProduct.length" size="mini" color="arcoblue" style="margin-left: auto;">{{ loansForSelectedProduct.length }}条</a-tag>
+              <a-tag v-if="loansForSelectedProduct.length" size="small" color="arcoblue" style="margin-left: auto;">{{ loansForSelectedProduct.length }}条</a-tag>
             </div>
             <a-empty v-if="!loansForSelectedProduct.length" description="该产品下无用信借据" />
             <div v-else class="cq-loan-list">
@@ -150,7 +150,7 @@
                   <span class="loan-name">{{ l.loanProductName || l.loanNo }}</span>
                 </div>
                 <div class="loan-row2">
-                  <a-tag size="mini" :color="l.status === '逾期' ? 'red' : l.status === '结清' ? 'gray' : 'green'">{{ l.status }}</a-tag>
+                  <a-tag size="small" :color="l.status === '逾期' ? 'red' : l.status === '结清' ? 'gray' : 'green'">{{ l.status }}</a-tag>
                   <span class="muted-small">¥{{ formatMoney(l.amount) }} · 余额 ¥{{ formatMoney(l.balance) }}</span>
                 </div>
                 <div class="loan-row3">
@@ -193,10 +193,10 @@
               <div class="product-row1">
                 <a-checkbox :model-value="filters.productKeys.includes(p.productKey)" @change="toggleProduct(p.productKey)" @click.stop />
                 <span class="product-name">{{ p.productName }}</span>
-                <a-tag size="mini" :color="productTypeColor(p.productType)">{{ p.productType }}</a-tag>
+                <a-tag size="small" :color="productTypeColor(p.productType)">{{ p.productType }}</a-tag>
               </div>
               <div class="product-row2">
-                <a-tag size="mini" :color="creditStatusColor(p.creditStatus)">{{ p.creditStatus || '正常' }}</a-tag>
+                <a-tag size="small" :color="creditStatusColor(p.creditStatus)">{{ p.creditStatus || '正常' }}</a-tag>
                 <span class="product-meta">授信 ¥{{ formatMoney(p.amount) }} · 余额 ¥{{ formatMoney(p.balance) }}</span>
               </div>
             </div>
@@ -454,7 +454,14 @@ const rawLoanRecords = computed(() => (effectiveUserInfo.value?.loanRecords || [
 const rawRepaymentRecords = computed(() => (effectiveUserInfo.value?.repaymentRecords || []) as any[])
 
 // ===== 字段定义(与详情页 userInfo 实际字段对齐) =====
-const fieldDefs = {
+interface QueryFieldDef {
+  label: string
+  value: string
+  width: number
+  description?: string
+}
+
+const fieldDefs: Record<'credit' | 'usage' | 'repayment', QueryFieldDef[]> = {
   credit: [
     { label: '产品Key', value: 'productKey', width: 150 },
     { label: '产品名', value: 'productName', width: 120 },
@@ -664,8 +671,6 @@ const flatTable = computed(() => {
         thirdPartyLoanId: p.thirdPartyLoanId
       })
     })
-  } else if (targetLevel.value === 'credit_app') {
-    // 兼容:授信申请粒度已移除
   } else if (targetLevel.value === 'usage') {
     filteredLoans.value.forEach((l: any) => {
       rows.push({

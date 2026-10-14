@@ -25,7 +25,7 @@
           <span class="title-text">{{ data.title }}</span>
           <a-tag
             v-if="data.count !== undefined"
-            size="mini"
+            size="small"
             color="gray"
             class="title-count"
           >

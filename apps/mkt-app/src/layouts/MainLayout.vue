@@ -84,12 +84,11 @@ const benefitMenus = [
   { key: 'benefit-group-index', title: '权益首页', children: [
     { key: '/benefit',         title: '权益首页' },
   ]},
-  // 父1 🎫 券管理 - 4 子
+  // 父1 🎫 券管理 - 3 子 (库存入口归「库存与日志」组，避免重复)
   { key: 'benefit-group-coupon', title: '券管理', children: [
     { key: '/benefit/template',    title: '券模板管理' },
     { key: '/benefit/management', title: '券管理' },
     { key: '/benefit/package',    title: '券包管理' },
-    { key: '/benefit/inventory',  title: '券库存管理' },
   ]},
   // 父2 ⚠️ 预警中心 - 4 子 (含 S403 库存预警配置)
   { key: 'benefit-group-alert', title: '预警中心', children: [
@@ -100,7 +99,7 @@ const benefitMenus = [
   ]},
   // 父3 📊 库存与日志 - 2 子 (v1.2.9 修复: 改名“库存与日志”对齐 v1.4 §1.2)
   { key: 'benefit-group-stats', title: '库存与日志', children: [
-    { key: '/benefit/statistics',  title: '库存查询' },
+    { key: '/benefit/inventory',  title: '库存查询' },
     { key: '/benefit/logs',       title: '权益日志' },
   ]},
   // 父4 👁️ 透视 - 3 子 (v1.2.9 修复: 已删父4 透视组，3 children 已迁 customerMenus "人群管理"父 (v1.2.9-B 闭环 2026-06-24))
@@ -244,19 +243,16 @@ function updateMenuState(path: string) {
 // 顶部菜单点击
 function handleTopMenuClick(key: string) {
   activeTopMenu.value = key
-  const target = topMenuDefaultPath[key] || '/'
-  // 子应用 base 兼容:去前导 '/' 让 vue-router 自动加 base('/mkt/')
-  const path = target.startsWith('/') ? target.substring(1) : target
-  router.push(path || 'benefit/template')
+  router.push(topMenuDefaultPath[key] || '/')
 }
 
 // 侧边栏菜单点击
 function handleSideMenuClick(key: string) {
   if (!key) return
-  // mkt 用 hash mode, base = '/mkt/'
-  // router.push('/customer/...') 会跳过 base,改为去前导 '/' 当相对路径
-  const path = key.startsWith('/') ? key.substring(1) : key
-  router.push(path)
+  // 必须传绝对路径: createWebHashHistory('/mkt/') 自身负责拼接 base。
+  // 若去掉前导 '/', vue-router 4 会按「当前路由的目录」做相对解析,
+  // 例: 当前 /benefit/template 时 push('benefit/package') → /benefit/benefit/package → No match found
+  router.push(key.startsWith('/') ? key : `/${key}`)
 }
 
 watch(() => route.path, (path) => {

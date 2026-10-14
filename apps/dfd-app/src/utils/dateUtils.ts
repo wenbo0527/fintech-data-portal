@@ -22,7 +22,7 @@ export class DateUtils {
   /**
    * 格式化日期时间
    */
-  static formatDateTime(date: string | Date, format = 'YYYY-MM-DD HH:mm:ss'): string {
+  static formatDateTime(date: string | Date | null | undefined, format = 'YYYY-MM-DD HH:mm:ss'): string {
     if (!date) return ''
     return dayjs(date).format(format)
   }
@@ -184,7 +184,7 @@ export class DateUtils {
    * 智能格式化日期
    * 根据时间距离现在的长短选择合适的显示格式
    */
-  static smartFormat(date: string | Date): string {
+  static smartFormat(date: string | Date | null | undefined): string {
     if (!date) return ''
     
     const now = dayjs()
@@ -212,7 +212,7 @@ export class DateUtils {
 export default DateUtils
 
 // 独立导出函数，兼容解构导入 { formatDateTime } 用法
-export function formatDateTime(date: string | Date, format = 'YYYY-MM-DD HH:mm:ss'): string {
+export function formatDateTime(date: string | Date | null | undefined, format = 'YYYY-MM-DD HH:mm:ss'): string {
   return DateUtils.formatDateTime(date, format)
 }
 

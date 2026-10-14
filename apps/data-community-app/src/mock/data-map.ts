@@ -25,7 +25,7 @@ export interface MockTable {
   clusterType: ClusterType
   owner: string
   registerTime: string
-  status: 'active' | 'onShelf' | 'offShelf' | 'inactive' | 'archived'
+  status: 'active' | 'onShelf' | 'offShelf'
   onShelfTime?: string
   offShelfTime?: string
   publisher: string
@@ -233,6 +233,7 @@ export const mockTables: MockTable[] = [
     analysisClusterTable: 'ads.dmt.t_variable_dict',
     category: '数据要素',
     systemId: 'hive',
+    clusterType: 'HIVE',
     owner: '孙丽',
     registerTime: '2026-02-08 11:20:00',
     status: 'onShelf',

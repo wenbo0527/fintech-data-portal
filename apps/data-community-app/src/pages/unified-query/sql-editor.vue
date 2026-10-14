@@ -62,7 +62,7 @@
                   <icon-folder v-else-if="node.kind === 'cluster' || node.kind === 'database'" class="uq-tree-node__icon" />
                   <icon-file v-else class="uq-tree-node__icon" />
                   <span class="uq-tree-node__text">{{ node.title }}</span>
-                  <a-tag v-if="node.comment" size="mini" color="gray">{{ node.comment }}</a-tag>
+                  <a-tag v-if="node.comment" size="small" color="gray">{{ node.comment }}</a-tag>
                 </span>
               </template>
             </a-tree>
@@ -73,7 +73,7 @@
         <div v-if="selectedTable" class="uq-sidebar__meta">
           <div class="uq-sidebar__meta-title">
             <span>{{ selectedTable.tableName }}</span>
-            <a-tag size="mini">{{ selectedTable.comment }}</a-tag>
+            <a-tag size="small">{{ selectedTable.comment }}</a-tag>
           </div>
           <a-table
             :columns="metaColumns"
@@ -276,7 +276,7 @@
           >
             <template #label="{ data }">
               <span>{{ data.label }}</span>
-              <a-tag size="mini" color="gray">{{ data.dept }}</a-tag>
+              <a-tag size="small" color="gray">{{ data.dept }}</a-tag>
             </template>
           </a-select>
         </a-form-item>

@@ -33,34 +33,32 @@ export const marketingRoutes: RouteRecordRaw[] = [
         path: 'benefit/management',
         name: 'Management',
         component: () => import('@/pages/coupon/management/index.vue'),
-        meta: { title: '券管理' },
-        children: [
-          {
-            path: 'detail',
-            name: 'ManagementDetail',
-            component: () => import('@/pages/coupon/management/detail.vue'),
-            meta: { title: '券详情' }
-          },
-          // P0-路由-#3 补 5 子路由 (文博 16:16 反馈空白页修复)
-          {
-            path: 'batch-create',
-            name: 'ManagementBatchCreate',
-            component: () => import('@/pages/coupon/management/batch-create.vue'),
-            meta: { title: '批量创建券库存', activeMenu: '/marketing/benefit/management' }
-          },
-          {
-            path: 'edit/:id',
-            name: 'ManagementEdit',
-            component: () => import('@/pages/coupon/management/batch-create.vue'),
-            meta: { title: '编辑券', activeMenu: '/marketing/benefit/management' }
-          },
-          {
-            path: 'approval',
-            name: 'ManagementApproval',
-            component: () => import('@/pages/coupon/management/approval.vue'),
-            meta: { title: '券审批管理', activeMenu: '/marketing/benefit/management' }
-          }
-        ]
+        meta: { title: '券管理' }
+      },
+      // P0-路由-#3: 券管理页组件内无 router-view，子页必须注册为同级路由才能渲染
+      {
+        path: 'benefit/management/detail',
+        name: 'ManagementDetail',
+        component: () => import('@/pages/coupon/management/detail.vue'),
+        meta: { title: '券详情', activeMenu: '/marketing/benefit/management' }
+      },
+      {
+        path: 'benefit/management/batch-create',
+        name: 'ManagementBatchCreate',
+        component: () => import('@/pages/coupon/management/batch-create.vue'),
+        meta: { title: '批量创建券库存', activeMenu: '/marketing/benefit/management' }
+      },
+      {
+        path: 'benefit/management/edit/:id',
+        name: 'ManagementEdit',
+        component: () => import('@/pages/coupon/management/batch-create.vue'),
+        meta: { title: '编辑券', activeMenu: '/marketing/benefit/management' }
+      },
+      {
+        path: 'benefit/management/approval',
+        name: 'ManagementApproval',
+        component: () => import('@/pages/coupon/management/approval.vue'),
+        meta: { title: '券审批管理', activeMenu: '/marketing/benefit/management' }
       },
       {
         // P0-路由-#3 补 5 子路由 - template/detail 已存在 detail.vue, 注册 sibling 路由

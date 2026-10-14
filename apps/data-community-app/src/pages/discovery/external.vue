@@ -61,12 +61,45 @@
       :context="ticketContext"
       @confirm="handleMissingTicketConfirm"
     />
+
+    <!-- 外部数据详情抽屉 -->
+    <a-drawer
+      :visible="detailVisible"
+      :width="520"
+      :title="detailItem ? detailItem.dataName : '外部数据详情'"
+      :footer="false"
+      @cancel="detailVisible = false"
+    >
+      <template v-if="detailItem">
+        <a-descriptions :column="1" bordered size="large">
+          <a-descriptions-item label="接口编号">{{ detailItem.interfaceId }}</a-descriptions-item>
+          <a-descriptions-item label="数据名称">{{ detailItem.dataName }}</a-descriptions-item>
+          <a-descriptions-item label="数源种类">
+            <a-tag :color="getTagColor(detailItem.dataType)">{{ detailItem.dataType }}</a-tag>
+          </a-descriptions-item>
+          <a-descriptions-item label="子类型" v-if="detailItem.subType">
+            <a-tag :color="getTagColor(detailItem.subType)" size="small">{{ detailItem.subType }}</a-tag>
+          </a-descriptions-item>
+          <a-descriptions-item label="供应商">{{ detailItem.supplier }}</a-descriptions-item>
+          <a-descriptions-item label="数据管理">{{ detailItem.dataManagement }}</a-descriptions-item>
+          <a-descriptions-item label="上线时间">{{ detailItem.onlineTime }}</a-descriptions-item>
+        </a-descriptions>
+        <div style="margin-top: 16px; display: flex; gap: 12px;">
+          <a-button type="primary" @click="goToSearch">
+            搜索关联数据表
+          </a-button>
+          <a-button @click="showMissingTicket({ assetType: 'external', pageSource: '外部数据', assetName: detailItem.dataName })">
+            提交工单
+          </a-button>
+        </div>
+      </template>
+    </a-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { IconSearch, IconPlus } from '@arco-design/web-vue/es/icon'
 import MissingTicketModal from '@/pages/search/MissingTicketModal.vue'
@@ -76,6 +109,7 @@ import { externalResources } from '@/mock/external-resources'
 const { showMissingTicketModal, ticketContext, showMissingTicket, handleMissingTicketConfirm } = useMissingTicket()
 
 const route = useRoute()
+const router = useRouter()
 const search = ref('')
 const dataType = ref<string | undefined>(undefined)
 
@@ -83,6 +117,10 @@ const dataType = ref<string | undefined>(undefined)
 const allData = ref(externalResources)
 // 搜索结果点击跳转进入时高亮定位的项(interfaceId)
 const selectedId = ref<string>('')
+
+// 详情抽屉
+const detailVisible = ref(false)
+const detailItem = ref<any>(null)
 
 onMounted(() => {
   const focus = route.query.focus
@@ -109,7 +147,13 @@ const filteredList = computed(() => {
 function getTagColor(t: string) { return { '核验类': 'blue', '评分类': 'green', '标签类': 'orange', '名单类': 'red', '价格评估类': 'purple' }[t] || 'gray' }
 function viewDetail(item: any) {
   selectedId.value = item.interfaceId
-  Message.info(`查看外部数据: ${item.dataName}`)
+  detailItem.value = item
+  detailVisible.value = true
+}
+function goToSearch() {
+  if (!detailItem.value) return
+  detailVisible.value = false
+  router.push({ path: '/discovery/search', query: { q: detailItem.value.dataName, tab: 'all' } })
 }
 function toggleFavorite(item: any) {
   item.isFavorite = !item.isFavorite

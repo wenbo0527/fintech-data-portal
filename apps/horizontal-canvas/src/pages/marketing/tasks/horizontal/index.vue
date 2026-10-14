@@ -358,6 +358,32 @@ let pendingInsertionEdge = null
 const nodeSelectorMode = ref(null)
 // 菜单状态/操作由 useCanvasMenus 统一管理
 let headerMenuCooldownUntil = 0
+
+// 菜单组合式必须在 <script setup> 顶层初始化：
+//   模板（节点/边/端口操作菜单）与 onContent* 处理器都要用到这些返回值，
+//   若只在 onMounted 回调内解构，它们就不是 setup 绑定，编译后的渲染函数会走 _ctx.xxx
+//   → 首屏渲染即抛 TypeError: Cannot read properties of undefined (reading 'visible')。
+// 依赖均为顶层已初始化的 import / let / const，graph 与 configDrawers 通过闭包延迟读取。
+const {
+  nodeActionsMenu, edgeActionsMenu, portActionsMenu,
+  nodeActionsMenuEl, nodeActionsMenuHovering, isStartNodeMenu,
+  getNodeActionsMenuRect, getHeaderMenuCooldownUntil,
+  renameCurrentNode, copyCurrentNode, deleteCurrentNode,
+  deleteCurrentEdge, deleteCurrentPortEdge,
+  closeEdgeMenu, closePortMenu
+} = useCanvasMenus({
+  getGraph: () => graph,
+  getIsViewMode: () => isViewMode.value,
+  getContentRect: () => contentRef.value?.getBoundingClientRect?.() || null,
+  openConfigDrawer: (type, node, data) => configDrawers && configDrawers.openConfigDrawer(type, node, data),
+  createVueShapeNode, getNodeLabel,
+  deleteNodeCascade: id => deleteNodeCascade(id),
+  Message, Modal,
+  onTrack: (event, payload) => {
+    try { tracker.track(event, { taskId: editingTaskId.value, version: editingTaskVersion.value, props: payload || {} }) } catch {}
+  }
+})
+
 function onContentMouseDown(e) {
   try {
     if (!showNodeSelector.value) return
@@ -1124,26 +1150,8 @@ onMounted(async () => {
   graph.on('edge:change:target', markDirty)
   graph.on('edge:change:source', markDirty)
 
-  // 实例化菜单组合式（仅做状态/事件绑定；具体操作函数依赖延迟到 configDrawers/deleteNodeCascade 之后绑定）
-  const {
-    nodeActionsMenu, edgeActionsMenu, portActionsMenu,
-    nodeActionsMenuEl, nodeActionsMenuHovering, isStartNodeMenu,
-    getNodeActionsMenuRect, getHeaderMenuCooldownUntil,
-    renameCurrentNode, copyCurrentNode, deleteCurrentNode,
-    deleteCurrentEdge, deleteCurrentPortEdge,
-    closeEdgeMenu, closePortMenu
-  } = useCanvasMenus({
-    getGraph: () => graph,
-    getIsViewMode: () => isViewMode.value,
-    getContentRect: () => contentRef.value?.getBoundingClientRect?.() || null,
-    openConfigDrawer: (type, node, data) => configDrawers && configDrawers.openConfigDrawer(type, node, data),
-    createVueShapeNode, getNodeLabel,
-    deleteNodeCascade: id => deleteNodeCascade(id),
-    Message, Modal,
-    onTrack: (event, payload) => {
-      try { tracker.track(event, { taskId: editingTaskId.value, version: editingTaskVersion.value, props: payload || {} }) } catch {}
-    }
-  })
+  // 菜单组合式已在 <script setup> 顶层初始化，此处直接使用同一份状态，
+  // 避免在回调内重复实例化而产生与模板不一致的第二份菜单状态。
 
   // 按住Ctrl/Command时允许橡皮框，否则禁用以避免误触
   graph.on('blank:mousedown', ({ e }) => {
@@ -1527,7 +1535,7 @@ function ensureStartNode() {
 }
 
 // 用途：高级触达组合节点 → 生成两个真实子节点（触达 + 事件分流）+ 一条连线，并写持久化
-// 入参：comboType - 'sms-touch-combo' | 'ai-touch-combo'
+// 入参：comboType - 'sms-touch-combo' | 'ai-touch-combo' | 'benefit-touch-combo'
 // 返回：事件分流节点（聚焦对象）或 null
 // 边界：要求 graph 存在；事件分流默认 2 分支（命中/未命中），命中标签默认『是』、未命中标签默认『否』，未命中超时沿用现有 timeout 字段
 // 副作用：新增 2 个 cell、1 条 edge、清理 pendingInsertionEdge、TaskStorage 持久化、历史入栈
@@ -1846,6 +1854,9 @@ async function loadTaskData() {
     }
     } else {
       Message.warning('未找到指定的任务数据，将创建新任务')
+      // 与无 id 直入的新建模式保持一致：补建开始节点，避免出现空白画布
+      // （典型场景：宿主 mkt-app 通过 iframe 传入一个尚不存在的任务 id）
+      try { ensureStartNode() } catch {}
       initializing.value = false
     }
   } catch (error) {

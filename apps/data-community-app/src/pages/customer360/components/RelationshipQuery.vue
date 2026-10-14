@@ -107,21 +107,21 @@
         <div class="viz-controls">
           <a-button-group>
             <a-button 
-              :type="viewMode === 'graph' ? 'primary' : 'default'"
+              :type="viewMode === 'graph' ? 'primary' : 'secondary'"
               @click="viewMode = 'graph'"
             >
               <template #icon><IconExpand /></template>
               图谱视图
             </a-button>
             <a-button 
-              :type="viewMode === 'tree' ? 'primary' : 'default'"
+              :type="viewMode === 'tree' ? 'primary' : 'secondary'"
               @click="viewMode = 'tree'"
             >
               <template #icon><IconBranch /></template>
               树形视图
             </a-button>
             <a-button 
-              :type="viewMode === 'table' ? 'primary' : 'default'"
+              :type="viewMode === 'table' ? 'primary' : 'secondary'"
               @click="viewMode = 'table'"
             >
               <template #icon><IconList /></template>
@@ -370,7 +370,21 @@ const relationshipTypes = [
 ]
 
 // 模拟关系数据
-const relationshipData = ref({
+interface RelationshipNode {
+  id: string
+  name: string
+  idCard: string
+  phone: string
+  relationship: string
+  strength: number
+  risk: string
+  x: number
+  y: number
+  isCenter?: boolean
+  depth?: number
+}
+
+const relationshipData = ref<{ nodes: RelationshipNode[]; edges: any[] }>({
   nodes: [
     {
       id: 'center',

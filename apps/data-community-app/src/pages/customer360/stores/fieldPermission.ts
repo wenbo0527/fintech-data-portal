@@ -37,7 +37,7 @@ export const useFieldPermissionStore = defineStore('fieldPermission', () => {
     ],
 
     // ===== 维度 2：客户-产品（基于当前选中授信产品） =====
-    customerProduct: [
+    'customer-product': [
       { fieldKey: 'productName',       fieldLabel: '产品名称',   visible: true, copyable: true, searchable: true }, // PRD §R08 豁免
       { fieldKey: 'productCode',       fieldLabel: '产品编码',   visible: true, copyable: true, searchable: true },
       { fieldKey: 'creditProductId',   fieldLabel: '授信产品ID', visible: true, copyable: true, searchable: true },
@@ -54,7 +54,7 @@ export const useFieldPermissionStore = defineStore('fieldPermission', () => {
     ],
 
     // ===== 维度 3：授信（授信申请 ID） =====
-    creditApplication: [
+    'credit-application': [
       { fieldKey: 'creditApplicationId', fieldLabel: '授信申请ID', visible: true, copyable: true, searchable: true },
       { fieldKey: 'creditProductId',     fieldLabel: '授信产品ID', visible: true, copyable: true, searchable: true },
       { fieldKey: 'productName',         fieldLabel: '产品名称',   visible: true, copyable: true, searchable: true },
@@ -69,7 +69,7 @@ export const useFieldPermissionStore = defineStore('fieldPermission', () => {
     ],
 
     // ===== 维度 4：借据（用信产品 ID · 每行一条借据） =====
-    loanProduct: [
+    'loan-product': [
       // 用信产品维度
       { fieldKey: 'loanProductId',       fieldLabel: '用信产品ID',   visible: true, copyable: true, searchable: true },
       { fieldKey: 'loanProductName',     fieldLabel: '用信产品名',   visible: true, copyable: true, searchable: true },

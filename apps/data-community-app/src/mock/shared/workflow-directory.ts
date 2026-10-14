@@ -23,8 +23,8 @@ const SAMPLE_APPLICATIONS: ApplicationRecord[] = [
 
 export const ApplicationStore = {
   list: ref([...SAMPLE_APPLICATIONS]),
-  getById(id: string) {
-    return this.list.value.find(a => a.id === id)
+  getById(id: string): ApplicationRecord | undefined {
+    return this.list.value.find((a: ApplicationRecord) => a.id === id)
   },
   add(record: ApplicationRecord) {
     this.list.value.unshift(record)

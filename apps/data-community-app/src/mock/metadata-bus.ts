@@ -8,9 +8,10 @@
  *
  * 完全前端 mock，使用 localStorage 持久化任务列表，保持浏览器刷新后状态。
  */
-import { mockTables, type ClusterType, type AssetSystemId } from '@/mock-dca/data-map'
+import { type ClusterType, type AssetSystemId } from '@/mock-dca/data-map'
 import { listingStore } from '@/mock-dca/listing-store'
 import type { MockMetric } from '@/mock-dca/listing-store'
+import { TableCatalogStore, type StorageType } from '@/mock-dca/shared/table-catalog-store'
 
 export interface MetadataTask {
   id: string
@@ -118,7 +119,7 @@ export function runMetadataTask(taskId: string): Promise<MetadataTask> {
       // ⚡ 关键联动：根据 assetType 写入 listing-store
       task.products = generateMockProducts(task)
       task.products.forEach(p => {
-        registerListingProduct(task.assetType, p)
+        registerListingProduct(task.assetType, p, task)
       })
       saveTasks(_tasks)
       resolve(task)
@@ -271,32 +272,25 @@ function hashString(s: string): number {
 }
 
 /**
- * 把产物注册到 listing-store：
- *   - 「表」 → 追加到 mockTables
- *   - 「指标」 → 追加到 listingStore.metrics
+ * 把产物注册到统一目录：
+ *   - 「表」 → 写入 table-catalog-store（P0 唯一事实源），初始态=未上线，
+ *              需在"未上线池"完善元数据并通过上线检查后才进入发现可见范围
+ *   - 「指标」 → 追加到 listingStore.metrics（专题层过渡，P3 前不动）
  *   - 「API」「特征」 → 暂以「指标」形态落到 listingStore.metrics（mock 单入口简化）
  */
 function registerListingProduct(
   assetType: MetadataTask['assetType'],
-  p: NonNullable<MetadataTask['products']>[number]
+  p: NonNullable<MetadataTask['products']>[number],
+  task: MetadataTask
 ) {
   if (assetType === '表') {
-    // 重复跳过（同名不重复登记）
-    if (mockTables.some(t => t.tableName === p.name)) return
-    mockTables.push({
-      tableName: p.name,
-      computeClusterTable: p.hivePath || `${p.clusterType.toLowerCase()}.${p.category}.${p.name}`,
-      analysisClusterTable: `ads.${p.category}.${p.name}`,
-      category: p.category,
-      systemId: p.systemId,
-      clusterType: p.clusterType,
-      owner: '数据工程组',
-      registerTime: new Date().toISOString().slice(0, 19).replace('T', ' '),
-      status: 'onShelf',
-      onShelfTime: new Date().toISOString().slice(0, 19).replace('T', ' '),
-      publisher: '元数据采集',
+    TableCatalogStore.registerCollected({
+      name: p.name,
+      storage: task.dataSourceType as StorageType,
+      domain: p.category,
+      sourceSystem: String(p.systemId),
       description: `采集任务自动登记 · ${p.category}`
-    } as any)
+    })
   } else if (assetType === '指标' || assetType === 'API' || assetType === '特征') {
     if (listingStore.metrics.some((m: MockMetric) => m.metricName === p.name)) return
     listingStore.metrics.push({

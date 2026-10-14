@@ -316,10 +316,10 @@ const goBack = () => {
 }
 
 const showTableDetail = (table: any) => {
-  // 跳到数据地图,带表名筛选
+  // 跳到表详情页,带表名参数
   router.push({
-    name: 'asset-catalog',
-    query: { table: table.name }
+    name: 'data-map-table',
+    params: { tableName: table.name }
   })
 }
 

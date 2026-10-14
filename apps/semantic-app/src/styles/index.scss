@@ -1,0 +1,172 @@
+// 语义底座子应用设计 token
+// 与项目其他子应用保持一致：对齐 mkt-app 的 --subapp-* 与 data-community-app 的 --dca-*
+// 亮色主题 + Arco 品牌蓝（#165dff），参考 styles-dca/tokens.css
+:root {
+  --color-primary: #165dff;
+  --color-secondary: #ffffff;
+  --color-bg: #f5f7fa;
+  --color-bg-light: #ffffff;
+  --color-text: #1d2129;
+  --color-text-secondary: #4e5969;
+  --color-border: #e5e6eb;
+  --color-accent: #165dff;
+  --color-success: #00b42a;
+  --color-warning: #ff7d00;
+  --color-danger: #f53f3f;
+}
+
+// 全局样式
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+#app {
+  height: 100%;
+}
+
+.semantic-app-root {
+  height: 100vh;
+
+  .arco-layout {
+    height: 100%;
+  }
+
+  .app-content {
+    height: 100%;
+  }
+
+  .app-sider {
+    background: var(--color-secondary);
+    border-right: 1px solid var(--color-border);
+
+    .app-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 16px 20px;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--color-text);
+      border-bottom: 1px solid var(--color-border);
+
+      .arco-icon {
+        font-size: 22px;
+        color: var(--color-accent);
+      }
+    }
+  }
+
+  .app-content {
+    background: var(--color-bg);
+    overflow-y: auto;
+  }
+}
+
+// Arco 暗色主题适配
+.arco-layout-sider {
+  background: var(--color-secondary) !important;
+}
+
+.arco-menu {
+  background: transparent !important;
+}
+
+.arco-menu-item {
+  color: var(--color-text-secondary) !important;
+
+  &.arco-menu-selected {
+    color: var(--color-accent) !important;
+    background: var(--dca-bg-emphasis, #e8f3ff) !important;
+  }
+
+  &:hover {
+    background: var(--color-bg) !important;
+  }
+}
+
+// 通用卡片（对齐 DCA 卡片风格：白底 + 细边框 + 轻阴影）
+.semantic-card {
+  background: var(--color-bg-light);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+// 通用页面标题
+.semantic-page-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--color-text);
+}
+
+// 标签样式
+.semantic-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+
+  &--numerator {
+    background: #ffece8;
+    color: var(--color-danger);
+  }
+
+  &--denominator {
+    background: #e8ffea;
+    color: var(--color-success);
+  }
+
+  &--dimension {
+    background: #fff7e8;
+    color: var(--color-warning);
+  }
+}
+
+// 推理步骤
+.reasoning-step {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--color-border);
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &__index {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+  }
+
+  &__content {
+    flex: 1;
+
+    .tool-name {
+      font-weight: 600;
+      color: var(--color-accent);
+    }
+
+    .tool-input,
+    .tool-output {
+      font-size: 13px;
+      color: var(--color-text-secondary);
+      margin-top: 4px;
+    }
+  }
+}

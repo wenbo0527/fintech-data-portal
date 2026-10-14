@@ -44,14 +44,14 @@
         />
       </template>
       <template #dimensionLabel="{ record }">
-        <a-tag size="mini" :color="dimensionTagColor(record.dimension)">
+        <a-tag size="small" :color="dimensionTagColor(record.dimension)">
           {{ record.dimensionLabel }}
         </a-tag>
       </template>
       <template #status="{ record }">
         <a-tag
           :color="record.visible ? 'green' : 'gray'"
-          size="mini"
+          size="small"
         >
           {{ record.visible ? (record.copyable ? '正常' : '只读') : '不可见' }}
         </a-tag>

@@ -89,8 +89,8 @@
           <a-table-column title="四级分类内容" data-index="category_l4" :width="160" />
           <a-table-column title="安全级别" data-index="sensitivity_level" :width="140">
             <template #cell="{ record }">
-              <a-tag :color="SENSITIVITY_COLORS[record.sensitivity_level]">
-                {{ record.sensitivity_level }} {{ SENSITIVITY_NAMES[record.sensitivity_level] }}
+              <a-tag :color="SENSITIVITY_COLORS[record.sensitivity_level as SensitivityLevel]">
+                {{ record.sensitivity_level }} {{ SENSITIVITY_NAMES[record.sensitivity_level as SensitivityLevel] }}
               </a-tag>
             </template>
           </a-table-column>
@@ -140,7 +140,7 @@ import PageHeader from '@/components-dca/common/PageHeader.vue'
 import ClassifyMatrixUploadModal from './classify/components/ClassifyMatrixUploadModal.vue'
 import { classifyMatrixData, matrixL1List } from '@/mock-shared/classify-matrix'
 import { SENSITIVITY_COLORS, SENSITIVITY_NAMES } from '@/mock-shared/classify-constants'
-import type { ClassifyMatrixItem } from '@/mock-shared/classify-types'
+import type { ClassifyMatrixItem, SensitivityLevel } from '@/mock-shared/classify-types'
 
 // ============ 筛选 ============
 const filterForm = ref({ l1: '', level: '', keyword: '' })
@@ -214,7 +214,7 @@ const downloadTemplate = () => {
     ['客户信息', '个人PII', '身份信息', '身份证号', 'L4'],
     ['业务交易', '订单', '支付信息', '支付金额', 'L3']
   ]
-  const escape = (s) => `"${String(s).replace(/"/g, '""')}"`
+  const escape = (s: string) => `"${String(s).replace(/"/g, '""')}"`
   const csv = [header, ...sample].map(row => row.map(escape).join(',')).join('\n')
   // 加 UTF-8 BOM，避免 Excel 打开中文乱码
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })

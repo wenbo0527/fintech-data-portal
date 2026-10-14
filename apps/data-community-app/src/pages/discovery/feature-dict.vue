@@ -42,6 +42,17 @@
                 <a-descriptions-item label="一级分类">{{ f.level1Label }}</a-descriptions-item>
                 <a-descriptions-item label="二级分类">{{ f.level2 }}</a-descriptions-item>
                 <a-descriptions-item label="数据源">{{ f.dataSource }}</a-descriptions-item>
+                <a-descriptions-item v-if="f.baseTable" label="存储引擎">
+                  <a-space :size="6">
+                    <a-tag v-if="storageMeta(f.baseTable).engine" :color="storageMeta(f.baseTable).color">
+                      {{ storageMeta(f.baseTable).engine }}
+                    </a-tag>
+                    <a-tooltip v-if="storageMeta(f.baseTable).engine === 'HBase'" content="rowkey 在线点查，毫秒级取数">
+                      <span class="base-table-link" @click="goBaseTable(f.baseTable)">{{ f.baseTable }}</span>
+                    </a-tooltip>
+                    <span v-else class="base-table-link" @click="goBaseTable(f.baseTable)">{{ f.baseTable }}</span>
+                  </a-space>
+                </a-descriptions-item>
                 <a-descriptions-item label="质量">
                   <a-progress :percent="f.quality" :color="f.quality >= 90 ? 'green' : f.quality >= 70 ? 'orange' : 'red'" size="mini" />
                 </a-descriptions-item>
@@ -71,24 +82,47 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { IconSearch, IconPlus } from '@arco-design/web-vue/es/icon'
 import MissingTicketModal from '@/pages/search/MissingTicketModal.vue'
 import { useMissingTicket } from '@/composables/useMissingTicket'
+import { TableCatalogStore } from '@/mock-dca/shared/table-catalog-store'
 
 const { showMissingTicketModal, ticketContext, showMissingTicket, handleMissingTicketConfirm } = useMissingTicket()
+const router = useRouter()
+
+interface FeatureItem {
+  id: string
+  name: string
+  code: string
+  description: string
+  majorCategory: string
+  majorCategoryLabel: string
+  level1: string
+  level1Label: string
+  level2: string
+  type: string
+  status: string
+  dataSource: string
+  creator: string
+  createdAt: string
+  quality: number
+  /** 取数底表（统一表目录 table-catalog-store 中的逻辑表名） */
+  baseTable?: string
+}
 
 const search = ref('')
 const majorCat = ref<string | undefined>(undefined)
 const featStatus = ref<string | undefined>(undefined)
 
-const allFeatures = ref([
-  { id: 'feat_0701', name: '征信查询次数', code: 'credit_query_count', description: '征信报告近半年查询次数', majorCategory: 'credit', majorCategoryLabel: '征信特征', level1: 'credit_report', level1Label: '征信报告', level2: 'query_count', type: 'numerical', status: 'active', dataSource: '用户基础信息表', creator: '李明', createdAt: '2026-03-01', quality: 95.5 },
-  { id: 'feat_0702', name: '信用卡逾期次数', code: 'credit_card_overdue_count', description: '信用卡近12个月逾期次数', majorCategory: 'credit', majorCategoryLabel: '征信特征', level1: 'credit_history', level1Label: '信贷记录', level2: 'overdue', type: 'numerical', status: 'active', dataSource: '征信报告', creator: '李明', createdAt: '2026-03-02', quality: 92.0 },
-  { id: 'feat_0703', name: '近30天交易笔数', code: 'trx_count_30d', description: '近30天成功交易笔数', majorCategory: 'behavior', majorCategoryLabel: '行为特征', level1: 'transaction_behavior', level1Label: '交易行为', level2: 'count', type: 'numerical', status: 'active', dataSource: '交易流水表', creator: '王芳', createdAt: '2026-03-05', quality: 88.5 },
-  { id: 'feat_0704', name: '近30天交易金额', code: 'trx_amt_30d', description: '近30天成功交易总金额', majorCategory: 'behavior', majorCategoryLabel: '行为特征', level1: 'transaction_behavior', level1Label: '交易行为', level2: 'amount', type: 'numerical', status: 'active', dataSource: '交易流水表', creator: '王芳', createdAt: '2026-03-05', quality: 91.0 },
-  { id: 'feat_0705', name: '近7天登录天数', code: 'login_days_7d', description: '近7天有登录行为的天数', majorCategory: 'behavior', majorCategoryLabel: '行为特征', level1: 'activity', level1Label: '活跃度', level2: 'login_days', type: 'numerical', status: 'pending', dataSource: '运营日志表', creator: '赵六', createdAt: '2026-03-08', quality: 75.0 },
-  { id: 'feat_0706', name: '风险评分模型输出', code: 'risk_model_score', description: '风控模型输出的风险评分', majorCategory: 'behavior', majorCategoryLabel: '行为特征', level1: 'model_outputs', level1Label: '模型输出', level2: 'risk_score', type: 'numerical', status: 'draft', dataSource: '风控模型表', creator: '张风控', createdAt: '2026-03-10', quality: 60.0 }
+const allFeatures = ref<FeatureItem[]>([
+  { id: 'feat_0701', name: '征信查询次数', code: 'credit_query_count', description: '征信报告近半年查询次数', majorCategory: 'credit', majorCategoryLabel: '征信特征', level1: 'credit_report', level1Label: '征信报告', level2: 'query_count', type: 'numerical', status: 'active', dataSource: '用户基础信息表', creator: '李明', createdAt: '2026-03-01', quality: 95.5, baseTable: 'ads_feature_user_rt' },
+  { id: 'feat_0702', name: '信用卡逾期次数', code: 'credit_card_overdue_count', description: '信用卡近12个月逾期次数', majorCategory: 'credit', majorCategoryLabel: '征信特征', level1: 'credit_history', level1Label: '信贷记录', level2: 'overdue', type: 'numerical', status: 'active', dataSource: '征信报告', creator: '李明', createdAt: '2026-03-02', quality: 92.0, baseTable: 'ads_feature_user_rt' },
+  { id: 'feat_0703', name: '近30天交易笔数', code: 'trx_count_30d', description: '近30天成功交易笔数', majorCategory: 'behavior', majorCategoryLabel: '行为特征', level1: 'transaction_behavior', level1Label: '交易行为', level2: 'count', type: 'numerical', status: 'active', dataSource: '交易流水表', creator: '王芳', createdAt: '2026-03-05', quality: 88.5, baseTable: 'ads_feature_user_rt' },
+  { id: 'feat_0704', name: '近30天交易金额', code: 'trx_amt_30d', description: '近30天成功交易总金额', majorCategory: 'behavior', majorCategoryLabel: '行为特征', level1: 'transaction_behavior', level1Label: '交易行为', level2: 'amount', type: 'numerical', status: 'active', dataSource: '交易流水表', creator: '王芳', createdAt: '2026-03-05', quality: 91.0, baseTable: 'ads_feature_user_rt' },
+  { id: 'feat_0705', name: '近7天登录天数', code: 'login_days_7d', description: '近7天有登录行为的天数', majorCategory: 'behavior', majorCategoryLabel: '行为特征', level1: 'activity', level1Label: '活跃度', level2: 'login_days', type: 'numerical', status: 'pending', dataSource: '运营日志表', creator: '赵六', createdAt: '2026-03-08', quality: 75.0, baseTable: 'ads_feature_user_rt' },
+  { id: 'feat_0706', name: '风险评分模型输出', code: 'risk_model_score', description: '风控模型输出的风险评分', majorCategory: 'behavior', majorCategoryLabel: '行为特征', level1: 'model_outputs', level1Label: '模型输出', level2: 'risk_score', type: 'numerical', status: 'draft', dataSource: '风控模型表', creator: '张风控', createdAt: '2026-03-10', quality: 60.0, baseTable: 'ads_feature_user_rt' }
 ])
 
 const filteredList = computed(() => {
@@ -104,8 +138,35 @@ const filteredList = computed(() => {
 
 function statusColor(s: string) { return { active: 'green', pending: 'orange', draft: 'gray' }[s] || 'gray' }
 function statusLabel(s: string) { return { active: '已发布', pending: '待审核', draft: '草稿' }[s] || s }
-function viewDetail(f: any) { Message.info(`查看特征: ${f.name}`) }
-function applyPermission(f: any) { Message.success(`已提交权限申请: ${f.name}`) }
+function viewDetail(f: FeatureItem) {
+  if (f.baseTable) {
+    router.push({ name: 'data-map-table', params: { tableName: f.baseTable } })
+  } else {
+    Message.info(`特征「${f.name}」未绑定底表，暂无详情页`)
+  }
+}
+function applyPermission(f: FeatureItem) {
+  if (f.baseTable) {
+    router.push({ name: 'data-map-table', params: { tableName: f.baseTable }, query: { tab: 'permission' } })
+  } else {
+    Message.info(`特征「${f.name}」未绑定底表，无法申请权限`)
+  }
+}
+
+// ── 存储引擎联动（统一表目录 table-catalog-store 为唯一事实源）──
+const STORAGE_COLORS: Record<string, string> = { HBase: 'orange', Kafka: 'purple', Doris: 'cyan' }
+
+/** 窄类型取值助手：规避模板内索引 Record 的 TS7053；底表查不到则不返回引擎 */
+function storageMeta(name?: string): { engine: string; color: string } {
+  const storage = name ? TableCatalogStore.byName(name)?.storage : undefined
+  return storage ? { engine: storage, color: STORAGE_COLORS[storage] || 'gray' } : { engine: '', color: 'gray' }
+}
+
+/** 跳转表详情（数据地图·表详情 7 Tab） */
+function goBaseTable(name?: string) {
+  if (!name) return
+  router.push({ name: 'data-map-table', params: { tableName: name } })
+}
 </script>
 
 <style scoped>
@@ -124,4 +185,6 @@ function applyPermission(f: any) { Message.success(`已提交权限申请: ${f.n
 .decoration-cube { position: absolute; top: 40px; right: 100px; width: 200px; height: 200px; background: linear-gradient(135deg, #e8f3ff 0%, #cce4ff 100%); transform: rotate(-15deg) skew(-10deg); border-radius: 20px; box-shadow: -20px 20px 40px rgba(22, 93, 255, 0.1); }
 .main-content { padding: 0 40px 40px; width: 100%; max-width: 1800px; margin: -40px auto 0; position: relative; z-index: 3; }
 .content-section { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04); }
+.base-table-link { color: #165DFF; cursor: pointer; font-size: 12px; }
+.base-table-link:hover { text-decoration: underline; }
 </style>

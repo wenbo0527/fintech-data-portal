@@ -104,7 +104,7 @@
           <span class="mono-code">{{ record.code }}</span>
         </template>
         <template #status="{ record }">
-          <a-tag :color="statusColor[record.status]">{{ statusLabel[record.status] }}</a-tag>
+          <a-tag :color="statusColor[record.status as ShelfStatus]">{{ statusLabel[record.status as ShelfStatus] }}</a-tag>
         </template>
         <template #onShelfAt="{ record }">{{ record.onShelfAt || '—' }}</template>
         <template #offShelfAt="{ record }">{{ record.offShelfAt || '—' }}</template>

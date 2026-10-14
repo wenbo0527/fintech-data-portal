@@ -228,7 +228,7 @@
                   style="margin-bottom: 12px"
                 >
                   <template #source="{ record }">
-                    <a-tag :color="depSourceColor[record.source]">{{ depSourceLabel[record.source] }}</a-tag>
+                    <a-tag :color="depSourceColor[record.source as DependencySource]">{{ depSourceLabel[record.source as DependencySource] }}</a-tag>
                   </template>
                   <template #type="{ record }">{{ depTypeLabel[record.type] }}</template>
                 </a-table>
@@ -248,7 +248,7 @@
                   size="small"
                 >
                   <template #source="{ record }">
-                    <a-tag :color="depSourceColor[record.source]">{{ depSourceLabel[record.source] }}</a-tag>
+                    <a-tag :color="depSourceColor[record.source as DependencySource]">{{ depSourceLabel[record.source as DependencySource] }}</a-tag>
                   </template>
                   <template #type="{ record }">{{ depTypeLabel[record.type] }}</template>
                 </a-table>

@@ -249,7 +249,7 @@ import DetailDrawer from '@/components-dca/unified-query/DetailDrawer.vue'
 import { useUqTaskStore } from '@/stores-dca/unified-query/task'
 import { useUqScriptStore } from '@/stores-dca/unified-query/script'
 import { SCHEDULE_PRESETS, TASK_TREND_7D } from '@/mock/unified-query/tasks'
-import type { TaskRecord } from '@/mock/unified-query/types'
+import type { TaskRecord, NotifyConfig } from '@/mock/unified-query/types'
 
 const router = useRouter()
 const store = useUqTaskStore()
@@ -307,11 +307,11 @@ const configForm = reactive({
   notify: {
     notifyOnSuccess: false,
     notifyOnFailed: true,
-    successChannel: 'dingtalk' as const,
-    failedChannel: 'dingtalk' as const,
+    successChannel: 'dingtalk',
+    failedChannel: 'dingtalk',
     timeoutMinutes: 0,
     maxConsecutiveFailures: 3
-  },
+  } as NotifyConfig,
   advanced: {
     retryCount: 3,
     retryInterval: 5,

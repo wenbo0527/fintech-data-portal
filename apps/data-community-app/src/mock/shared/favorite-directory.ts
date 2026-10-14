@@ -30,6 +30,8 @@ export type FavoriteResourceType =
   | 'service'      // 服务
   | 'api'          // API
   | 'report'       // 报表
+  | 'variable'     // 变量
+  | 'feature'      // 特征
 
 export type FavoriteGroup = 'personal' | 'team' | 'shared'
 
@@ -207,7 +209,7 @@ export const FavoriteStore = {
 
   /** 统计 */
   stats(userId?: string) {
-    const list = userId ? this.byUser(userId) : FAVORITES
+    const list: FavoriteItem[] = userId ? this.byUser(userId) : FAVORITES
     return {
       total: list.length,
       byGroup: {
@@ -227,7 +229,7 @@ export const FavoriteStore = {
         tag: list.filter(f => f.resourceType === 'tag').length
       },
       topFavorites: list
-        .sort((a, b) => b.visitCount - a.visitCount)
+        .sort((a: FavoriteItem, b: FavoriteItem) => b.visitCount - a.visitCount)
         .slice(0, 5)
         .map(f => ({ id: f.id, name: f.resourceName, visitCount: f.visitCount }))
     }

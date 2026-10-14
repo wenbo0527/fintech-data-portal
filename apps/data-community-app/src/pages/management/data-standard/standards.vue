@@ -1,266 +1,184 @@
 <template>
-  <PageContainer>
-    <PageHeader title="数据标准" sub-title="字段级标准定义 · 口径管理 · 合规检查 · 状态流转">
-      <template #extra>
-        <a-button @click="goWorkbench">返回工作台</a-button>
-        <a-button type="primary" style="margin-left: 8px" @click="onCreate">
-          <template #icon><icon-plus /></template>
-          新建标准
-        </a-button>
-      </template>
-    </PageHeader>
-
-    <a-card :bordered="false" class="filter-card">
-      <a-row :gutter="16">
-        <a-col :span="7">
-          <a-input v-model="keyword" placeholder="搜索标准编码 / 名称 / 字段" allow-clear size="large">
-            <template #prefix><icon-search /></template>
-          </a-input>
+  <!-- @prd: data-standard -->
+  <!--
+    2026-10-13:与"标准代码管理"(codes)页保持一致 —— 单卡片 + 声明式表格列。
+    页面即详情:列表直接展示行内数据标准 20 个口径字段,仅做标准化展示。
+    本定位为只读展示页:无审批/弃用/打回/新建/编辑/删除,维护统一走全量上传(V2 + U1-U4)。
+    对齐 PRD:R01 展示字段 / R02 搜索+主题+一二级分类筛选 / R03-R05 关联跳转(新标签页、不存在置灰)
+              / V1 默认最近更新时间倒序 + 编号/名称可排序 / V2 只读。
+  -->
+  <div class="standards-page">
+    <a-card class="general-card" title="数据标准管理">
+      <a-row style="margin-bottom: 12px">
+        <a-col :span="12">
+          <a-space>
+            <a-tag color="arcoblue">共 {{ standards.length }} 条标准</a-tag>
+            <a-tag v-if="filteredStandards.length !== standards.length" color="orange">
+              筛选后 {{ filteredStandards.length }} 条
+            </a-tag>
+          </a-space>
         </a-col>
-        <a-col :span="5">
-          <a-select v-model="filterCategory" placeholder="分类" allow-clear size="large">
-            <a-option v-for="c in categories" :key="c" :value="c">{{ c }}</a-option>
+        <a-col :span="12" style="text-align: right">
+          <a-space>
+            <!-- 权限约束:仅数据标准管理员(数据治理者)可下载模板与执行全量上传,其余角色只读 -->
+            <a-tooltip v-if="!canMaintain" content="当前角色无维护权限，仅数据标准管理员可下载模板并执行全量上传（可在右上角切换「数据治理者」角色）">
+              <a-button type="primary" disabled>
+                <template #icon><icon-import /></template>
+                全量导入
+              </a-button>
+            </a-tooltip>
+            <a-button v-else type="primary" @click="importVisible = true">
+              <template #icon><icon-import /></template>
+              全量导入
+            </a-button>
+          </a-space>
+        </a-col>
+      </a-row>
+
+      <!-- R02:关键词 + 主题 + 一级分类 + 二级分类 + 状态 组合筛选 -->
+      <a-row :gutter="8" style="margin-bottom: 16px">
+        <a-col :span="4">
+          <a-select v-model="filterTheme" placeholder="主题" allow-clear size="large">
+            <a-option v-for="t in themes" :key="t" :value="t">{{ t }}</a-option>
           </a-select>
         </a-col>
-        <a-col :span="5">
+        <a-col :span="4">
+          <a-select v-model="filterL1" placeholder="一级分类" allow-clear size="large">
+            <a-option v-for="c in categoryL1Options" :key="c" :value="c">{{ c }}</a-option>
+          </a-select>
+        </a-col>
+        <a-col :span="4">
+          <a-select v-model="filterL2" placeholder="二级分类" allow-clear size="large">
+            <a-option v-for="c in categoryL2Options" :key="c" :value="c">{{ c }}</a-option>
+          </a-select>
+        </a-col>
+        <a-col :span="4">
           <a-select v-model="filterStatus" placeholder="状态" allow-clear size="large">
             <a-option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</a-option>
           </a-select>
         </a-col>
-        <a-col :span="7" style="text-align: right">
-          <a-radio-group v-model="statusQuickFilter" type="button" size="large">
-            <a-radio-button value="all">全部 ({{ standards.length }})</a-radio-button>
-            <a-radio-button value="pending">待审批 ({{ pendingCount }})</a-radio-button>
-            <a-radio-button value="published">已发布 ({{ publishedCount }})</a-radio-button>
-            <a-radio-button value="draft">草稿 ({{ draftCount }})</a-radio-button>
-          </a-radio-group>
-          <a-button @click="resetFilters" style="margin-left: 8px">重置</a-button>
+        <a-col :span="7">
+          <a-input-search
+            v-model="keyword"
+            placeholder="搜索标准编号 / 中文名称 / 英文全称 / 英文简称"
+            allow-clear
+            size="large"
+          />
+        </a-col>
+        <a-col :span="1" style="text-align: right">
+          <a-button size="large" @click="resetFilters">
+            <template #icon><icon-refresh /></template>
+          </a-button>
         </a-col>
       </a-row>
-      <div class="result-meta">
-        共 <b>{{ filteredStandards.length }}</b> 个数据标准 · 待审批 <b style="color:#165dff">{{ pendingCount }}</b> · 已发布 <b style="color:#00b42a">{{ publishedCount }}</b> · 草稿 <b style="color:#ff7d00">{{ draftCount }}</b> · 已弃用 <b style="color:#86909c">{{ deprecatedCount }}</b>
-      </div>
+
+      <a-table
+        :data="filteredStandards"
+        :pagination="{ pageSize: 10, showTotal: true, sizeCanChange: false }"
+        :scroll="{ x: 3200, y: 560 }"
+        row-key="code"
+        stripe
+        size="medium"
+      >
+        <template #columns>
+          <a-table-column title="标准编号" data-index="standardNo" :width="120" sortable>
+            <template #cell="{ record }">
+              <span class="mono">{{ record.standardNo }}</span>
+            </template>
+          </a-table-column>
+          <a-table-column title="主题" data-index="theme" :width="90">
+            <template #cell="{ record }">
+              <a-tag>{{ record.theme }}</a-tag>
+            </template>
+          </a-table-column>
+          <a-table-column title="一级分类" data-index="categoryL1" :width="130" />
+          <a-table-column title="二级分类" data-index="categoryL2" :width="130" />
+          <a-table-column title="归口管理部门" data-index="manageDept" :width="150" />
+          <a-table-column title="中文名称" data-index="cnName" :width="160" sortable />
+          <a-table-column title="英文全称" data-index="enFullName" :width="220" ellipsis tooltip />
+          <a-table-column title="英文简称" data-index="enAbbr" :width="140" ellipsis tooltip />
+          <a-table-column title="词素分析" data-index="morpheme" :width="220" ellipsis tooltip />
+          <a-table-column title="业务定义" data-index="bizDefinition" :width="260" ellipsis tooltip />
+          <!-- R03/R04/R05:域 → 标准域列表(新标签页按关键词定位);目标不存在则置灰 + 悬停说明 -->
+          <a-table-column title="域" data-index="domain" :width="150">
+            <template #cell="{ record }">
+              <a-link v-if="domainState(record.domain) === 'ok'" @click="openDomain(record.domain)">
+                {{ record.domain }}
+              </a-link>
+              <a-tooltip
+                v-else-if="domainState(record.domain) === 'missing'"
+                content="关联标准域不存在，暂不可跳转（R04）"
+              >
+                <span class="link-disabled">{{ record.domain }}</span>
+              </a-tooltip>
+              <span v-else>-</span>
+            </template>
+          </a-table-column>
+          <a-table-column title="数据类型" data-index="dataType" :width="110">
+            <template #cell="{ record }">
+              <a-tag color="cyan">{{ record.dataType }}</a-tag>
+            </template>
+          </a-table-column>
+          <a-table-column title="业务数据类型" data-index="bizDataType" :width="120" />
+          <a-table-column title="长度" data-index="length" :width="80" align="center" />
+          <a-table-column title="精度" data-index="precision" :width="80" align="center" />
+          <a-table-column title="是否代码" data-index="isCode" :width="100" align="center">
+            <template #cell="{ record }">
+              <a-tag :color="record.isCode ? 'orangered' : 'gray'">
+                {{ record.isCode ? '是' : '否' }}
+              </a-tag>
+            </template>
+          </a-table-column>
+          <a-table-column title="标准代码编号" data-index="stdCodeNo" :width="160">
+            <template #cell="{ record }">
+              <a-link v-if="codeState(record) === 'ok'" @click="openCode(record.stdCodeNo)">
+                {{ record.stdCodeNo }}
+              </a-link>
+              <a-tooltip
+                v-else-if="codeState(record) === 'missing'"
+                content="关联标准代码不存在，暂不可跳转（R04）"
+              >
+                <span class="link-disabled">{{ record.stdCodeNo }}</span>
+              </a-tooltip>
+              <span v-else>-</span>
+            </template>
+          </a-table-column>
+          <a-table-column title="标准代码中文名称" data-index="stdCodeName" :width="170" ellipsis tooltip />
+          <a-table-column title="标准来源" data-index="stdSource" :width="110">
+            <template #cell="{ record }">
+              <a-tag color="arcoblue">{{ record.stdSource }}</a-tag>
+            </template>
+          </a-table-column>
+          <a-table-column title="标准依据" data-index="stdBasis" :width="280" ellipsis tooltip />
+          <a-table-column title="状态" data-index="status" :width="100">
+            <template #cell="{ record }">
+              <a-tag :color="statusColor(record.status)">{{ statusLabel(record.status) }}</a-tag>
+            </template>
+          </a-table-column>
+        </template>
+      </a-table>
     </a-card>
 
-    <a-table
-      :columns="columns"
-      :data="filteredStandards"
-      :pagination="{ pageSize: 10, showTotal: true }"
-      row-key="code"
-      stripe
-      size="medium"
-    >
-      <template #code="{ record }">
-        <a-link @click="openStandard(record)">{{ record.code }}</a-link>
-      </template>
-      <template #status="{ record }">
-        <a-tag :color="statusColor(record.status)">{{ statusLabel(record.status) }}</a-tag>
-      </template>
-      <template #category="{ record }">
-        <a-tag>{{ record.category }}</a-tag>
-      </template>
-      <template #compliance="{ record }">
-        <a-progress
-          :percent="record.complianceRate / 100"
-          :stroke-width="6"
-          :color="complianceColor(record.complianceRate)"
-        />
-      </template>
-      <template #tags="{ record }">
-        <a-tag v-for="t in (record.tags || [])" :key="t" color="green">{{ t }}</a-tag>
-      </template>
-      <!-- 2026-08-06:新增操作列,接入状态机 -->
-      <template #actions="{ record }">
-        <a-space>
-          <a-link @click="openStandard(record)">详情</a-link>
-          <template v-if="record.status === 'draft'">
-            <a-link status="warning" @click="onSubmit(record)">提交审批</a-link>
-          </template>
-          <template v-else-if="record.status === 'pending'">
-            <a-link status="success" @click="onApprove(record)">通过</a-link>
-            <a-link status="danger" @click="onReject(record)">打回</a-link>
-          </template>
-          <template v-else-if="record.status === 'published'">
-            <a-link status="danger" @click="onDeprecate(record)">弃用</a-link>
-          </template>
-          <template v-else-if="record.status === 'deprecated'">
-            <a-link status="warning" @click="onRestore(record)">恢复</a-link>
-          </template>
-        </a-space>
-      </template>
-    </a-table>
-
-    <!-- ====== 详情抽屉(查看 + 操作) ====== -->
-    <a-drawer
-      v-model:visible="detailVisible"
-      :title="`标准详情 · ${currentStandard?.name || ''}`"
-      :width="820"
-      :footer="false"
-    >
-      <template v-if="currentStandard">
-        <a-descriptions :column="2" bordered size="medium">
-          <a-descriptions-item label="标准编码">{{ currentStandard.code }}</a-descriptions-item>
-          <a-descriptions-item label="标准名称">{{ currentStandard.name }}</a-descriptions-item>
-          <a-descriptions-item label="分类">{{ currentStandard.category }}</a-descriptions-item>
-          <a-descriptions-item label="状态">
-            <a-tag :color="statusColor(currentStandard.status)">{{ statusLabel(currentStandard.status) }}</a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="数据类型">
-            <a-tag color="cyan">{{ currentStandard.dataType }}</a-tag>
-          </a-descriptions-item>
-          <a-descriptions-item label="长度/精度">{{ currentStandard.length }} / {{ currentStandard.scale || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="负责人">{{ currentStandard.owner }}</a-descriptions-item>
-          <a-descriptions-item label="合规率">{{ currentStandard.complianceRate }}%</a-descriptions-item>
-          <a-descriptions-item label="定义" :span="2">{{ currentStandard.definition }}</a-descriptions-item>
-          <a-descriptions-item label="取值范围" :span="2">
-            <pre class="formula">{{ currentStandard.valueRange }}</pre>
-          </a-descriptions-item>
-          <a-descriptions-item label="规则示例" :span="2">
-            <pre class="formula">{{ currentStandard.example }}</pre>
-          </a-descriptions-item>
-          <a-descriptions-item label="标签" :span="2">
-            <a-tag v-for="t in (currentStandard.tags || [])" :key="t" color="green">{{ t }}</a-tag>
-          </a-descriptions-item>
-        </a-descriptions>
-
-        <h3 style="margin-top: 24px">已应用此标准的字段 ({{ currentStandard.appliedFields?.length || 0 }})</h3>
-        <a-table
-          :columns="appliedColumns"
-          :data="currentStandard.appliedFields || []"
-          :pagination="false"
-          row-key="fullPath"
-          size="small"
-        >
-          <template #compliance="{ record }">
-            <a-tag :color="record.compliant ? 'green' : 'red'">
-              {{ record.compliant ? '✓ 合规' : '✗ 不合规' }}
-            </a-tag>
-          </template>
-        </a-table>
-
-        <!-- 状态机操作 -->
-        <h3 style="margin-top: 24px">状态流转</h3>
-        <a-steps :current="statusStepIndex" size="small" style="margin-bottom: 16px">
-          <a-step title="草稿" description="编辑中" />
-          <a-step title="待审批" description="已提交,等待治理者审批" />
-          <a-step title="已发布" description="生效中,被业务使用" />
-          <a-step title="已弃用" description="停止使用" />
-        </a-steps>
-        <a-space>
-          <template v-if="currentStandard.status === 'draft'">
-            <a-button type="primary" status="warning" @click="onSubmit(currentStandard)">
-              <template #icon><icon-send /></template>提交审批
-            </a-button>
-          </template>
-          <template v-else-if="currentStandard.status === 'pending'">
-            <a-button type="primary" status="success" @click="onApprove(currentStandard)">
-              <template #icon><icon-check /></template>审批通过
-            </a-button>
-            <a-button status="danger" @click="onReject(currentStandard)">
-              <template #icon><icon-close /></template>打回草稿
-            </a-button>
-          </template>
-          <template v-else-if="currentStandard.status === 'published'">
-            <a-button status="danger" @click="onDeprecate(currentStandard)">
-              <template #icon><icon-delete /></template>弃用标准
-            </a-button>
-          </template>
-          <template v-else-if="currentStandard.status === 'deprecated'">
-            <a-button status="warning" @click="onRestore(currentStandard)">
-              <template #icon><icon-undo /></template>恢复为草稿
-            </a-button>
-          </template>
-        </a-space>
-
-        <!-- 历史轨迹 -->
-        <h3 style="margin-top: 24px">变更历史 ({{ currentStandard.history.length }})</h3>
-        <a-timeline>
-          <a-timeline-item v-for="(h, i) in currentStandard.history" :key="i">
-            <div>
-              <strong>{{ h.action }}</strong>
-              <a-tag size="small" style="margin-left: 8px">{{ statusLabel(h.from) }} → {{ statusLabel(h.to) }}</a-tag>
-            </div>
-            <div style="color: #86909c; font-size: 12px; margin-top: 2px">{{ h.ts }} · {{ h.actor }}</div>
-          </a-timeline-item>
-        </a-timeline>
-      </template>
-    </a-drawer>
-
-    <!-- ====== 新建草稿抽屉 ====== -->
-    <a-drawer
-      v-model:visible="createVisible"
-      title="新建数据标准"
-      :width="640"
-      :footer="false"
-    >
-      <a-form :model="form" layout="vertical">
-        <a-form-item label="标准编码" required>
-          <a-input v-model="form.code" placeholder="例如:STD-007" />
-        </a-form-item>
-        <a-form-item label="标准名称" required>
-          <a-input v-model="form.name" placeholder="如:客户邮箱" />
-        </a-form-item>
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item label="分类" required>
-              <a-select v-model="form.category" placeholder="选择分类">
-                <a-option v-for="c in categories" :key="c" :value="c">{{ c }}</a-option>
-                <a-option value="__new__">+ 新分类</a-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="数据类型" required>
-              <a-select v-model="form.dataType">
-                <a-option value="string">string</a-option>
-                <a-option value="number">number</a-option>
-                <a-option value="enum">enum</a-option>
-                <a-option value="date">date</a-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item label="长度">
-              <a-input-number v-model="form.length" :min="1" :max="500" style="width: 100%" />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="精度(scale)">
-              <a-input-number v-model="form.scale" :min="0" :max="10" style="width: 100%" />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-form-item label="定义">
-          <a-textarea v-model="form.definition" :rows="2" placeholder="标准的业务定义" />
-        </a-form-item>
-        <a-form-item label="取值范围">
-          <a-input v-model="form.valueRange" placeholder="正则 / 枚举 / 区间" />
-        </a-form-item>
-        <a-form-item label="规则示例">
-          <a-input v-model="form.example" placeholder="一个示例值" />
-        </a-form-item>
-        <a-form-item label="负责人">
-          <a-input v-model="form.owner" placeholder="默认:当前用户" />
-        </a-form-item>
-      </a-form>
-      <a-space style="margin-top: 16px; justify-content: flex-end; display: flex">
-        <a-button @click="createVisible = false">取消</a-button>
-        <a-button type="primary" @click="onSaveDraft">保存草稿</a-button>
-      </a-space>
-    </a-drawer>
-  </PageContainer>
+    <!-- 全量上传通道(U1-U4 / E3) -->
+    <DataStandardImportModal
+      v-model:visible="importVisible"
+      title="全量导入数据标准"
+      type="standards"
+      description="请下载数据标准模板，填写完成后上传；模板列与展示字段一致，以标准编号为唯一键（R06/R07）。"
+      @success="handleImportSuccess"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import PageContainer from '@/components-dca/common/PageContainer.vue'
-import PageHeader from '@/components-dca/common/PageHeader.vue'
-import { Message, Modal } from '@arco-design/web-vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useRoleStore } from '@/stores-dca/role'
+import DataStandardImportModal from '../../../components/modals/DataStandardImportModal.vue'
 import {
   StandardStore,
+  DomainStore,
+  StdCodeStore,
   STANDARD_STATUS_LIST,
   STANDARD_STATUS_LABEL,
   STANDARD_STATUS_COLOR,
@@ -268,30 +186,21 @@ import {
   type StandardStatus
 } from '@/mock-shared/standard-store'
 
+const route = useRoute()
 const router = useRouter()
+const roleStore = useRoleStore()
+
+// 三-关键约束:权限-数据标准管理员(演示口径映射到「数据治理者」角色)才可下载模板与全量上传
+const canMaintain = computed(() => roleStore.currentRole === 'data_admin')
 
 const standards = ref<Standard[]>([])
-const keyword = ref('')
-const filterCategory = ref<string | undefined>(undefined)
+// 支持从标准域/标准代码页「查看标准」新标签页带 ?keyword=STD-xxx 直达定位（R05 到达态）
+const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
+const filterTheme = ref<string | undefined>(undefined)
+const filterL1 = ref<string | undefined>(undefined)
+const filterL2 = ref<string | undefined>(undefined)
 const filterStatus = ref<string | undefined>(undefined)
-const statusQuickFilter = ref<'all' | StandardStatus>('all')
-
-const detailVisible = ref(false)
-const currentStandard = ref<Standard | null>(null)
-
-const createVisible = ref(false)
-const form = ref({
-  code: '',
-  name: '',
-  category: '',
-  dataType: 'string',
-  length: 50,
-  scale: 0,
-  definition: '',
-  valueRange: '',
-  example: '',
-  owner: '当前用户'
-})
+const importVisible = ref(false)
 
 function refresh() {
   standards.value = StandardStore.getStandards()
@@ -299,53 +208,47 @@ function refresh() {
 
 onMounted(refresh)
 
-// 分类下拉
-const categories = computed(() => Array.from(new Set(standards.value.map(s => s.category))).sort())
-
+// 下拉选项全部由数据派生，避免与 mock 口径脱节
+const themes = computed(() =>
+  Array.from(new Set(standards.value.map(s => s.theme).filter(Boolean) as string[])).sort()
+)
+const categoryL1Options = computed(() =>
+  Array.from(new Set(standards.value.map(s => s.categoryL1).filter(Boolean) as string[])).sort()
+)
+const categoryL2Options = computed(() => {
+  const pool = filterL1.value
+    ? standards.value.filter(s => s.categoryL1 === filterL1.value)
+    : standards.value
+  return Array.from(new Set(pool.map(s => s.categoryL2).filter(Boolean) as string[])).sort()
+})
 const statusOptions = STANDARD_STATUS_LIST.map(s => ({ value: s, label: STANDARD_STATUS_LABEL[s] }))
 
+// 一级分类变更后清掉不再适用的二级分类筛选，防止出现空结果集
+watch(filterL1, () => {
+  if (filterL2.value && !categoryL2Options.value.includes(filterL2.value)) filterL2.value = undefined
+})
+
+// V1:默认按最近更新时间倒序;R02:关键词命中标准编号/中文名称/英文全称/英文简称
 const filteredStandards = computed(() => {
   const k = keyword.value.trim().toLowerCase()
-  return standards.value.filter(s => {
-    if (k) {
-      if (!s.code.toLowerCase().includes(k) && !s.name.toLowerCase().includes(k) && !s.definition.toLowerCase().includes(k)) return false
-    }
-    if (filterCategory.value && s.category !== filterCategory.value) return false
-    if (filterStatus.value && s.status !== filterStatus.value) return false
-    if (statusQuickFilter.value !== 'all' && s.status !== statusQuickFilter.value) return false
-    return true
-  })
+  return standards.value
+    .filter(s => {
+      if (k) {
+        const hit =
+          (s.standardNo || s.code).toLowerCase().includes(k) ||
+          (s.cnName || s.name).toLowerCase().includes(k) ||
+          (s.enFullName || '').toLowerCase().includes(k) ||
+          (s.enAbbr || '').toLowerCase().includes(k)
+        if (!hit) return false
+      }
+      if (filterTheme.value && s.theme !== filterTheme.value) return false
+      if (filterL1.value && s.categoryL1 !== filterL1.value) return false
+      if (filterL2.value && s.categoryL2 !== filterL2.value) return false
+      if (filterStatus.value && s.status !== filterStatus.value) return false
+      return true
+    })
+    .sort((a, b) => (b.updateTime || '').localeCompare(a.updateTime || ''))
 })
-
-const publishedCount = computed(() => standards.value.filter(s => s.status === 'published').length)
-const draftCount = computed(() => standards.value.filter(s => s.status === 'draft').length)
-const pendingCount = computed(() => standards.value.filter(s => s.status === 'pending').length)
-const deprecatedCount = computed(() => standards.value.filter(s => s.status === 'deprecated').length)
-
-// 状态机对应的 steps 位置
-const statusStepIndex = computed(() => {
-  const map: Record<StandardStatus, number> = { draft: 0, pending: 1, published: 2, deprecated: 3 }
-  return map[currentStandard.value?.status || 'draft']
-})
-
-const columns = [
-  { title: '编码', dataIndex: 'code', slotName: 'code', width: 100 },
-  { title: '名称', dataIndex: 'name', width: 180 },
-  { title: '分类', dataIndex: 'category', slotName: 'category', width: 110 },
-  { title: '数据类型', dataIndex: 'dataType', width: 90 },
-  { title: '状态', dataIndex: 'status', slotName: 'status', width: 100 },
-  { title: '合规率', dataIndex: 'complianceRate', slotName: 'compliance', width: 130 },
-  { title: 'Owner', dataIndex: 'owner', width: 90 },
-  { title: '标签', dataIndex: 'tags', slotName: 'tags' },
-  // 2026-08-06:操作列(状态机入口)
-  { title: '操作', slotName: 'actions', width: 200, fixed: 'right' }
-]
-
-const appliedColumns = [
-  { title: '字段路径', dataIndex: 'fullPath' },
-  { title: '当前值', dataIndex: 'sample', width: 130 },
-  { title: '合规', dataIndex: 'compliant', slotName: 'compliance', width: 100 }
-]
 
 function statusColor(s: StandardStatus) {
   return STANDARD_STATUS_COLOR[s] || 'gray'
@@ -353,147 +256,56 @@ function statusColor(s: StandardStatus) {
 function statusLabel(s: StandardStatus) {
   return STANDARD_STATUS_LABEL[s] || s
 }
-function complianceColor(c: number) {
-  if (c >= 90) return '#00b42a'
-  if (c >= 70) return '#ff7d00'
-  return '#f53f3f'
-}
 function resetFilters() {
   keyword.value = ''
-  filterCategory.value = undefined
+  filterTheme.value = undefined
+  filterL1.value = undefined
+  filterL2.value = undefined
   filterStatus.value = undefined
-  statusQuickFilter.value = 'all'
-}
-function openStandard(s: Standard) {
-  currentStandard.value = s
-  detailVisible.value = true
 }
 
-// ===== 状态机操作 =====
-function onSubmit(s: Standard) {
-  StandardStore.submitForReview(s.code)
-  refresh()
-  if (currentStandard.value?.code === s.code) currentStandard.value = StandardStore.findByCode(s.code) || null
-  Message.success(`「${s.name}」已提交审批`)
+// ===== R03/R04/R05:关联跳转(新标签页,保留当前位置;目标不存在 → 置灰不可点) =====
+type LinkState = 'ok' | 'missing' | 'none'
+function domainState(domain?: string): LinkState {
+  if (!domain || domain === '-') return 'none'
+  return DomainStore.exists(domain) ? 'ok' : 'missing'
 }
-
-function onApprove(s: Standard) {
-  StandardStore.approve(s.code)
-  refresh()
-  if (currentStandard.value?.code === s.code) currentStandard.value = StandardStore.findByCode(s.code) || null
-  Message.success(`「${s.name}」已审批通过,正式发布`)
+function codeState(record: Standard): LinkState {
+  if (!record.isCode || !record.stdCodeNo || record.stdCodeNo === '-') return 'none'
+  return StdCodeStore.exists(record.stdCodeNo) ? 'ok' : 'missing'
 }
-
-function onReject(s: Standard) {
-  Modal.confirm({
-    title: '打回草稿',
-    content: `确定要将「${s.name}」打回草稿吗?`,
-    okText: '确认打回',
-    cancelText: '取消',
-    onOk: () => {
-      StandardStore.reject(s.code, '审批未通过')
-      refresh()
-      if (currentStandard.value?.code === s.code) currentStandard.value = StandardStore.findByCode(s.code) || null
-      Message.warning(`「${s.name}」已打回草稿`)
-    }
+function openDomain(domain: string) {
+  const { href } = router.resolve({
+    name: 'data-standard-domains',
+    query: { keyword: domain }
   })
+  window.open(href, '_blank')
 }
-
-function onDeprecate(s: Standard) {
-  Modal.confirm({
-    title: '弃用标准',
-    content: `弃用「${s.name}」后,将不再被新字段引用。确定继续吗?`,
-    okText: '确认弃用',
-    cancelText: '取消',
-    onOk: () => {
-      StandardStore.deprecate(s.code)
-      refresh()
-      if (currentStandard.value?.code === s.code) currentStandard.value = StandardStore.findByCode(s.code) || null
-      Message.warning(`「${s.name}」已弃用`)
-    }
+function openCode(stdCodeNo: string) {
+  const { href } = router.resolve({
+    name: 'data-standard-codes',
+    query: { keyword: stdCodeNo }
   })
+  window.open(href, '_blank')
 }
 
-function onRestore(s: Standard) {
-  StandardStore.restoreFromDeprecated(s.code)
+function handleImportSuccess() {
   refresh()
-  if (currentStandard.value?.code === s.code) currentStandard.value = StandardStore.findByCode(s.code) || null
-  Message.success(`「${s.name}」已恢复为草稿`)
 }
-
-// ===== 新建草稿 =====
-function onCreate() {
-  // 自动生成下一个编码
-  const nums = standards.value.map(s => {
-    const m = s.code.match(/STD-(\d+)/)
-    return m ? Number(m[1]) : 0
-  })
-  const next = (nums.length ? Math.max(...nums) : 0) + 1
-  form.value = {
-    code: `STD-${String(next).padStart(3, '0')}`,
-    name: '',
-    category: '',
-    dataType: 'string',
-    length: 50,
-    scale: 0,
-    definition: '',
-    valueRange: '',
-    example: '',
-    owner: '当前用户'
-  }
-  createVisible.value = true
-}
-
-function onSaveDraft() {
-  if (!form.value.code || !form.value.name || !form.value.category) {
-    Message.error('请填写编码 / 名称 / 分类')
-    return
-  }
-  const created = StandardStore.createDraft({
-    code: form.value.code,
-    name: form.value.name,
-    category: form.value.category === '__new__' ? '新分类' : form.value.category,
-    dataType: form.value.dataType,
-    length: form.value.length,
-    scale: form.value.scale || undefined,
-    owner: form.value.owner,
-    complianceRate: 0,
-    definition: form.value.definition,
-    valueRange: form.value.valueRange,
-    example: form.value.example,
-    tags: []
-  })
-  refresh()
-  createVisible.value = false
-  Message.success(`草稿「${created.name}」已创建,可提交审批`)
-}
-
-const goWorkbench = () => router.push('workbench')
 </script>
 
 <style lang="scss" scoped>
-/* 2026-08-06 统一:页面背景/高度/最大宽度由 PageContainer 提供 */
 .standards-page {
-  padding: 0 24px;
+  padding: 20px;
 
-  .filter-card {
-    margin-bottom: 16px;
-    .result-meta {
-      margin-top: 16px;
-      color: var(--dca-text-tertiary);
-      font-size: 13px;
-      b { color: var(--dca-text-primary); font-weight: 600; }
-    }
+  .mono {
+    font-family: 'Menlo', 'Consolas', monospace;
   }
 
-  .formula {
-    background: var(--dca-bg-page);
-    padding: 12px;
-    border-radius: var(--dca-radius-md);
-    font-family: 'Menlo', monospace;
-    font-size: 13px;
-    color: var(--dca-brand-primary);
-    margin: 0;
+  .link-disabled {
+    color: var(--color-text-4);
+    cursor: not-allowed;
+    border-bottom: 1px dashed var(--color-border-2);
   }
 }
 </style>

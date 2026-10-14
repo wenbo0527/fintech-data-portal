@@ -32,15 +32,14 @@ export const benefitRoutes: RouteRecordRaw[] = [
     path: '/benefit/management',
     name: 'BenefitManagement',
     component: () => import('@/pages/coupon/management/index.vue'),
-    meta: { title: '券管理' },
-    children: [
-      {
-        path: 'detail',
-        name: 'BenefitManagementDetail',
-        component: () => import('@/pages/coupon/management/detail.vue'),
-        meta: { title: '券详情' }
-      }
-    ]
+    meta: { title: '券管理' }
+  },
+  {
+    // 券管理页组件内没有 router-view，详情必须作为同级路由注册，否则点击"详情"原地不动
+    path: '/benefit/management/detail',
+    name: 'BenefitManagementDetail',
+    component: () => import('@/pages/coupon/management/detail.vue'),
+    meta: { title: '券详情', activeMenu: '/benefit/management' }
   },
   {
     path: '/benefit/package',

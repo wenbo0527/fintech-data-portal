@@ -460,13 +460,10 @@ const dataAssets = ref([
   { name: '产品域', count: 64, description: '产品/合同/资产', path: 'discovery/asset-catalog?domain=产品域' }
 ])
 
-// ========== 数据要素(5 类)==========
+// ========== 数据要素(2 类,PRD 要求)==========
 const dataElements = ref([
-  { name: '核心指标', count: 48, description: '北极星/业务结果指标', iconKey: 'bar-chart', path: 'discovery/unified-metrics' },
-  { name: '业务标签', count: 156, description: '客户/产品/事件标签', iconKey: 'tags', path: 'management/asset-management/asset-tags' },
-  { name: '数据特征', count: 312, description: '原子/衍生特征', iconKey: 'code-block', path: 'discovery/variable-dict' },
-  { name: '模型特征', count: 89, description: 'AI/ML 特征工程', iconKey: 'bulb', path: 'discovery/feature-dict' },
-  { name: '指标地图', count: 28, description: '指标口径/口径图谱', iconKey: 'branch', path: 'discovery/indicator-dict' }
+  { name: '风险特征', count: 312, description: '原子/衍生/模型特征', iconKey: 'code-block', path: 'discovery/risk-feature' },
+  { name: '核心指标', count: 48, description: '北极星/业务结果指标', iconKey: 'bar-chart', path: 'discovery/unified-metrics' }
 ])
 
 // ========== 数据治理(6 块,补全 mock)==========
@@ -480,7 +477,7 @@ const dataGovernance = ref([
 ])
 
 // 图标 key → 组件 映射(用 markRaw 防止被 reactive 包装)
-const iconMap = markRaw({
+const iconMap = markRaw<Record<string, any>>({
   'desktop': IconDesktop,
   'cloud': IconCloud,
   'file': IconFile,
@@ -509,7 +506,7 @@ const handleSearch = () => {
     return
   }
   // 搜索跳转需要携带 query,走 push 对象形式,目标路径同样经过 normalize
-  router.push({ path: normalizePath('discovery/search'), query: { q: searchForm.value.keyword } })
+  router.push({ path: normalizePath('discovery/search'), query: { q: searchForm.value.keyword, tab: 'all' } })
 }
 
 const toggleAdvancedFilter = () => {

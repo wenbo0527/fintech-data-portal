@@ -219,7 +219,7 @@ const emit = defineEmits<Emits>()
 
 // APP信息抽屉状态
 const appDrawerVisible = ref(false)
-const currentAppInfo = ref(null)
+const currentAppInfo = ref<Record<string, any> | undefined>(undefined)
 
 // 计算属性
 
@@ -275,7 +275,7 @@ const showAppInfo = (appInfo: any) => {
 // 关闭APP信息抽屉
 const closeAppDrawer = () => {
   appDrawerVisible.value = false
-  currentAppInfo.value = null
+  currentAppInfo.value = undefined
 }
 
 // 显示联系人

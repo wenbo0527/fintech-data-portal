@@ -22,7 +22,7 @@ import type {
   CategoryStats,
   HomeStats
 } from '@/types/community'
-import { mockCategories as _communityMockCategories, mockTreeNodes, mockDocuments, mockHomeStats, mockCategoryStats, mockUsers as _communityMockUsers } from '@/mock/community'
+import { mockCategories, mockTreeNodes, mockDocuments, mockHomeStats, mockCategoryStats, mockUsers } from '@/mock/community'
 import { mockNotifications } from '@/mock/notification'
 
 // API 基础配置（项目无真后端 → 全部走本地 mock）

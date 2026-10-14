@@ -62,7 +62,7 @@ export const MetadataStore = {
    * 按名称查找
    */
   getTableByName(name: string): MetadataTable | undefined {
-    return this.getTables().find(t => t.name === name)
+    return this.getTables().find((t: MetadataTable) => t.name === name)
   }
 }
 

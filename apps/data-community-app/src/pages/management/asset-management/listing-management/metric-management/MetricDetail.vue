@@ -89,14 +89,14 @@
           <a-row :gutter="16">
             <a-col :span="12">
               <a-form-item label="业务负责人" field="businessOwner">
-                <a-select v-model="formData.businessOwner" placeholder="请选择业务负责人" :filter-option="false" @search="(v) => fetchUsers(v)" :loading="loadingUsers">
+                <a-select v-model="formData.businessOwner" placeholder="请选择业务负责人" :filter-option="false" @search="(v: string) => fetchUsers(v)" :loading="loadingUsers">
                   <a-option v-for="u in usersOptions" :key="u.value" :value="u.value">{{ u.label }}</a-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="12">
               <a-form-item label="技术负责人" field="technicalOwner">
-                <a-select v-model="formData.technicalOwner" placeholder="请选择技术负责人" :filter-option="false" @search="(v) => fetchUsers(v)" :loading="loadingUsers">
+                <a-select v-model="formData.technicalOwner" placeholder="请选择技术负责人" :filter-option="false" @search="(v: string) => fetchUsers(v)" :loading="loadingUsers">
                   <a-option v-for="u in usersOptions" :key="u.value" :value="u.value">{{ u.label }}</a-option>
                 </a-select>
               </a-form-item>

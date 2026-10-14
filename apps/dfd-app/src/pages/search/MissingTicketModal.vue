@@ -1,14 +1,14 @@
 <template>
   <a-modal
     v-model:visible="visible"
-    title="缺失工单"
+    :title="modalTitle"
     :width="560"
     :mask-closable="false"
     @ok="handleOk"
     @cancel="handleCancel"
   >
     <div class="modal-intro">
-      <icon-info-circle-fill /> 没找到想要的数据？告诉我们，我们将尽快为您补齐。
+      <icon-info-circle-fill /> {{ modalIntro }}
     </div>
 
     <!-- 上下文关联信息（只读展示，来自当前页面） -->
@@ -28,6 +28,19 @@
       class="ticket-form"
       validate-trigger="blur"
     >
+      <!-- 工单类型（必填） -->
+      <a-form-item
+        field="ticketType"
+        label="工单类型"
+        :rules="[{ required: true, message: '请选择工单类型' }]"
+      >
+        <a-radio-group v-model="form.ticketType">
+          <a-radio value="content_error">内容错误</a-radio>
+          <a-radio value="content_missing">内容缺失</a-radio>
+          <a-radio value="content_suggestion">内容建议</a-radio>
+        </a-radio-group>
+      </a-form-item>
+
       <!-- 缺失内容（必填） -->
       <a-form-item
         field="missingContent"
@@ -116,10 +129,21 @@ const formRef = ref()
 const fileList = ref([])
 
 const form = reactive({
+  ticketType: 'content_missing' as 'content_error' | 'content_missing' | 'content_suggestion',
   missingContent: '',
   remark: '',
   expectedTime: ''
 })
+
+// 工单类型映射
+const TICKET_TYPE_MAP: Record<string, { title: string; intro: string }> = {
+  content_error: { title: '内容错误工单', intro: '发现数据或内容有误？请描述错误详情，我们将尽快核实修正。' },
+  content_missing: { title: '内容缺失工单', intro: '没找到想要的数据？告诉我们，我们将尽快为您补齐。' },
+  content_suggestion: { title: '内容建议工单', intro: '对数据内容有改进建议？请告诉我们，帮助我们持续优化。' }
+}
+
+const modalTitle = computed(() => TICKET_TYPE_MAP[form.ticketType]?.title || '内容工单')
+const modalIntro = computed(() => TICKET_TYPE_MAP[form.ticketType]?.intro || '')
 
 // 合并上下文：优先使用 context prop，回退到 initialName
 const context = computed<MissingTicketContext>(() => {
@@ -159,6 +183,7 @@ const assetTypeColor = computed(() => {
 // 弹窗打开时重置表单
 watch(visible, (val) => {
   if (val) {
+    form.ticketType = 'content_missing'
     form.missingContent = ''
     form.remark = ''
     form.expectedTime = ''
@@ -186,14 +211,11 @@ const handleOk = async () => {
 
   resetForm()
   visible.value = false
-  Message.success({
-    content: '缺失工单已提交，我们将尽快为您补齐',
-    duration: 3000
-  })
 }
 
 const isDirty = computed(() => {
-  return form.missingContent !== '' ||
+  return form.ticketType !== 'content_missing' ||
+         form.missingContent !== '' ||
          form.remark !== '' ||
          form.expectedTime !== '' ||
          fileList.value.length > 0
@@ -219,6 +241,7 @@ const handleCancel = () => {
 
 const resetForm = () => {
   formRef.value?.resetFields()
+  form.ticketType = 'content_missing'
   form.missingContent = ''
   form.remark = ''
   form.expectedTime = ''

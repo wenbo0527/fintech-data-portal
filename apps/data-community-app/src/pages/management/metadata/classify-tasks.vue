@@ -27,7 +27,7 @@
           </a-col>
           <a-col :span="6">
             <a-card>
-              <a-statistic title="最高优先级" value="L4 待确认" :value-style="{ color: '#F53F3F' }" />
+              <a-statistic title="最高优先级" :value="('L4 待确认' as unknown) as number" :value-style="{ color: '#F53F3F' }" />
             </a-card>
           </a-col>
         </a-row>

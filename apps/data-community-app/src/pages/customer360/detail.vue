@@ -41,7 +41,7 @@
 
       <!-- 快捷操作栏 -->
       <div class="quick-actions">
-        <HistoryQueryButton :user-info="userInfo" />
+        <HistoryQueryButton :user-info="userInfo ?? undefined" />
         <a-tooltip content="字段权限配置（PM 配置后台）">
           <a-button type="text" size="small" @click="openFieldConfigDrawer">
             <template #icon><IconSettings /></template>
@@ -224,12 +224,12 @@ import FieldPermissionConfig from './components/FieldPermissionConfig.vue'
 // 基础响应式特征
 const route = useRoute()
 const router = useRouter()
-const userInfo = ref(null)
+const userInfo = ref<Record<string, any> | null>(null)
 const loading = ref(true)
 const showDebugPanel = ref(false)
 // Tab切换控制
 const activeInfoTab = ref('basic') // 默认显示基本信息Tab
-const selectedProduct = ref(null)
+const selectedProduct = ref<Record<string, any> | undefined>(undefined)
 const isFavorite = ref(false)
 const detailExpanded = ref(false)
 // v3.3: 字段权限配置抽屉
@@ -250,8 +250,9 @@ const navSelection = ref<NavSelection>({ type: 'top', topKey: 'all-around' })
 
 // 当前选中的产品（基于 navSelection 计算）
 const currentSelectedProduct = computed(() => {
-  if (navSelection.value.type !== 'credit-id') {return undefined}
-  return userOwnedProducts.value.find(p => p.productKey === navSelection.value.productKey)
+  const selection = navSelection.value
+  if (selection.type !== 'credit-id') {return undefined}
+  return userOwnedProducts.value.find(p => p.productKey === selection.productKey)
 })
 
 // 移除了调试系统相关的状态特征
@@ -263,11 +264,11 @@ const currentSelectedProduct = computed(() => {
 // 移除了手动刷新和调试处理相关的函数
 
 // 用户拥有的产品数据（所有产品都是信贷产品）
-const userOwnedProducts = computed(() => {
+const userOwnedProducts = computed<any[]>(() => {
   if (!userInfo.value || userInfo.value.error) {return []}
 
-  const products = []
-  const userProducts = userInfo.value.products || []
+  const products: any[] = []
+  const userProducts: Record<string, any>[] = userInfo.value.products || []
 
   // 所有产品都是信贷产品
   userProducts.forEach(product => {
@@ -290,8 +291,10 @@ const productOptions = ref([
 ])
 
 // 获取用户ID
-const userId = computed(() => {
-  return route.params.userId || route.query.userId
+const userId = computed<string>(() => {
+  const raw = route.params.userId || route.query.userId
+  if (Array.isArray(raw)) return String(raw[0] ?? '')
+  return raw ? String(raw) : ''
 })
 
 // 移除了selfProductData和loanProductData计算属性，改为直接使用userOwnedProducts
@@ -315,8 +318,8 @@ const handleModuleChange = (moduleKey: string) => {
   console.debug('[customer360] module change:', moduleKey)
 }
 
-const getStatusColor = (status) => {
-  const colorMap = {
+const getStatusColor = (status: string) => {
+  const colorMap: Record<string, string> = {
     '正常': 'green',
     '逾期': 'red',
     '关闭': 'gray',
@@ -403,8 +406,8 @@ const fetchData = async () => {
 
 
 // 获取风险等级颜色
-const getRiskLevelColor = (level) => {
-  const colorMap = {
+const getRiskLevelColor = (level: string) => {
+  const colorMap: Record<string, string> = {
     '低风险': 'green',
     '中风险': 'orange',
     '高风险': 'red',
@@ -414,7 +417,7 @@ const getRiskLevelColor = (level) => {
 }
 
 // 处理产品选择
-const handleProductSelect = (product) => {
+const handleProductSelect = (product: Record<string, any>) => {
   selectedProduct.value = product
 }
 

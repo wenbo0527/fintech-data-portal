@@ -146,7 +146,7 @@ function saveGroup() {
   }
   if (formMode.value === 'create') {
     const id = 'G' + (groups.value.length + 1).toString().padStart(3, '0')
-    groups.value.push({ id, ...formData.value, memberCount: 0, owner: '当前用户' })
+    groups.value.push({ ...formData.value, id, memberCount: 0, owner: '当前用户' })
     Message.success('用户组已创建')
   } else {
     const idx = groups.value.findIndex(g => g.id === formData.value.id)

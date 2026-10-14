@@ -97,13 +97,13 @@
           {{ record.businessDomain || '-' }}
         </template>
         <template v-else-if="record.type === MetricType.REGULATORY">
-          {{ REGULATORY_CATEGORY_LABELS[record.regulatoryCategory] || '-' }}
+          {{ REGULATORY_CATEGORY_LABELS[record.regulatoryCategory as RegulatoryCategory] || '-' }}
         </template>
         <span v-else>-</span>
       </template>
 
       <template #scene="{ record }">
-       {{ REGULATORY_CATEGORY_LABELS[record.regulatoryCategory] || '-' }}
+       {{ REGULATORY_CATEGORY_LABELS[record.regulatoryCategory as RegulatoryCategory] || '-' }}
       </template>
       
       <template #actions="{ record }">
@@ -798,13 +798,13 @@ const handleBatchUploadSubmit = async (type: UploadCategory) => {
   
   // 验证文件类型
   const allowedTypes = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel']
-  if (!allowedTypes.includes(file.type)) {
+  if (!allowedTypes.includes(file.type ?? '')) {
     Message.error('请上传Excel文件（.xlsx或.xls格式）')
     return
   }
 
   // 验证文件大小（10MB）
-  if (file.size > 10 * 1024 * 1024) {
+  if ((file.size ?? 0) > 10 * 1024 * 1024) {
     Message.error('文件大小不能超过10MB')
     return
   }

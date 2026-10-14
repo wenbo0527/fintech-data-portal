@@ -83,7 +83,7 @@
             <template #cell="{ record }">
               <a-space>
                 <span class="cluster-tag-badge">
-                  <span class="cluster-dot" :style="{ background: clusterColor[record.clusterType] }" />
+                  <span class="cluster-dot" :style="{ background: clusterColor[record.clusterType as ClusterType] }" />
                   {{ record.name }}
                 </span>
               </a-space>
@@ -91,7 +91,7 @@
           </a-table-column>
           <a-table-column title="集群类型" :width="100">
             <template #cell="{ record }">
-              <a-tag :color="clusterTagColor[record.clusterType]">{{ record.clusterType }}</a-tag>
+              <a-tag :color="clusterTagColor[record.clusterType as ClusterType]">{{ record.clusterType }}</a-tag>
             </template>
           </a-table-column>
           <a-table-column title="地址" :width="200">
@@ -116,7 +116,7 @@
           </a-table-column>
           <a-table-column title="健康" :width="100">
             <template #cell="{ record }">
-              <a-tag :color="healthTagColor[record.health]">{{ healthLabel[record.health] }}</a-tag>
+              <a-tag :color="healthTagColor[record.health as Health]">{{ healthLabel[record.health as Health] }}</a-tag>
             </template>
           </a-table-column>
           <a-table-column title="操作" :width="240" fixed="right">

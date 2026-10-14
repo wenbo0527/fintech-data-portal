@@ -277,19 +277,17 @@ const navigateToDetail = (nodeData) => {
   const { dataType, label, id } = nodeData
   switch (dataType) {
     case 'Table':
-      router.push({
-        path: '/data-community/discovery/data-map/table',
-        query: { tableName: label }
-      })
+      // 表详情为路径参数式路由（dca / dfd 两应用内均为此形式）
+      router.push(`/discovery/data-map/table/${encodeURIComponent(label)}`)
       break
     case 'Metric':
       router.push({
-        path: `/data-community/management/asset-management/listing-management/metric-management/${id || label}/detail`
+        path: `/management/asset-management/listing-management/metric-management/${id || label}/detail`
       })
       break
     case 'Variable':
       router.push({
-        path: '/data-community/discovery/variable-dict',
+        path: '/discovery/variable-dict',
         query: { variable: label }
       })
       break

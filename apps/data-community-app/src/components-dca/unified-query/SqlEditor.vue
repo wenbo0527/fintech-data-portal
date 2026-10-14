@@ -56,10 +56,10 @@ const inner = computed({
 const editorOptions = computed(() => ({
   tabSize: 2,
   minimap: { enabled: false },
-  lineNumbers: 'on',
+  lineNumbers: 'on' as const,
   fontSize: 13,
   scrollBeyondLastLine: false,
-  wordWrap: 'off',
+  wordWrap: 'off' as const,
   quickSuggestions: { other: true, comments: false, strings: true }
 }))
 

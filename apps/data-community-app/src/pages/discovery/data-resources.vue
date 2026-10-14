@@ -119,7 +119,8 @@ const columns = [
 ]
 
 function goToTables(s: any) {
-  router.push(`/management/metadata/classify/tables/${s.classifyId}`)
+  // 留在发现域，跳转到资产目录按系统筛选
+  router.push({ name: 'asset-catalog', query: { source: s.name } })
 }
 function getDbTypeColor(t: string) {
   return ({ mysql: 'arcoblue', doris: 'green', pg: 'cyan', hive: 'orange', oracle: 'red', clickhouse: 'purple' }[t]) || 'gray'

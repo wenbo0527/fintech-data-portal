@@ -44,7 +44,7 @@
                     <IconEye />
                   </a-button>
                 </a-tooltip>
-                <a-dropdown @select="(value) => handleActionSelect(value, domain)" @click.stop>
+                <a-dropdown @select="(value: any) => handleActionSelect(value, domain)" @click.stop>
                   <a-button type="text" size="mini" @click.stop>
                     <IconMore />
                   </a-button>

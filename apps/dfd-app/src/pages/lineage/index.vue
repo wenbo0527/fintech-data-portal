@@ -35,14 +35,16 @@
 
 <script setup>
 import { ref, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { IconSearch } from '@arco-design/web-vue/es/icon'
 import LineageGraph from './components/LineageGraph.vue'
 
 const router = useRouter()
+const route = useRoute()
 
+// 支持 ?table=xxx 预置查询表名（表详情页血缘 Tab「血缘分析页打开」入口携带）
 const form = reactive({
-  tableName: 'dim_user',
+  tableName: String(route.query.table || 'dim_user'),
   layers: 1,
   dataTypes: [],
   onlyFailed: false

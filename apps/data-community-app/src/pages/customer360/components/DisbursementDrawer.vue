@@ -87,7 +87,7 @@
             <div class="stat-label">剩余利息</div>
             <div class="stat-value amount">{{ formatAmount(loanRecord?.remainingInterest) }}</div>
           </div>
-          <div class="stat-card penalty" v-if="loanRecord?.remainingPenalty > 0">
+          <div class="stat-card penalty" v-if="(loanRecord?.remainingPenalty ?? 0) > 0">
             <div class="stat-label">
               剩余罚息
               <a-tooltip content="本金罚息+利息罚息">

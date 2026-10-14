@@ -108,7 +108,7 @@
           <a-table-column title="负责人" data-index="owner" :width="100" />
           <a-table-column title="状态" :width="100">
             <template #cell="{ record }">
-              <a-tag :color="statusColor[record.status]">{{ statusLabel[record.status] }}</a-tag>
+              <a-tag :color="statusColor[record.status as ShelfStatus]">{{ statusLabel[record.status as ShelfStatus] }}</a-tag>
             </template>
           </a-table-column>
           <a-table-column title="注册时间" :width="170">

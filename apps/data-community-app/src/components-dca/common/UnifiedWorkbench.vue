@@ -52,9 +52,9 @@
               <div class="concept-name">{{ concept.name }}</div>
               <div class="concept-desc">{{ concept.description }}</div>
               <div class="concept-footer">
-                <a-tag size="mini">{{ concept.businessBelonging }}</a-tag>
+                <a-tag size="small">{{ concept.businessBelonging }}</a-tag>
                 <span v-if="concept.defaultSensitivity" class="concept-sensitivity">
-                  <a-tag size="mini" :color="sensitivityColor(concept.defaultSensitivity)">
+                  <a-tag size="small" :color="sensitivityColor(concept.defaultSensitivity)">
                     {{ concept.defaultSensitivity }}
                   </a-tag>
                 </span>
@@ -89,7 +89,7 @@
               <div class="shortcut-text">
                 <div class="shortcut-title">{{ tool.title }}</div>
                 <div class="shortcut-desc">{{ tool.desc }}</div>
-                <a-tag :color="moduleColor(tool.module)" size="mini" class="module-tag">
+                <a-tag :color="moduleColor(tool.module)" size="small" class="module-tag">
                   {{ moduleLabel(tool.module) }}
                 </a-tag>
               </div>
@@ -167,7 +167,7 @@
               <div class="favorite-info">
                 <div class="favorite-title">{{ fav.resourceName }}</div>
                 <div class="favorite-meta">
-                  <a-tag size="mini">{{ resourceTypeName(fav.resourceType) }}</a-tag>
+                  <a-tag size="small">{{ resourceTypeName(fav.resourceType) }}</a-tag>
                   <span class="visit-count">{{ fav.visitCount }} 次</span>
                 </div>
               </div>
@@ -238,11 +238,13 @@ interface Shortcut {
   navKey: string
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   module?: Module
   greeting?: string
   shortcuts?: Shortcut[]
-}>()
+}>(), {
+  module: 'discovery'
+})
 
 const emit = defineEmits<{
   toolClick: [tool: Shortcut]
@@ -322,6 +324,11 @@ const moduleLabel = (mod: string) => ({
   exploration: '探索'
 }[mod] || mod)
 
+// 敏感级别标签颜色(L1-L4,与数据权限模块保持一致)
+const sensitivityColor = (level: string) => ({
+  L1: 'gray', L2: 'arcoblue', L3: 'orange', L4: 'red'
+}[level] || 'gray')
+
 // 角色个性化问候语
 const rolePersonalizedGreeting = computed(() => {
   const def = currentRoleDef.value
@@ -380,6 +387,7 @@ const personalizedShortcuts = computed(() =>
     title: s.title,
     desc: s.desc,
     icon: iconMap[s.key] || IconStorage,
+    module: s.module,
     navKey: s.routeKey
   }))
 )

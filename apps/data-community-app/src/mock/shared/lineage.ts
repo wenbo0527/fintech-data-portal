@@ -202,10 +202,10 @@ export const FieldLinkStore = (() => {
     checkCompliance(tableName: string, fieldName: string): 'compliant' | 'deviation' | 'unknown' {
       const link = this.byField(tableName, fieldName)
       if (!link?.standardCode) return 'unknown'
-      const standard = StandardStore.getStandards().find(s => s.standardNo === link.standardCode)
+      const standard = StandardStore.getStandards().find(s => s.code === link.standardCode)
       if (!standard) return 'unknown'
       // 实际字段类型可从 MetadataStore 取
-      const table = MetadataStore.getTables().find(t => t.tableName === tableName)
+      const table = MetadataStore.getTables().find(t => t.name === tableName)
       const field = table?.fields?.find((f: any) => f.name === fieldName)
       if (!field) return 'unknown'
       const standardType = standard.dataType
@@ -219,7 +219,7 @@ export const FieldLinkStore = (() => {
 
     /** 表级别标准合规率 */
     tableComplianceRate(tableName: string): number {
-      const tableLinks = this.byTable(tableName)
+      const tableLinks: FieldLink[] = this.byTable(tableName)
       if (tableLinks.length === 0) return 0
       const compliant = tableLinks.filter(l => l.compliance === 'compliant').length
       return Math.round((compliant / tableLinks.length) * 100)
@@ -227,9 +227,9 @@ export const FieldLinkStore = (() => {
 
     /** 表级别分级覆盖率 */
     tableClassifyCoverage(tableName: string): number {
-      const table = MetadataStore.getTables().find(t => t.tableName === tableName)
+      const table = MetadataStore.getTables().find((t: { name: string }) => t.name === tableName)
       if (!table?.fields || table.fields.length === 0) return 0
-      const tableLinks = this.byTable(tableName)
+      const tableLinks: FieldLink[] = this.byTable(tableName)
       const classifiedFields = new Set(tableLinks.filter(l => l.sensitivityLevel).map(l => l.fieldName))
       return Math.round((classifiedFields.size / table.fields.length) * 100)
     },
@@ -311,13 +311,13 @@ export interface EnhancedFieldInfo {
  */
 export function getEnhancedField(tableName: string, fieldName: string): EnhancedFieldInfo | null {
   const link = FieldLinkStore.byField(tableName, fieldName)
-  const table = MetadataStore.getTables().find(t => t.tableName === tableName)
+  const table = MetadataStore.getTables().find(t => t.name === tableName)
   const field = table?.fields?.find((f: any) => f.name === fieldName)
   if (!table || !field) return null
 
   let standard: any = undefined
   if (link?.standardCode) {
-    standard = StandardStore.getStandards().find(s => s.standardNo === link.standardCode)
+    standard = StandardStore.getStandards().find(s => s.code === link.standardCode)
   }
 
   let businessElement: any = undefined
@@ -334,11 +334,11 @@ export function getEnhancedField(tableName: string, fieldName: string): Enhanced
     fieldType: (field as any).type,
 
     standard: standard ? {
-      code: standard.standardNo,
-      chineseName: standard.chineseName,
-      englishName: standard.englishName,
-      domain: standard.domain,
-      description: standard.subject
+      code: standard.standardNo || standard.code,
+      chineseName: standard.cnName || standard.name,
+      englishName: standard.enFullName || standard.enAbbr || '',
+      domain: standard.domain || '',
+      description: standard.bizDefinition || standard.definition || ''
     } : undefined,
 
     sensitivity: link?.sensitivityLevel ? {
@@ -369,7 +369,7 @@ export function getEnhancedField(tableName: string, fieldName: string): Enhanced
  * 批量:取一张表所有字段的全景视图
  */
 export function getEnhancedTable(tableName: string): EnhancedFieldInfo[] {
-  const table = MetadataStore.getTables().find(t => t.tableName === tableName)
+  const table = MetadataStore.getTables().find(t => t.name === tableName)
   if (!table?.fields) return []
   return (table.fields as any[])
     .map(f => getEnhancedField(tableName, f.name))

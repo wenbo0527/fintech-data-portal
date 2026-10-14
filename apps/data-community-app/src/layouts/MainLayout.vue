@@ -144,6 +144,8 @@ import { useRouter, useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { useRoleStore } from '../stores-dca/role'
 import { ROLE_DEFINITIONS, type UserRole } from '@/types-dca/roles'
+import { goToExternalApp } from '@/config-dca/apps'
+import { notificationUnread$ } from '../mock/api/notification'
 
 const router = useRouter()
 const route = useRoute()
@@ -183,7 +185,9 @@ function confirmRoleSwitch() {
 
 // ── 用户信息 ──────────────────────────────────
 const currentUser = ref({ name: '王运营', email: 'wangyy@company.com' })
-const unreadCount = ref(5)
+// 2026-09 P4：未读数响应式读 notification store（替代写死的 ref(5)），
+//   表生命周期/权限审批的 notify() 与通知中心"标记已读"都会实时反映到铃铛
+const unreadCount = computed(() => notificationUnread$.value)
 const avatarStyle = { background: '#165dff' }
 
 // ── 顶部主菜单(工作台 + 三大模块) ──────────────
@@ -209,6 +213,7 @@ const discoveryMenus = [
   { key: 'discovery/favorites', title: '我的关注' },
 
   // 数据资源(原始数据来源,排除「外部数据」「征信查询」,后者属于数据要素)
+  // 2026-09:data-resources 已还原为「数据资源目录/业务系统」;HBase 表清单独立为 discovery/hbase-tables
   { key: 'discovery-group-resource', title: '📥 数据资源', children: [
     { key: 'discovery/data-resources', title: '业务系统' },
     { key: 'discovery/data-resources/files', title: '文件导入' },
@@ -216,25 +221,34 @@ const discoveryMenus = [
     { key: 'discovery/data-resources/realtime', title: '实时接入' },
   ]},
 
+  // 2026-09-17:「上线流程」(未上线池/上线审核)属治理动作,已迁至「数据管理 → 上下架管理」
+
   // 数据资产(治理后) — 平台层面的资产台账
   // 客户 360 已移出,属于「数据探索」侧的分析视图
   { key: 'discovery-group-assets', title: '🏛️ 数据资产', children: [
     { key: 'discovery/asset-catalog', title: '资产目录' },
   ]},
 
-  // 数据要素(高价值业务形态 — 指标 / 特征 / 特征 / 外数 4 个核心入口)
-  // 其它能力(征信查询 / 统一指标 / 指标看板 / 地铁图)已并入相应字典页或工作台快捷入口
-  { key: 'discovery-group-element', title: '✨ 数据要素', children: [
-    { key: 'discovery/indicator-dict', title: '指标字典' },
-    { key: 'discovery/variable-dict', title: '特征字典' },
-    { key: 'discovery/feature-dict', title: '特征字典' },
-    { key: 'discovery/external', title: '外部数据' },
-  ]},
-
   // 运营工具(实际是数据治理 + 监管 + API,跨三大类)
   { key: 'discovery-group-ops', title: '🛠 治理运营', children: [
     { key: 'discovery/lineage', title: '全链路血缘' },
     { key: 'discovery/api-market', title: 'API 市场' },
+  ]},
+
+  // 数据要素(高价值业务形态 — 指标 / 变量 / 特征 / 外数 4 个核心入口)
+  // 2026-09 P4 专题层过渡:文档第五章口径,指标/变量/特征/外数属专题层,
+  //   过渡期保留在发现菜单并标注归属,故整组移至菜单尾部 + 组名带过渡标识;
+  //   同步修复 variable-dict 与 feature-dict 曾同名「特征字典」的重复命名 bug
+  { key: 'discovery-group-element', title: '✨ 数据要素 · 过渡期将迁至专题层', children: [
+    { key: 'discovery/indicator-dict', title: '指标字典' },
+    { key: 'discovery/variable-dict', title: '变量字典' },
+    { key: 'discovery/feature-dict', title: '特征字典' },
+    { key: 'discovery/external', title: '外部数据' },
+    // 数据要素 v2 更新版:按存储引擎选型注册的新形态入口
+    { key: 'discovery/risk-feature', title: '风险特征' },
+    { key: 'discovery/marketing-event', title: '营销事件' },
+    // HBase 形态:贷中行为特征表目录(单卡片 → 表列表 → 表详情)
+    { key: 'discovery/hbase-tables', title: '风险特征 HBase 表' },
   ]},
 ]
 
@@ -262,14 +276,19 @@ const managementMenus = [
       { key: 'management/metadata/task', title: '采集任务' },
     ]},
     { key: 'management/metadata-sub-shelf', title: '上下架管理', children: [
+      // 2026-09 重构:P2 表生命周期(上线审核/下线审批/状态总览,与未上线池共用数据源)
+      { key: 'management/lifecycle', title: '表生命周期管理' },
+      // 2026-09-17 归属调整:上线流程自「数据发现」迁入(未上线池 → 完善元数据 → 提交审核 → 上线)
+      { key: 'management/lifecycle/pending', title: '未上线池' },
+      { key: 'management/lifecycle/review', title: '上线审核' },
       // ↔ 数据发现·数据资源(业务系统/文件/日志/实时)
       { key: 'management/asset-management/listing-management/data-source', title: '数据资源上下架' },
       // ↔ 数据发现·数据资产(资产目录/数据表)
       { key: 'management/asset-management/listing-management/asset-management', title: '数据资产上下架' },
-      // ↔ 数据发现·数据要素(指标/特征/特征/外数/API)
+      // ↔ 数据发现·数据要素(指标/变量/特征/外数/API)
       { key: 'management/shelf/element-shelf', title: '数据要素上下架' },
-      // 指标管理属于数据要素范畴,归入上下架管理
-      { key: 'management/asset-management/listing-management/metric-management', title: '指标管理' },
+      // 2026-09 P4:「指标管理」已移出本分组(文档 5.1 指标生命周期归专题层),
+      //   见下方「数据要素管理 → 专题过渡」
       { key: 'management/shelf/batch-shelf', title: '批量上下架' },
     ]},
     // 标签管理(对资产打标,属于元数据管理范畴)
@@ -283,7 +302,7 @@ const managementMenus = [
   { key: 'management-group-governance', title: '数据治理', children: [
     { key: 'management/governance-sub-std', title: '数据标准', children: [
       { key: 'management/data-standard/standards', title: '数据标准' },
-      { key: 'management/data-standard/domains', title: '数据域管理' },
+      { key: 'management/data-standard/domains', title: '标准域管理' },
       { key: 'management/data-standard/codes', title: '标准代码' },
       { key: 'management/data-standard/words', title: '标准单词' },
       { key: 'management/data-standard/audit', title: '标准稽核' },
@@ -301,12 +320,13 @@ const managementMenus = [
       { key: 'management/business-graph', title: '业务图谱' },
     ]},
     { key: 'management/governance-sub-quality', title: '数据质量', children: [
+      { key: 'management/quality/dashboard', title: '质量看板' },
       { key: 'management/data-quality/tasks', title: '校验任务管理' },
       { key: 'management/data-quality/instances', title: '任务实例日志' },
     ]},
   ]},
-  // ── 数据要素管理(模型+服务)──
-  // 标签管理已迁入元数据管理;指标管理已归入上下架管理·数据要素上下架
+  // ── 数据要素管理(模型+服务+专题过渡)──
+  // 标签管理已迁入元数据管理
   { key: 'management-group-element', title: '数据要素管理', children: [
     { key: 'management/element-sub-model', title: '数据模型', children: [
       { key: 'management/data-models', title: '数据模型' },
@@ -318,9 +338,21 @@ const managementMenus = [
       { key: 'management/service/monitor', title: '服务监控' },
       { key: 'management/service/stats', title: '调用统计' },
     ]},
+    // 2026-09 P4 专题层过渡:指标生命周期归专题层,原挂在上下架管理下的
+    //   「指标管理」移出于此占位,将来整体迁入探索域「指标中心」(exploration/metrics-center)
+    { key: 'management/element-sub-topic', title: '专题过渡', children: [
+      { key: 'management/asset-management/listing-management/metric-management', title: '指标管理' },
+    ]},
   ]},
-  // 字段权限/查询类服务(backtrack/detail-data-query/fund-usage-query)
-  // 不属于数据管理范畴,已从侧边菜单移除,路由保留可直接访问
+  // 查询类服务(backtrack/detail-data-query/fund-usage-query)不属于数据管理范畴,
+  // 已从侧边菜单移除,路由保留可直接访问
+  // ── 权限管理(2026-09 重构:表级 + 分级四级流,文档要求权限回归管理一级子模块)──
+  { key: 'management-group-permission', title: '权限管理', children: [
+    { key: 'management/permission/data-permission/apply', title: '表权限申请' },
+    { key: 'management/permission/data-permission/approval', title: '表权限审批' },
+    { key: 'management/permission/data-permission/management', title: '授权台账' },
+    { key: 'management/permission/data-permission/progress', title: '我的权限进度' },
+  ]},
 ]
 
 // ── 数据探索菜单(去掉前导 /,与 router path 一致)───────
@@ -340,6 +372,12 @@ const explorationMenus = [
   ]},
   { key: 'exploration/workflows', title: '分析工作流' },
   { key: 'exploration/indicator-dashboard', title: '业务指标看板' },
+  { key: 'exploration-group-metrics-center', title: '指标中心', children: [
+    { key: 'exploration/metrics-center', title: '指标管理' },
+    { key: 'exploration/metrics-center/reports', title: '报表管理' },
+    { key: 'exploration/metrics-center/map', title: '指标地图' },
+    { key: 'exploration/metrics-center/dashboard', title: '指标看板' },
+  ]},
 ]
 
 // ── 工作台菜单(快速入口 + 我的)────────────
@@ -397,6 +435,11 @@ const EXPLORATION_ALWAYS_ON = new Set([
   'exploration/unified-query/sql',
   'exploration/unified-query/tasks',
   'exploration/unified-query/exports',
+  // 指标中心;父组 key 含 -group- 由 isAllowed 自动放行
+  'exploration/metrics-center',
+  'exploration/metrics-center/reports',
+  'exploration/metrics-center/map',
+  'exploration/metrics-center/dashboard',
 ])
 
 // 用 ref + 手动 update 替代 computed,避免每次 render 返回新 array
@@ -548,6 +591,9 @@ const NAME_BY_PATH: Record<string, string> = {
   'discovery/variable-dict': 'variable-dict',
   'discovery/feature-dict': 'feature-dict',
   'discovery/external': 'external',
+  'discovery/risk-feature': 'risk-feature',
+  'discovery/marketing-event': 'marketing-event',
+  'discovery/hbase-tables': 'hbase-tables',
   'discovery/metrics-map': 'metrics-map',
   'discovery/variable-map': 'variable-map',
   'discovery/feature-map': 'feature-map',
@@ -580,6 +626,11 @@ const NAME_BY_PATH: Record<string, string> = {
   'management/data-standard/audit': 'data-standard-audit',
   'management/data-quality/tasks': 'quality-task-list',
   'management/data-quality/instances': 'quality-instance-list',
+  'management/quality/dashboard': 'quality-dashboard',
+  'management/lifecycle': 'management-lifecycle',
+  // 上线流程(2026-09-17 自数据发现迁入)
+  'management/lifecycle/pending': 'lifecycle-pending',
+  'management/lifecycle/review': 'lifecycle-review',
   'management/data-models': 'data-models',
   'management/asset-management/asset-tags': 'asset-tags',
   'management/asset-management/tag-group': 'tag-group',
@@ -620,6 +671,13 @@ const NAME_BY_PATH: Record<string, string> = {
   'exploration/unified-query/sql': 'unified-query-sql',
   'exploration/unified-query/tasks': 'unified-query-tasks',
   'exploration/unified-query/exports': 'unified-query-exports',
+  'exploration/metrics-center': 'metrics-center',
+  'exploration/metrics-center/create': 'metrics-center-create',
+  'exploration/metrics-center/batch-import': 'metrics-center-batch-import',
+  'exploration/metrics-center/map': 'metrics-center-map',
+  'exploration/metrics-center/dashboard': 'metrics-center-dashboard',
+  'exploration/metrics-center/reports': 'metrics-center-reports',
+  'exploration/metrics-center/reports/detail': 'metrics-center-reports-detail',
 
   // —— 工作台 ——
   'workbench': 'workbench'
@@ -628,8 +686,8 @@ const NAME_BY_PATH: Record<string, string> = {
 // ── 跨 App 跳转 ──────────────────────────────
 function goToApp(app: 'workbench' | 'mkt') {
   if (app === 'mkt') {
-    // 跳到 mkt 子应用(端口 5177)
-    window.location.href = 'http://localhost:5177/mkt/'
+    // 目标地址由 src/config-dca/apps.ts 统一维护(支持 VITE_MKT_APP_URL 覆盖)
+    goToExternalApp('mkt')
   } else {
     router.push('workbench')
   }

@@ -6,7 +6,7 @@
       </template>
     </a-page-header>
 
-    <!-- 模块入口:4 个核心入口,与侧栏菜单完全对齐 -->
+    <!-- 模块入口:4 个核心入口 + 指标中心,与侧栏菜单完全对齐 -->
     <a-row :gutter="16">
       <a-col :span="6">
         <a-card class="module-card" @click="go('exploration/customer360')">
@@ -45,6 +45,35 @@
         </a-card>
       </a-col>
     </a-row>
+
+    <!-- 指标中心入口 -->
+    <a-card class="module-card metrics-center-card" style="margin-top: 16px" @click="go('exploration/metrics-center')">
+      <a-row align="center" :gutter="24">
+        <a-col :span="6">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <icon-bookmark :size="28" style="color: #165dff" />
+            <span style="font-size: 16px; font-weight: 600;">指标中心</span>
+          </div>
+          <p style="color: #86909c; font-size: 13px; margin-top: 8px;">一处定义、全局使用 — 指标注册、地图浏览、详情与版本管理、看板</p>
+        </a-col>
+        <a-col :span="18">
+          <a-row :gutter="16">
+            <a-col :span="6">
+              <a-statistic title="已注册指标" :value="15" />
+            </a-col>
+            <a-col :span="6">
+              <a-statistic title="启用中" :value="12" :value-style="{ color: '#00b42a' }" />
+            </a-col>
+            <a-col :span="6">
+              <a-statistic title="草稿" :value="1" :value-style="{ color: '#ff7d00' }" />
+            </a-col>
+            <a-col :span="6">
+              <a-statistic title="归档" :value="2" :value-style="{ color: '#86909c' }" />
+            </a-col>
+          </a-row>
+        </a-col>
+      </a-row>
+    </a-card>
 
     <!-- 最近活动 -->
     <a-card title="最近探索活动" style="margin-top: 16px">
@@ -94,6 +123,11 @@ const goWorkbench = () => router.push('workbench')
 
     p { color: #86909c; font-size: 13px; margin: 8px 0 12px; }
     .stats { padding-top: 12px; border-top: 1px solid #f2f3f5; }
+  }
+
+  .metrics-center-card {
+    border: 1px solid #e8efff;
+    background: linear-gradient(135deg, #f0f7ff 0%, #ffffff 100%);
   }
 }
 </style>

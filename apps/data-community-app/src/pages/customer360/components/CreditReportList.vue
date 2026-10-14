@@ -51,7 +51,7 @@
               <IconSafe />
               负债率: {{ report.creditOverview?.creditUtilizationRate || 0 }}%
             </span>
-            <span class="info-item" :class="{ 'has-overdue': report.overdueInfo?.overdueCount > 0 }">
+            <span class="info-item" :class="{ 'has-overdue': (report.overdueInfo?.overdueCount ?? 0) > 0 }">
               <IconExclamationCircle />
               逾期: {{ report.overdueInfo?.overdueCount || 0 }}次
             </span>
@@ -128,7 +128,6 @@ import {
   IconSafe,
   IconExclamationCircle
 } from '@arco-design/web-vue/es/icon'
-import CreditReportDetail from './CreditReportDetail.vue'
 
 interface CreditReport {
   id: string

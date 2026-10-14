@@ -45,13 +45,13 @@
                 </a-select>
                 <a-button-group size="small">
                   <a-button 
-                    :type="viewMode === 'table' ? 'primary' : 'default'"
+                    :type="viewMode === 'table' ? 'primary' : 'secondary'"
                     @click="viewMode = 'table'"
                   >
                     表格
                   </a-button>
                   <a-button 
-                    :type="viewMode === 'timeline' ? 'primary' : 'default'"
+                    :type="viewMode === 'timeline' ? 'primary' : 'secondary'"
                     @click="viewMode = 'timeline'"
                   >
                     时间线

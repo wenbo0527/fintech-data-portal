@@ -69,7 +69,8 @@ export default defineConfig({
       { find: '@/api/dataModels', replacement: path.resolve(DFD, 'api/dataModels') },
       { find: '@/api/community', replacement: path.resolve(DFD, 'api/community') },
       { find: '@/api/metadata', replacement: path.resolve(DFD, 'api/metadata') },
-      { find: '@/api/search-shim', replacement: path.resolve(DFD, 'api/search-shim') },
+      // [重构方案 P0] search-shim 不再指向 dfd 空 stub，改命中 dca 真实实现（读 table-catalog-store）
+      { find: '@/api/search-shim', replacement: path.resolve(__dirname, 'src/api/search-shim.ts') },
 
       // dca 引用 @/utils/copy，但 dfd-app 下没有 copy.js；
       // 实际来自 packages/shared-utils（未构建 dist，直接指向源码）

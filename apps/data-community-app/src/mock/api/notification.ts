@@ -1,4 +1,8 @@
 // Notification Mock API
+// 2026-09 P4 重构：响应式化 + 逐条已读态 + localStorage 持久化，
+// 供 table-catalog-store / permission-store 的 notify() 与 MainLayout 铃铛、通知中心页共同消费。
+
+import { ref, computed, watch } from 'vue'
 
 interface NotificationItem {
   id: string
@@ -20,6 +24,7 @@ interface NotificationItem {
   viewCount: number
   important: boolean
   isTop: boolean
+  read: boolean
   category_color?: string
 }
 
@@ -42,7 +47,9 @@ interface Category {
   createTime: string
 }
 
-const notifications: NotificationItem[] = [
+const LS_KEY = 'dca-notification-v1'
+
+const seedNotifications: NotificationItem[] = [
   {
     id: '1',
     title: '系统维护通知',
@@ -62,7 +69,8 @@ const notifications: NotificationItem[] = [
     readCount: 1280,
     viewCount: 1280,
     important: true,
-    isTop: true
+    isTop: true,
+    read: false
   },
   {
     id: '2',
@@ -83,7 +91,8 @@ const notifications: NotificationItem[] = [
     readCount: 86,
     viewCount: 86,
     important: false,
-    isTop: false
+    isTop: false,
+    read: true
   },
   {
     id: '3',
@@ -104,9 +113,29 @@ const notifications: NotificationItem[] = [
     readCount: 1,
     viewCount: 1,
     important: false,
-    isTop: false
+    isTop: false,
+    read: false
   }
 ]
+
+function loadNotifications(): NotificationItem[] {
+  try {
+    const raw = localStorage.getItem(LS_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length) return parsed
+    }
+  } catch { /* corrupt json ignore */ }
+  return seedNotifications.map(n => ({ ...n }))
+}
+
+const notifications = ref<NotificationItem[]>(loadNotifications())
+
+watch(notifications, (list) => {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(list))
+  } catch { /* quota ignore */ }
+}, { deep: true })
 
 const operationLogs: OperationLog[] = [
   { id: 'LOG001', operator: '管理员', operation: '创建', action: 'create', time: '2025-01-15 09:00:00', operatedAt: '2025-01-15 09:00:00', detail: '创建通知' },
@@ -121,13 +150,31 @@ const categories: Category[] = [
   { id: 'CAT004', name: '安全告警', description: '安全风险与告警通知', color: 'red', notificationCount: 3, createTime: '2025-01-04 00:00:00' }
 ]
 
+// ── 响应式派生：铃铛未读数 / 分类未读数（MainLayout 与通知中心页共用）──
+
+/** 未读总数（仅统计已发布通知） */
+export const notificationUnread$ = computed(
+  () => notifications.value.filter(n => n.status === 'published' && !n.read).length
+)
+
+/** 按分类的未读数映射：{ CAT001: 2, ... } */
+export const notificationUnreadByCategory$ = computed(() => {
+  const map: Record<string, number> = {}
+  for (const n of notifications.value) {
+    if (n.status !== 'published' || n.read) continue
+    const key = n.categoryId || n.category
+    map[key] = (map[key] || 0) + 1
+  }
+  return map
+})
+
 export const NotificationAPI = {
   async getNotifications(params: any = {}) {
     const { page = 1, pageSize = 10, category, status, keyword } = params
-    let list = [...notifications]
+    let list = [...notifications.value]
     if (category) list = list.filter(n => n.categoryId === category || n.category === category)
     if (status) list = list.filter(n => n.status === status)
-    if (keyword) list = list.filter(n => n.title.includes(keyword))
+    if (keyword) list = list.filter(n => n.title.includes(keyword) || n.content.includes(keyword))
     const total = list.length
     const start = (page - 1) * pageSize
     const pageList = list.slice(start, start + pageSize)
@@ -135,26 +182,56 @@ export const NotificationAPI = {
   },
 
   async getNotification(id: string) {
-    const item = notifications.find(n => n.id === id || n.id === String(id))
-    return { success: true, data: item || notifications[0] }
+    const item = notifications.value.find(n => n.id === id || n.id === String(id))
+    return { success: true, data: item || notifications.value[0] }
   },
 
   async createNotification(data: any) {
-    const item = { ...data, id: String(notifications.length + 1), readCount: 0, viewCount: 0, attachments: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
-    notifications.unshift(item)
+    const ts = new Date().toISOString().replace('T', ' ').slice(0, 19)
+    const item: NotificationItem = {
+      attachments: [], readCount: 0, viewCount: 0, read: false,
+      createdAt: ts, updatedAt: ts,
+      ...data,
+      id: `n${Date.now()}`
+    }
+    notifications.value.unshift(item)
     return { success: true, data: item }
   },
 
   async updateNotification(id: string, data: any) {
-    const idx = notifications.findIndex(n => n.id === id || n.id === String(id))
-    if (idx > -1) Object.assign(notifications[idx], data, { updatedAt: new Date().toISOString() })
-    return { success: true, data: notifications[idx] }
+    const idx = notifications.value.findIndex(n => n.id === id || n.id === String(id))
+    if (idx > -1) Object.assign(notifications.value[idx], data, { updatedAt: new Date().toISOString() })
+    return { success: true, data: notifications.value[idx] }
   },
 
   async deleteNotification(id: string) {
-    const idx = notifications.findIndex(n => n.id === id || n.id === String(id))
-    if (idx > -1) notifications.splice(idx, 1)
+    const idx = notifications.value.findIndex(n => n.id === id || n.id === String(id))
+    if (idx > -1) notifications.value.splice(idx, 1)
     return { success: true }
+  },
+
+  /** 标记单条已读 */
+  markRead(id: string) {
+    const item = notifications.value.find(n => n.id === id)
+    if (item && !item.read) {
+      item.read = true
+      item.readCount += 1
+    }
+  },
+
+  /** 全部标记已读（仅已发布） */
+  markAllRead() {
+    notifications.value.forEach(n => {
+      if (n.status === 'published' && !n.read) {
+        n.read = true
+        n.readCount += 1
+      }
+    })
+  },
+
+  /** 未读总数（同步取值便捷方法） */
+  unreadTotal() {
+    return notificationUnread$.value
   }
 }
 

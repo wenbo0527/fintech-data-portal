@@ -82,26 +82,29 @@
             {{ record.operator }}
           </template>
         </a-table-column>
-        <a-table-column title="操作" fixed="right" :width="150">
+        <!--
+          v1.6.2 修: 操作列必须按 couponStatus 9 态实例态渲染
+          (原判断用 draft/online/active 模板态, 与 mock 数据 9 态不匹配 → 整列空白)
+        -->
+        <a-table-column title="操作" fixed="right" :width="180" align="center">
           <template #cell="{ record }">
-            <a-space>
-              <template v-if="record.status === 'draft'">
-                <a-button type="text" size="small" @click="handleEdit(record)">编辑</a-button>
-                <a-button type="text" size="small" @click="handleOnline(record)">上线</a-button>
-                <a-button type="text" size="small" status="danger" @click="handleDelete(record)">删除</a-button>
-              </template>
-              <template v-else-if="record.status === 'pending'">
-                <a-button type="text" size="small" @click="handleWithdraw(record)">撤回</a-button>
-              </template>
-              <template v-else-if="record.status === 'online' || record.status === 'active'">
-                <a-button type="text" size="small" @click="handleViewDetail(record)">详情</a-button>
-                <a-button type="text" size="small" @click="handlePause(record)">暂停</a-button>
-                <a-button type="text" size="small" status="warning" @click="handleSimulateJdCallback(record)">模拟京东回调</a-button>
-              </template>
+            <a-space :size="4">
+              <!-- 详情入口收敛为券名称链接（同为 handleViewDetail），操作列仅保留状态相关操作 -->
+              <a-button
+                v-if="record.status === 'pending'"
+                type="text" size="small" @click="handleWithdraw(record)">撤回</a-button>
+              <a-button
+                v-if="record.status === 'received'"
+                type="text" size="small" status="danger" @click="handleInvalidate(record)">作废</a-button>
+              <a-button
+                v-if="record.status === 'received' && record.grantChannel === 'simulate_jd'"
+                type="text" size="small" status="warning" @click="handleSimulateJdCallback(record)">模拟京东回调</a-button>
+              <a-button
+                v-if="String(record.status || '').startsWith('failed_')"
+                type="text" size="small" status="warning"
+                :loading="resendingId === record.instanceId" @click="handleResend(record)">补发</a-button>
             </a-space>
           </template>
-
-
         </a-table-column>
       </template>
 
@@ -111,153 +114,180 @@
 
     
     <!-- 创建券弹窗 -->
-    <a-modal v-model:visible="showCreateModal" title="创建券库存" @cancel="resetForm" @before-ok="handleSubmit" :footer="false"
-      :width="800">
-      <div class="create-coupon-container">
-        <div class="page-header">
-          <h2 class="page-title">创建券库存</h2>
-        </div>
+    <!-- 创建券库存抽屉（分组卡片：基本信息 + 券库存下发限制，与详情页同款蓝竖条样式） -->
+    <a-drawer v-model:visible="showCreateModal" title="创建券库存" :width="640" :ok-loading="createLoading"
+      ok-text="确认创建" cancel-text="取消" :on-before-ok="handleSubmit" @cancel="resetForm">
+      <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical">
+        <a-card class="section-card">
+          <div class="section-title">
+            <span>基本信息</span>
+          </div>
+          <a-grid :cols="2" :col-gap="16" :row-gap="0">
+            <a-grid-item>
+              <a-form-item field="templateId" label="券模版" required>
+                <template #help>
+                  <span class="help-text">选择合适的券模版作为基础配置</span>
+                </template>
+                <a-select v-model="formData.templateId" placeholder="请选择券模版" allow-clear
+                  @change="handleTemplateChange">
+                  <a-option v-for="template in templateOptions" :key="template.id" :value="template.id">
+                    {{ template.name }}
+                  </a-option>
+                </a-select>
+              </a-form-item>
+            </a-grid-item>
 
-        <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" :style="{ width: '100%', maxWidth: '720px' }">
-          <a-card class="section-card">
-            <a-grid :cols="2" :col-gap="16" :row-gap="16">
-              <a-grid-item>
-                <a-form-item field="templateId" label="券模版" required>
-                  <template #help>
-                    <span class="help-text">选择合适的券模版作为基础配置</span>
-                  </template>
-                  <a-select v-model="formData.templateId" placeholder="请选择券模版" allow-clear
-                    @change="handleTemplateChange">
-                    <a-option v-for="template in templateOptions" :key="template.id" :value="template.id">
-                      {{ template.name }}
-                    </a-option>
-                  </a-select>
-                </a-form-item>
-              </a-grid-item>
+            <a-grid-item>
+              <a-form-item field="operator" label="录入员" required>
+                <template #help>
+                  <span class="help-text">当前登录用户</span>
+                </template>
+                <a-input v-model="formData.operator" readonly disabled />
+              </a-form-item>
+            </a-grid-item>
 
-              <a-grid-item>
-                <a-form-item field="auditor" label="审核员" required>
-                  <template #help>
-                    <span class="help-text">选择负责审核该券的人员</span>
-                  </template>
-                  <a-select v-model="formData.auditor" placeholder="请选择审核员" allow-clear>
-                    <a-option v-for="user in auditorOptions" :key="user.id" :value="user.id">
-                      {{ user.name }}
-                    </a-option>
-                  </a-select>
-                </a-form-item>
-              </a-grid-item>
+            <a-grid-item>
+              <a-form-item field="auditor" label="审核员" required>
+                <template #help>
+                  <span class="help-text">选择负责审核该券的人员</span>
+                </template>
+                <a-select v-model="formData.auditor" placeholder="请选择审核员" allow-clear>
+                  <a-option v-for="user in auditorOptions" :key="user.id" :value="user.id">
+                    {{ user.name }}
+                  </a-option>
+                </a-select>
+              </a-form-item>
+            </a-grid-item>
 
-              <a-grid-item>
-                <a-form-item field="operator" label="录入员" required>
-                  <template #help>
-                    <span class="help-text">当前登录用户</span>
-                  </template>
-                  <a-input v-model="formData.operator" readonly disabled />
-                </a-form-item>
-              </a-grid-item>
+            <a-grid-item>
+              <a-form-item field="name" label="券名称" required>
+                <template #help>
+                  <span class="help-text">设置便于识别的券名称，最多50个字符</span>
+                </template>
+                <a-input v-model="formData.name" placeholder="请输入券名称" allow-clear />
+              </a-form-item>
+            </a-grid-item>
 
-              <a-grid-item>
-                <a-form-item field="name" label="券名称" required>
-                  <template #help>
-                    <span class="help-text">设置便于识别的券名称，最多50个字符</span>
-                  </template>
-                  <a-input v-model="formData.name" placeholder="请输入券名称" allow-clear />
-                </a-form-item>
-              </a-grid-item>
+            <a-grid-item>
+              <a-form-item field="totalCount" label="发放数量" required>
+                <template #help>
+                  <span class="help-text">设置本次创建的券的发放数量</span>
+                </template>
+                <a-input-number v-model="formData.totalCount" placeholder="请输入发放数量" :min="1" :max="999999"
+                  :step="1" hide-button style="width: 100%">
+                  <template #suffix>张</template>
+                </a-input-number>
+              </a-form-item>
+            </a-grid-item>
 
-              <a-grid-item>
-                <a-form-item field="totalCount" label="发放数量" required>
-                  <template #help>
-                    <span class="help-text">设置本次创建的券的发放数量</span>
-                  </template>
-                  <a-input-number v-model="formData.totalCount" placeholder="请输入发放数量" :min="1" :max="999999"
-                    :step="1" />
-                </a-form-item>
-              </a-grid-item>
-              <a-grid-item>
-                <a-form-item field="dailyLimit" label="单日发放上限">
-                  <template #help>
-                    <span class="help-text">选填项：设置每日最大发放数量</span>
-                  </template>
-                  <a-input-number v-model="formData.dailyLimit" placeholder="请输入单日发放上限" :min="1"
-                    :max="formData.totalCount" :step="1" />
-                </a-form-item>
-              </a-grid-item>
-              <a-grid-item>
-                <a-form-item field="weeklyLimit" label="单周发放上限">
-                  <template #help>
-                    <span class="help-text">选填项：设置每周最大发放数量</span>
-                  </template>
-                  <a-input-number v-model="formData.weeklyLimit" placeholder="请输入单周发放上限" :min="1"
-                    :max="formData.totalCount" :step="1" />
-                </a-form-item>
-              </a-grid-item>
-              <a-grid-item>
-                <a-form-item field="monthlyLimit" label="单月发放上限">
-                  <template #help>
-                    <span class="help-text">选填项：设置每月最大发放数量</span>
-                  </template>
-                  <a-input-number v-model="formData.monthlyLimit" placeholder="请输入单月发放上限" :min="1"
-                    :max="formData.totalCount" :step="1" />
-                </a-form-item>
-              </a-grid-item>
-              <a-grid-item :span="24">
-                <a-form-item field="usageScenarios" label="券使用场景">
-                  <template #help>
-                    <span class="help-text">选择券的适用场景，可多选</span>
-                  </template>
-                  <a-checkbox-group v-model="formData.usageScenarios">
-                    <a-checkbox value="batch_distribution">批量下发</a-checkbox>
-                    <a-checkbox value="telemarketing">电销使用</a-checkbox>
-                  </a-checkbox-group>
-                </a-form-item>
-              </a-grid-item>
-              <a-grid-item :span="24">
-                <a-alert type="info">
-                  <template #icon>
-                    <IconInfoCircle />
-                    【规则提示】相同名称的优惠券每个用户仅可领取一次
-                  </template>
-                  {{ formData.userLimitDesc }}
-                </a-alert>
-              </a-grid-item>
+            <a-grid-item>
+              <a-form-item field="usageScenarios" label="券使用场景">
+                <template #help>
+                  <span class="help-text">选择券的适用场景，可多选</span>
+                </template>
+                <a-checkbox-group v-model="formData.usageScenarios">
+                  <a-checkbox value="batch_distribution">批量下发</a-checkbox>
+                  <a-checkbox value="telemarketing">电销使用</a-checkbox>
+                </a-checkbox-group>
+              </a-form-item>
+            </a-grid-item>
 
-              <a-grid-item>
-                <a-form-item field="validityType" label="有效期类型" required>
-                  <template #help>
-                    <span class="help-text">选择券的有效期类型</span>
-                  </template>
-                  <a-radio-group v-model="formData.validityType">
-                    <a-radio value="absolute">绝对有效期</a-radio>
-                    <a-radio value="relative">相对有效期</a-radio>
-                  </a-radio-group>
-                </a-form-item>
-                <a-form-item field="validity" label="有效期" required>
-                  <template #help>
-                    <span class="help-text">设置券的可用时间范围</span>
-                  </template>
-                  <a-range-picker v-model="formData.validity" format="YYYY-MM-DD" style="width: 100%" />
-                </a-form-item>
-                <a-form-item v-if="formData.validityType === 'relative'" field="relativeDays" label="相对有效期" required>
-                  <template #help>
-                    <span class="help-text">设置券的相对有效期天数，最长不超过45天</span>
-                  </template>
-                  <a-input-number v-model="formData.relativeDays" :min="1" :max="45" :step="1" style="width: 100%" />
-                </a-form-item>
-              </a-grid-item>
-            </a-grid>
-          </a-card>
-        </a-form>
+            <a-grid-item :span="2">
+              <a-alert type="info" style="margin-bottom: 4px">
+                【规则提示】相同名称的优惠券每个用户仅可领取一次<span v-if="formData.userLimitDesc">；{{
+                  formData.userLimitDesc }}</span>
+              </a-alert>
+            </a-grid-item>
 
-        <div class="form-actions">
-          <a-space>
-            <a-button type="primary" @click="handleSubmit">确认创建</a-button>
-            <a-button @click="resetForm">取消</a-button>
-          </a-space>
-        </div>
-      </div>
-    </a-modal>
+            <a-grid-item :span="2">
+              <a-form-item field="validityType" label="有效期类型" required>
+                <template #help>
+                  <span class="help-text">选择券的有效期类型</span>
+                </template>
+                <a-radio-group v-model="formData.validityType">
+                  <a-radio value="absolute">绝对有效期</a-radio>
+                  <a-radio value="relative">相对有效期</a-radio>
+                </a-radio-group>
+              </a-form-item>
+            </a-grid-item>
+
+            <a-grid-item v-if="formData.validityType === 'absolute'" :span="2">
+              <a-form-item field="validity" label="有效期" required>
+                <template #help>
+                  <span class="help-text">设置券的可用时间范围</span>
+                </template>
+                <a-range-picker v-model="formData.validity" format="YYYY-MM-DD" style="width: 100%" />
+              </a-form-item>
+            </a-grid-item>
+
+            <a-grid-item v-else :span="2">
+              <a-form-item field="relativeDays" label="相对有效期" required>
+                <template #help>
+                  <span class="help-text">设置券的相对有效期天数，最长不超过45天</span>
+                </template>
+                <a-input-number v-model="formData.relativeDays" :min="1" :max="45" :step="1" style="width: 100%" />
+              </a-form-item>
+            </a-grid-item>
+          </a-grid>
+        </a-card>
+
+        <a-card class="section-card">
+          <div class="section-title">
+            <span>券库存下发限制</span>
+          </div>
+          <a-alert type="info" style="margin-bottom: 16px">
+            以上发放频率限制为券库存粒度的限制，针对单一用户的下发限制请在全局规则中控制
+          </a-alert>
+          <a-grid :cols="2" :col-gap="16" :row-gap="0">
+            <a-grid-item>
+              <a-form-item field="dailyLimit" label="单日发放上限">
+                <template #help>
+                  <span class="help-text">选填项：设置每日最大发放数量</span>
+                </template>
+                <a-input-number v-model="formData.dailyLimit" placeholder="请输入" :min="1" :max="formData.totalCount"
+                  :step="1" hide-button style="width: 100%">
+                  <template #suffix>张/日</template>
+                </a-input-number>
+              </a-form-item>
+            </a-grid-item>
+            <a-grid-item>
+              <a-form-item field="weeklyLimit" label="单周发放上限">
+                <template #help>
+                  <span class="help-text">选填项：设置每周最大发放数量</span>
+                </template>
+                <a-input-number v-model="formData.weeklyLimit" placeholder="请输入" :min="1" :max="formData.totalCount"
+                  :step="1" hide-button style="width: 100%">
+                  <template #suffix>张/周</template>
+                </a-input-number>
+              </a-form-item>
+            </a-grid-item>
+            <a-grid-item>
+              <a-form-item field="monthlyLimit" label="单月发放上限">
+                <template #help>
+                  <span class="help-text">选填项：设置每月最大发放数量</span>
+                </template>
+                <a-input-number v-model="formData.monthlyLimit" placeholder="请输入" :min="1" :max="formData.totalCount"
+                  :step="1" hide-button style="width: 100%">
+                  <template #suffix>张/月</template>
+                </a-input-number>
+              </a-form-item>
+            </a-grid-item>
+          </a-grid>
+        </a-card>
+      </a-form>
+    </a-drawer>
+
+    <!-- 券库存详情抽屉（复用 InventoryDetailPanel，与 /benefit/management/detail 路由页同一组件） -->
+    <a-drawer
+      v-model:visible="detailDrawerVisible"
+      :width="900"
+      placement="right"
+      :title="detailRecord?.couponName ? `券库存详情 - ${detailRecord.couponName}` : '券库存详情'"
+      :footer="false"
+      unmountOnClose
+    >
+      <InventoryDetailPanel v-if="detailRecord" :record="detailRecord" />
+    </a-drawer>
   </div>
 </template>
 
@@ -267,25 +297,28 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
-import { IconPlus, IconInfoCircle, IconCheck } from '@arco-design/web-vue/es/icon'
+import { IconPlus, IconCheck } from '@arco-design/web-vue/es/icon'
 import { useUserStore } from '@/stores/user'
-import { couponMockData, templateMockData } from '@/mock/coupon'
+import { couponMockData } from '@/mock/coupon'
 import { inventoryAPI } from '@/api/coupon'
 import StatusTag from '@/components/common/StatusTag.vue'
 import DateUtils from '@/utils/dateUtils'
+import InventoryDetailPanel from './components/InventoryDetailPanel.vue'
 
 /**
- * 状态筛选下拉 (v1.2.8 5/26 教训链修复)
- * 模板状态机不含 'locked' / 'used' (PRD §11.1 3 态 + 扩展)
- * 保留 'draft' / 'pending' / 'online' / 'expired' / 'invalidated' 4+1 混合态
- * 本列接 StatusTag dictKey="couponStatus" (types 已扩 9 态支持)
+ * 状态筛选下拉 (v1.2.8 统一收口)
+ * 本页表格数据源 = couponMockData (MockCoupon 实例态),与 StatusTag dictKey="couponStatus" 严格对齐 9 态
  */
 const statusFilters = [
-  { text: '草稿', value: 'draft' },
-  { text: '待审核', value: 'pending' },
-  { text: '生效中', value: 'online' },
-  { text: '已过期', value: 'expired' },
+  { text: '待确认', value: 'pending' },
+  { text: '未使用', value: 'received' },
   { text: '已作废', value: 'invalidated' },
+  { text: '已过期', value: 'expired' },
+  { text: '核心拒收失败', value: 'failed_1001_core_rejected' },
+  { text: '超时失败', value: 'failed_1002_timeout' },
+  { text: '存量作废失败', value: 'failed_1003_invalidation' },
+  { text: '推送失败', value: 'failed_1004_kafka_push' },
+  { text: '消费失败', value: 'failed_1005_kafka_consume' }
 ]
 
 // 6/9 v1.3.1 教训链修复: 补 couponType 中英映射（消除 v-if 中文枚举静默失败）
@@ -310,13 +343,9 @@ const handleBatchCreate = () => {
 const tableData = ref([])
 const loading = ref(false)
 const searchKeyword = ref('')
-const detailModalVisible = ref(false)
-const currentDetail = ref([])
-const instanceParams = ref([])
-const baseParams = ref([])
-const interestFreeParams = ref([])
-const discountParams = ref([])
-const lockParams = ref([])
+// 详情抽屉状态（复用 InventoryDetailPanel）
+const detailDrawerVisible = ref(false)
+const detailRecord = ref(null)
 
 // 快速审批相关
 const quickApprovalLoading = ref(false)
@@ -384,13 +413,8 @@ const formRef = ref(null)
 const templateOptions = ref([])
 
 const handleViewDetail = (record) => {
-  router.push({
-    path: '/benefit/management/detail',
-    query: {
-      templateId: record.templateId,
-      instanceId: record.id
-    }
-  })
+  detailRecord.value = record
+  detailDrawerVisible.value = true
 }
 
 // 审批弹窗
@@ -594,10 +618,11 @@ const resetForm = () => {
   showCreateModal.value = false
 }
 
-// 提交表单
+// 提交表单（作为 drawer before-ok：返回 false 阻止关闭）
 const handleSubmit = async () => {
-  const { error } = await formRef.value.validate()
-  if (error) return false
+  // Arco validate() 直接 resolve 错误对象（成功时为 undefined）
+  const errors = await formRef.value?.validate()
+  if (errors) return false
 
   try {
     // TODO: 调用接口提交数据
@@ -611,22 +636,39 @@ const handleSubmit = async () => {
   }
 }
 
-// 暂停/启用券
-const handlePause = (record) => {
-  const action = record.status === 'paused' ? '启用' : '暂停'
+// 作废券实例（PRD §11.3：仅 received 未使用可作废，作废后记 invalidated_time）
+const handleInvalidate = (record) => {
   Modal.warning({
-    title: `确认${action}`,
-    content: `确定要${action}「${record.couponName}」吗？`,
-    onOk: async () => {
-      try {
-        // TODO: 调用接口更新状态
-        Message.success(`${action}成功`)
-        fetchData()
-      } catch (error) {
-        Message.error(`${action}失败`)
-      }
+    title: '确认作废',
+    content: `确定要作废「${record.couponName}」吗？作废后该券实例不可恢复。`,
+    okText: '确认作废',
+    cancelText: '取消',
+    onOk: () => {
+      record.status = 'invalidated'
+      record.invalidated_time = new Date().toLocaleString('zh-CN', { hour12: false })
+      Message.success('作废成功')
     }
   })
+}
+
+// 补发（仅 failed_* 状态可操作，走 inventoryAPI.resendCoupon）
+const resendingId = ref('')
+const handleResend = async (record) => {
+  resendingId.value = record.instanceId
+  try {
+    const res = await inventoryAPI.resendCoupon(record.instanceId)
+    if (res.code === 200) {
+      Message.success(`券 ${record.couponId} 补发成功`)
+      await fetchData()
+    } else {
+      Message.error(res.message || '补发失败')
+    }
+  } catch (error) {
+    console.error('补发失败:', error)
+    Message.error('补发失败，请重试')
+  } finally {
+    resendingId.value = ''
+  }
 }
 
 // 模拟京东回调
@@ -638,10 +680,13 @@ const handleSimulateJdCallback = (record) => {
     cancelText: '取消',
     onOk: async () => {
       try {
-        // 模拟更新状态
+        // 9 态无"已核销"实例态（types/api/coupon.ts §11.3），核销只体现在库存计数上
         const idx = tableData.value.findIndex(r => r.id === record.id)
         if (idx > -1) {
-          tableData.value[idx].status = '已核销'
+          const row = tableData.value[idx]
+          row.used = (row.used || 0) + 1
+          row.verified = (row.verified || 0) + 1
+          row.claimed = Math.max((row.claimed || 0) - 1, 0)
         }
         Message.success('京东回调模拟成功，券已核销')
       } catch (error) {
@@ -650,33 +695,6 @@ const handleSimulateJdCallback = (record) => {
     }
   })
 }
-
-// 编辑券
-const handleEdit = (record) => {
-  // TODO: 跳转到编辑页面
-  router.push(`/marketing/benefit/management/edit/${record.id}`);
-};
-
-// 上线券
-const handleOnline = (record) => {
-  Modal.confirm({
-    title: '确认上线',
-    content: `
-      确定要上线「${record.couponName}」吗？
-        审核人：${auditorOptions.value.find(a => a.id === record.auditor)?.name || '未指定'}
-      
-    `,
-    onOk: async () => {
-      try {
-        // TODO: 调用上线接口
-        Message.success('上线成功');
-        fetchData();
-      } catch (error) {
-        Message.error('上线失败');
-      }
-    }
-  });
-};
 
 // 撤回审核
 const handleWithdraw = (record) => {
@@ -716,67 +734,6 @@ const handleReject = (record) => {
 }
 
 // 删除券
-// 处理行双击事件
-const handleRowDblClick = (record) => {
-  currentDetail.value = record
-  detailModalVisible.value = true
-  
-  // 获取关联的券模版信息
-  const template = templateMockData.find(t => t.id === record.templateId)
-  
-  instanceParams.value = [
-    { label: '券ID', value: record.id },
-    { label: '券名称', value: record.couponName },
-    { label: '券类型', value: record.type },
-    { label: '关联模版', value: template?.name || '无' },
-    { label: '状态', value: record.status },
-    { label: '创建时间', value: record.createTime },
-    { label: '录入员', value: record.operator },
-    { label: '审核员', value: record.auditor },
-    { label: '模版描述', value: template?.description || '无' },
-    { label: '适用产品', value: template?.products?.join(', ') || '无' }
-  ]
-  
-  instanceParams.value = [
-    { label: '券ID', value: record.id },
-    { label: '券名称', value: record.couponName },
-    { label: '券类型', value: record.type },
-    { label: '关联模版', value: template?.name || '无' },
-    { label: '状态', value: record.status },
-    { label: '创建时间', value: record.createTime },
-    { label: '录入员', value: record.operator },
-    { label: '审核员', value: record.auditor },
-    { label: '模版描述', value: template?.description || '无' },
-    { label: '适用产品', value: template?.products?.join(', ') || '无' },
-    { label: '还款方式', value: template?.repaymentMethods?.join(', ') || '无' }
-  ]
-  
-  baseParams.value = [
-    { label: '总数量', value: record.totalCount },
-    { label: '库存', value: record.stock },
-    { label: '未领取', value: record.unclaimed },
-    { label: '已领取', value: record.claimed },
-    { label: '已锁定', value: record.locked },
-    { label: '已核销', value: record.verified },
-    { label: '已过期', value: record.expired },
-    { label: '已作废', value: record.invalid },
-    { label: '使用规则', value: record.rules },
-    { label: '有效期', value: `${record.validityStartTime} - ${record.validityEndTime}` }
-  ]
-  
-  if (record.type === '免息券') {
-    interestFreeParams.value = [
-      { label: '免息天数', value: record.templateId === 1 ? 30 : 90 },
-      { label: '借款金额范围', value: `${record.templateId === 1 ? '10,000-100,000' : '50,000-200,000'}` }
-    ]
-  } else if (record.type === '折扣券') {
-    discountParams.value = [
-      { label: '折扣率', value: record.templateId === 3 ? '8折' : '7折' },
-      { label: '借款金额范围', value: record.templateId === 3 ? '5,000-50,000' : '100,000-500,000' }
-    ]
-  }
-}
-
 const handleDelete = (record) => {
   Modal.confirm({
     title: '确认删除',
@@ -842,5 +799,32 @@ onMounted(() => {
   margin-bottom: 16px;
   display: flex;
   justify-content: space-between;
+}
+
+/* 创建抽屉分组卡片（与详情页同款蓝竖条视觉语言） */
+.section-card {
+  margin-bottom: 16px;
+  border: none;
+}
+
+.section-card :deep(.arco-card-body) {
+  padding: 16px;
+}
+
+.section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-1);
+  border-left: 3px solid rgb(var(--primary-6, 22, 93, 255));
+  padding-left: 8px;
+}
+
+.help-text {
+  font-size: 12px;
+  color: var(--color-text-3);
 }
 </style>

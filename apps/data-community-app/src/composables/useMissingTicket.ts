@@ -20,6 +20,7 @@
  */
 import { ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
+import { useRouter } from 'vue-router'
 
 export interface TicketContext {
   /** 资产类型：table/metric/external/concept/variable/feature 等 */
@@ -30,7 +31,10 @@ export interface TicketContext {
   pageSource?: string
 }
 
+const TICKET_KEY = 'dca-missing-tickets'
+
 export function useMissingTicket() {
+  const router = useRouter()
   const showMissingTicketModal = ref(false)
   const ticketContext = ref<TicketContext>({})
 
@@ -48,10 +52,27 @@ export function useMissingTicket() {
     showMissingTicketModal.value = true
   }
 
-  /** 提交回调 —— mock 模式仅提示成功 */
-  const handleMissingTicketConfirm = (_data: any) => {
-    // 这里可以调用API提交工单
-    Message.success('缺失工单已提交，我们将尽快为您补齐')
+  /** 提交回调 —— 保存到 localStorage 并跳转通知中心查看进度 */
+  const handleMissingTicketConfirm = (data: any) => {
+    // 保存工单到 localStorage
+    let list: any[] = []
+    try {
+      const raw = localStorage.getItem(TICKET_KEY)
+      const parsed = raw ? JSON.parse(raw) : []
+      if (Array.isArray(parsed)) list = parsed
+    } catch {
+      list = []
+    }
+    list.unshift({ ...data, createdAt: new Date().toISOString() })
+    localStorage.setItem(TICKET_KEY, JSON.stringify(list.slice(0, 50)))
+
+    Message.success('工单已提交，即将跳转通知中心查看进度')
+    showMissingTicketModal.value = false
+
+    // 延迟跳转，让用户看到提示
+    setTimeout(() => {
+      router.push({ name: 'notifications' })
+    }, 800)
   }
 
   return {

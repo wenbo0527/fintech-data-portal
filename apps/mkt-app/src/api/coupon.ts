@@ -246,6 +246,19 @@ export const inventoryAPI: InventoryAPI = {
         pagination: { page, pageSize, total: 0, totalPages: 0 }
       }
     }
+  },
+
+  async resendCoupon(instanceId: string) {
+    await delay(400)
+    const inv = _runtimeInventories.find(i => i.instanceId === instanceId)
+    if (!inv) {
+      return { code: 404, message: '券实例不存在', data: null }
+    }
+    if (!inv.status?.startsWith('failed_')) {
+      return { code: 400, message: '当前状态不支持补发', data: null }
+    }
+    inv.status = 'received'
+    return { code: 200, message: '补发成功', data: { success: true, instanceId } }
   }
 }
 

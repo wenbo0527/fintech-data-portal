@@ -180,7 +180,7 @@
         <div class="rules-section">
           <div class="rules-header">
             <span class="rules-tip">
-              可添加多条校验规则，每条规则独立配置校验类型与字段，校验方式：count（条数）/ sum（金额汇总）
+              可添加多条校验规则，每条规则独立配置校验类型、质量维度与字段；校验方式：count（条数）/ sum（金额汇总）
             </span>
             <a-button
               size="small"
@@ -223,10 +223,26 @@
                 </a-col>
                 <a-col :span="6">
                   <a-form-item label="校验类型" :field="`rules[${index}].type`" required>
-                    <a-radio-group v-model="rule.type">
+                    <a-radio-group v-model="rule.type" @change="onRuleTypeChange(rule)">
                       <a-radio value="count">count 条数</a-radio>
                       <a-radio value="sum">sum 汇总</a-radio>
                     </a-radio-group>
+                  </a-form-item>
+                </a-col>
+                <a-col :span="6">
+                  <a-form-item label="质量维度" :field="`rules[${index}].dimension`" required>
+                    <a-select v-model="rule.dimension" placeholder="选择质量维度">
+                      <a-option
+                        v-for="dim in QUALITY_DIMENSIONS"
+                        :key="dim"
+                        :value="dim"
+                      >
+                        {{ QUALITY_DIM_LABELS[dim] }}
+                      </a-option>
+                    </a-select>
+                    <template #extra>
+                      <span class="form-hint">用于五维质量评分回流资产目录</span>
+                    </template>
                   </a-form-item>
                 </a-col>
               </a-row>
@@ -334,7 +350,12 @@ import {
   getTableFields,
   getQualityTaskDetail,
   createQualityTask,
-  updateQualityTask
+  updateQualityTask,
+  QUALITY_DIMENSIONS,
+  QUALITY_DIM_LABELS,
+  RULE_TYPE_DEFAULT_DIM,
+  dimOfRule,
+  type QualityDimension
 } from '../../../../mock/api/dataQuality'
 
 const router = useRouter()
@@ -361,6 +382,7 @@ const formData = reactive({
     id?: string
     name: string
     type: 'count' | 'sum'
+    dimension: QualityDimension
     sourceField: string | null
     targetField: string | null
   }>,
@@ -497,9 +519,15 @@ const addRule = () => {
     _uid: `ru_${ruleUidCounter.value++}`,
     name: '',
     type: 'count',
+    dimension: 'consistency',
     sourceField: null,
     targetField: null
   })
+}
+
+// 切换校验类型时，未选维度按类型给一个默认维度（count→一致性，sum→准确性）
+const onRuleTypeChange = (rule: { type: 'count' | 'sum'; dimension: QualityDimension }) => {
+  if (!rule.dimension) rule.dimension = RULE_TYPE_DEFAULT_DIM[rule.type]
 }
 
 const removeRule = (index: number) => {
@@ -532,6 +560,10 @@ const handleSave = async () => {
       Message.error(`规则${i + 1}: 请填写规则名称`)
       return
     }
+    if (!r.dimension) {
+      Message.error(`规则${i + 1}: 请选择质量维度`)
+      return
+    }
     if (!r.sourceField || !r.targetField) {
       Message.error(`规则${i + 1}: 请选择源端和目标端校验字段`)
       return
@@ -551,6 +583,7 @@ const handleSave = async () => {
         id: r.id,
         name: r.name,
         type: r.type,
+        dimension: r.dimension,
         sourceField: r.sourceField,
         targetField: r.targetField
       })),
@@ -589,6 +622,7 @@ const loadTaskData = async () => {
         id: r.id,
         name: r.name,
         type: r.type,
+        dimension: dimOfRule(r),
         sourceField: r.sourceField,
         targetField: r.targetField
       })),

@@ -215,6 +215,18 @@ export interface MockCoupon {
   auditor?: string
   /** 总发放数量（详情弹窗硬编码，=stock） */
   totalCount?: number
+  /** 单日发放上限（创建券库存表单沉淀字段） */
+  dailyLimit?: number | null
+  /** 单周发放上限（创建券库存表单沉淀字段） */
+  weeklyLimit?: number | null
+  /** 单月发放上限（创建券库存表单沉淀字段） */
+  monthlyLimit?: number | null
+  /** 券使用场景（创建券库存表单沉淀字段：batch_distribution 批量下发 / telemarketing 电销使用） */
+  usageScenarios?: string[]
+  /** 有效期类型（创建券库存表单沉淀字段：absolute 绝对有效期 / relative 相对有效期） */
+  validityType?: 'absolute' | 'relative'
+  /** 相对有效期天数（validityType=relative 时生效） */
+  relativeDays?: number
   /** 已核销（详情弹窗硬编码，=used） */
   verified?: number
   /** 使用规则（详情弹窗硬编码） */
@@ -1514,6 +1526,28 @@ export const couponMockData: MockCoupon[] = [
     failure_reason: '待核心方确认（建议: 系统异常，请联系客服）',
   },
 ]
+
+/**
+ * mock 沉淀补齐：创建券库存表单含 单日/单周/单月发放上限 字段，
+ * 实例数据未显式声明时按发放总量比例生成默认上限（日=总量/10、周=总量/2、月=总量*2），
+ * 与"创建券库存"默认值口径一致（1000 张 → 100/500/2000）。已有显式值不覆盖。
+ */
+couponMockData.forEach((c) => {
+  const total = c.totalCount ?? c.stock ?? 0
+  if (c.dailyLimit == null) c.dailyLimit = Math.max(1, Math.round(total / 10))
+  if (c.weeklyLimit == null) c.weeklyLimit = Math.max(1, Math.round(total / 2))
+  if (c.monthlyLimit == null) c.monthlyLimit = Math.max(1, total * 2)
+  // 券使用场景 / 有效期类型：创建表单必填项，实例未显式声明时按默认口径补齐
+  if (!c.usageScenarios) c.usageScenarios = ['batch_distribution']
+  if (!c.validityType) {
+    if (c.startTime && c.endTime) {
+      c.validityType = 'absolute'
+    } else {
+      c.validityType = 'relative'
+      if (c.relativeDays == null) c.relativeDays = Number(String(c.validity ?? '').replace(/\D/g, '')) || 30
+    }
+  }
+})
 
 export default {
   templateMockData,

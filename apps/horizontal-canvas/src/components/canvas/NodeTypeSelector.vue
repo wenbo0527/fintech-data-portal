@@ -42,7 +42,7 @@ const NODE_TYPE_CATEGORIES = [
   { key: 'business', title: '业务逻辑', types: ['crowd-split', 'event-split', 'ab-test', 'wait', 'end'] },
   { key: 'outreach', title: '触达', types: ['sms', 'ai-call', 'manual-call', 'app-push', 'wechat-push'] },
   { key: 'benefit', title: '权益', types: ['benefit'] },
-  { key: 'advanced', title: '高级', types: ['sms-touch-combo', 'ai-touch-combo'] }
+  { key: 'advanced', title: '高级', types: ['sms-touch-combo', 'ai-touch-combo', 'benefit-touch-combo'] }
 ]
 
 const ICON_NAME_MAP = {
@@ -58,7 +58,8 @@ const ICON_NAME_MAP = {
   'wechat-push': 'IconPublic',
   'benefit': 'IconGift',
   'sms-touch-combo': 'IconSend',
-  'ai-touch-combo': 'IconPhone'
+  'ai-touch-combo': 'IconPhone',
+  'benefit-touch-combo': 'IconGift'
 }
 
 const searchKeyword = ref('')

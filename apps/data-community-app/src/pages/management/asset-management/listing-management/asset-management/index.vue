@@ -96,8 +96,8 @@
       </template>
 
       <template #status="{ record }">
-        <a-tag :color="statusColor[record.status]">
-          {{ statusLabel[record.status] }}
+        <a-tag :color="statusColor[record.status as ShelfStatus]">
+          {{ statusLabel[record.status as ShelfStatus] }}
         </a-tag>
       </template>
 
@@ -194,8 +194,8 @@
           <a-radio-group v-model="syncForm.scope">
             <a-radio value="all">全部资产（{{ assets.length }} 条）</a-radio>
             <a-radio value="stale">仅同步过期资产（{{ staleAssets.length }} 条）</a-radio>
-            <a-radio value="hive_compute">仅 HIVE 计算集群（{{ countByCluster('hive_compute') }} 条）</a-radio>
-            <a-radio value="hive_analysis">仅 HIVE 分析集群（{{ countByCluster('hive_analysis') }} 条）</a-radio>
+            <a-radio value="hive_compute">仅 HIVE 计算集群（{{ countByCluster('compute') }} 条）</a-radio>
+            <a-radio value="hive_analysis">仅 HIVE 分析集群（{{ countByCluster('analysis') }} 条）</a-radio>
           </a-radio-group>
         </a-form-item>
         <a-form-item label="同步目标">

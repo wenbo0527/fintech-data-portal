@@ -1,156 +1,187 @@
 <template>
-  <!-- @prd: data-standard -->
+  <!-- @prd: data-standard.words -->
+  <!--
+    2026-10-13 按评审结论重构：
+      1. 只读展示页(V2)：删除新建/编辑/删除，维护统一走「全量导入」(U1-U4)。
+      2. 数据源上收为 WordStore（与 standard-store 的 INITIAL_WORDS 同源），不再页内内联 mock。
+      3. R20 展示字段补全：中英文名、缩写、同义词、是否分类词、备注（原实现缺「备注」）。
+      4. R21 关键词真实过滤中文名/英文名/缩写（原实现只弹 Message），V1 更新时间倒序 + 真实分页。
+  -->
   <div class="words-page">
     <a-card class="general-card" title="标准单词管理">
-      <a-row style="margin-bottom: 16px">
+      <a-row style="margin-bottom: 12px">
         <a-col :span="12">
           <a-space>
-            <a-button type="primary" @click="handleCreate">
-              <template #icon><icon-plus /></template>
-              新建标准单词
-            </a-button>
-            <a-button @click="handleImport">
-              <template #icon><icon-import /></template>
-              批量导入
-            </a-button>
+            <a-tag color="arcoblue">共 {{ allWords.length }} 个标准单词</a-tag>
+            <a-tag v-if="tableData.length !== allWords.length" color="orange">
+              筛选后 {{ tableData.length }} 个
+            </a-tag>
           </a-space>
         </a-col>
         <a-col :span="12" style="text-align: right">
-          <a-input-search
-            v-model="searchKey"
-            placeholder="搜索中文/英文名称/缩写"
-            style="width: 300px"
-            allow-clear
-            @search="handleSearch"
-          />
+          <a-space>
+            <!-- 权限约束:仅数据标准管理员(数据治理者)可下载模板与执行全量上传,其余角色只读 -->
+            <a-tooltip v-if="!canMaintain" content="当前角色无维护权限，仅数据标准管理员可下载模板并执行全量上传（可在右上角切换「数据治理者」角色）">
+              <a-button type="primary" disabled>
+                <template #icon><icon-import /></template>
+                全量导入
+              </a-button>
+            </a-tooltip>
+            <a-button v-else type="primary" @click="importVisible = true">
+              <template #icon><icon-import /></template>
+              全量导入
+            </a-button>
+            <a-select
+              v-model="filterClass"
+              placeholder="是否分类词"
+              allow-clear
+              style="width: 140px"
+            >
+              <a-option :value="true">分类词</a-option>
+              <a-option :value="false">普通词</a-option>
+            </a-select>
+            <a-input-search
+              v-model="searchKey"
+              placeholder="搜索中文名 / 英文名 / 缩写"
+              style="width: 280px"
+              allow-clear
+            />
+            <a-button @click="clearSearch">
+              <template #icon><icon-refresh /></template>
+            </a-button>
+          </a-space>
         </a-col>
       </a-row>
 
-      <a-table :data="tableData" :pagination="pagination" @page-change="handlePageChange">
+      <a-table
+        :data="tableData"
+        row-key="abbreviation"
+        :pagination="pagination"
+        :scroll="{ x: 1180 }"
+        stripe
+        size="medium"
+        @page-change="handlePageChange"
+      >
         <template #columns>
-          <a-table-column title="单词中文名称" data-index="chineseName" width="150" />
-          <a-table-column title="单词英文名称" data-index="englishName" width="150" />
-          <a-table-column title="单词英文缩写" data-index="abbreviation" width="150" />
-          <a-table-column title="词性/分类" data-index="type" width="120">
-             <template #cell="{ record }">
-               <a-tag v-if="record.type === 'class'" color="purple">分类词</a-tag>
-               <a-tag v-else color="blue">普通词</a-tag>
-             </template>
-          </a-table-column>
-          <a-table-column title="同义词" data-index="synonyms" width="200">
-             <template #cell="{ record }">
-               {{ record.synonyms || '-' }}
-             </template>
-          </a-table-column>
-          <a-table-column title="更新时间" data-index="updateTime" width="180" />
-          <a-table-column title="操作" width="200" fixed="right" align="center">
+          <a-table-column title="单词中文名称" data-index="chineseName" :width="150" />
+          <a-table-column title="单词英文名称" data-index="englishName" :width="180" />
+          <a-table-column title="单词英文缩写" data-index="abbreviation" :width="150">
             <template #cell="{ record }">
-              <a-space>
-                <a-button type="text" size="small" @click="handleEdit(record)">编辑</a-button>
-                <a-popconfirm content="确定要删除该标准单词吗？" @ok="handleDelete(record)">
-                  <a-button type="text" status="danger" size="small">删除</a-button>
-                </a-popconfirm>
-              </a-space>
+              <span class="mono">{{ record.abbreviation }}</span>
             </template>
           </a-table-column>
+          <a-table-column title="同义词" data-index="synonyms" :width="220">
+            <template #cell="{ record }">
+              <span>{{ record.synonyms || '-' }}</span>
+            </template>
+          </a-table-column>
+          <a-table-column title="是否分类词" data-index="isClassWord" :width="120" align="center">
+            <template #cell="{ record }">
+              <a-tag :color="record.isClassWord ? 'purple' : 'gray'">
+                {{ record.isClassWord ? '分类词' : '普通词' }}
+              </a-tag>
+            </template>
+          </a-table-column>
+          <a-table-column title="备注" data-index="remark" :width="300" ellipsis tooltip>
+            <template #cell="{ record }">
+              <span>{{ record.remark || '-' }}</span>
+            </template>
+          </a-table-column>
+          <a-table-column title="更新时间" data-index="updateTime" :width="180" />
         </template>
       </a-table>
     </a-card>
 
-    <!-- 批量导入弹窗 -->
+    <!-- 全量上传通道(U1-U4 / E7) -->
     <DataStandardImportModal
       v-model:visible="importVisible"
-      title="批量导入标准单词"
+      title="全量导入标准单词"
       type="words"
-      description="请下载标准单词模板，填写完成后上传。系统将自动解析中英文名称及其缩写命名规范。"
+      description="请下载标准单词模板，填写完成后上传；以「单词英文缩写」为唯一键（R23/R24）。"
       @success="handleImportSuccess"
     />
   </div>
 </template>
 
-<script setup>
-import { ref, reactive } from 'vue'
+<script setup lang="ts">
+import { ref, computed, watch, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
+import { useRoleStore } from '@/stores-dca/role'
 import DataStandardImportModal from '../../../../components/modals/DataStandardImportModal.vue'
+import { WordStore, type StandardWord } from '@/mock-shared/standard-store'
 
-const searchKey = ref('')
+const route = useRoute()
+const roleStore = useRoleStore()
+
+// 三-关键约束:权限-数据标准管理员(演示口径映射到「数据治理者」角色)才可下载模板与全量上传
+const canMaintain = computed(() => roleStore.currentRole === 'data_admin')
+
+// 支持带 ?keyword=CUST 直达定位（R05 到达态）
+const searchKey = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
+const filterClass = ref<boolean | undefined>(undefined)
 const importVisible = ref(false)
-const pagination = reactive({
-  current: 1,
-  pageSize: 10,
-  total: 40
+const allWords = ref<StandardWord[]>([])
+const currentPage = ref(1)
+
+function refresh() {
+  allWords.value = WordStore.getWords()
+}
+
+onMounted(refresh)
+
+// R21:中文名 / 英文名 / 缩写 三项模糊
+const tableData = computed(() => {
+  const k = searchKey.value.trim().toLowerCase()
+  const list = allWords.value.filter(w => {
+    if (
+      k &&
+      ![w.chineseName, w.englishName, w.abbreviation].some(v =>
+        String(v || '').toLowerCase().includes(k)
+      )
+    ) {
+      return false
+    }
+    if (filterClass.value !== undefined && w.isClassWord !== filterClass.value) return false
+    return true
+  })
+  // V1:默认按最近更新时间倒序
+  return [...list].sort((a, b) => (b.updateTime || '').localeCompare(a.updateTime || ''))
 })
 
-const tableData = ref([
-  {
-    id: 1,
-    chineseName: '客户',
-    englishName: 'Customer',
-    abbreviation: 'CUST',
-    type: 'noun',
-    synonyms: '用户, 消费者',
-    updateTime: '2023-07-10 10:00:00'
-  },
-  {
-    id: 2,
-    chineseName: '账户',
-    englishName: 'Account',
-    abbreviation: 'ACCT',
-    type: 'noun',
-    synonyms: '户头',
-    updateTime: '2023-07-11 11:00:00'
-  },
-  {
-    id: 3,
-    chineseName: '代码',
-    englishName: 'Code',
-    abbreviation: 'CD',
-    type: 'class',
-    synonyms: '编号',
-    updateTime: '2023-07-12 14:00:00'
-  },
-  {
-    id: 4,
-    chineseName: '日期',
-    englishName: 'Date',
-    abbreviation: 'DT',
-    type: 'class',
-    synonyms: '时间',
-    updateTime: '2023-07-13 16:00:00'
-  }
-])
+const pagination = computed(() => ({
+  current: currentPage.value,
+  pageSize: 10,
+  total: tableData.value.length,
+  showTotal: true,
+  sizeCanChange: false
+}))
 
-const handleSearch = () => {
-  Message.info(`搜索：${searchKey.value}`)
+watch([searchKey, filterClass], () => {
+  currentPage.value = 1
+})
+
+function handlePageChange(page: number) {
+  currentPage.value = page
 }
 
-const handlePageChange = (page) => {
-  pagination.current = page
+function clearSearch() {
+  searchKey.value = ''
+  filterClass.value = undefined
 }
 
-const handleCreate = () => {
-  Message.info('点击新建标准单词')
-}
-
-const handleImport = () => {
-  importVisible.value = true
-}
-
-const handleImportSuccess = () => {
-  Message.success('标准单词列表已更新')
-}
-
-const handleEdit = (record) => {
-  Message.info(`编辑：${record.chineseName}`)
-}
-
-const handleDelete = (record) => {
-  Message.success(`已删除：${record.chineseName}`)
+function handleImportSuccess() {
+  refresh()
+  Message.success('标准单词列表已按上传文件全量覆盖')
 }
 </script>
 
-<style scoped>
+<style lang="scss" scoped>
 .words-page {
   padding: 20px;
+
+  .mono {
+    font-family: 'Menlo', 'Consolas', monospace;
+  }
 }
 </style>

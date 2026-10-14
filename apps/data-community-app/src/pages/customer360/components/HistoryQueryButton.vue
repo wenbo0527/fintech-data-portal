@@ -72,8 +72,8 @@
         <div class="result-header">
           <div class="result-info">
             <a-statistic title="总记录数" :value="queryResultData.length" />
-            <a-statistic title="查询时间" :value="formatTime(currentQueryRecord.createTime)" />
-            <a-statistic title="数据模型" :value="getModelTypeName(currentQueryRecord.modelType)" />
+            <a-statistic title="查询时间" :value="(formatTime(currentQueryRecord.createTime) as unknown) as number" />
+            <a-statistic title="数据模型" :value="(getModelTypeName(currentQueryRecord.modelType) as unknown) as number" />
           </div>
 
         </div>
@@ -118,7 +118,7 @@ import { getDataModelsList } from '@/api/dataModels'
 import HistorySliceQuery from './HistorySliceQuery.vue'
 import CustomQueryPanel from './CustomQueryPanel.vue'
 
-function hashStr(str) {
+function hashStr(str: string) {
   let hash = 0
   for (let i = 0; i < str.length; i++) {
     hash = ((hash << 5) - hash) + str.charCodeAt(i)
@@ -170,9 +170,9 @@ const handleAuditCopy = (payload: any) => {
 }
 
 // 查询结果相关
-const currentQueryRecord = ref(null)
-const queryResultData = ref([])
-const resultColumns = ref([])
+const currentQueryRecord = ref<Record<string, any> | null>(null)
+const queryResultData = ref<Record<string, any>[]>([])
+const resultColumns = ref<Record<string, any>[]>([])
 
 
 
@@ -314,7 +314,9 @@ const openQueryDrawer = () => {
 
 
 
-const viewQueryResult = async (record) => {
+type ModelType = keyof typeof modelConfigs
+
+const viewQueryResult = async (record: Record<string, any>) => {
   currentQueryRecord.value = record
   resultModalVisible.value = true
   resultLoading.value = true
@@ -323,9 +325,9 @@ const viewQueryResult = async (record) => {
     // 模拟加载查询结果
     await new Promise(resolve => setTimeout(resolve, 500))
     
-    const config = modelConfigs[record.modelType]
+    const config = modelConfigs[record.modelType as ModelType]
     resultColumns.value = config.columns
-    queryResultData.value = generateMockResultData(record.modelType, record.resultCount)
+    queryResultData.value = generateMockResultData(record.modelType as ModelType, record.resultCount)
   } catch (error) {
     Message.error('加载查询结果失败')
   } finally {
@@ -333,13 +335,13 @@ const viewQueryResult = async (record) => {
   }
 }
 
-const generateMockResultData = (modelType, count) => {
-  const data = []
+const generateMockResultData = (modelType: ModelType, count: number) => {
+  const data: Record<string, any>[] = []
   const config = modelConfigs[modelType]
   
   for (let i = 0; i < count; i++) {
-    const record = {}
-    config.columns.forEach(column => {
+    const record: Record<string, any> = {}
+    config.columns.forEach((column: Record<string, any>) => {
       record[column.dataIndex] = generateMockValue(column.dataIndex, i)
     })
     data.push(record)
@@ -348,9 +350,9 @@ const generateMockResultData = (modelType, count) => {
   return data
 }
 
-const generateMockValue = (field, index) => {
-  const h = (suffix) => hashStr(field + index + suffix)
-  const mockValues = {
+const generateMockValue = (field: string, index: number) => {
+  const h = (suffix: string) => hashStr(field + index + suffix)
+  const mockValues: Record<string, any> = {
     customerId: `C${String(index + 1).padStart(6, '0')}`,
     name: `客户${index + 1}`,
     phone: `138${String(h('phone') % 100000000).padStart(8, '0')}`,
@@ -401,13 +403,13 @@ const generateMockValue = (field, index) => {
 
 
 // 工具方法
-const getModelTypeName = (modelType) => {
+const getModelTypeName = (modelType: ModelType) => {
   const model = modelConfigs[modelType]
   return model?.name || modelType
 }
 
-const getStatusColor = (status) => {
-  const colors = {
+const getStatusColor = (status: string) => {
+  const colors: Record<string, string> = {
     completed: 'green',
     running: 'blue',
     failed: 'red'
@@ -415,8 +417,8 @@ const getStatusColor = (status) => {
   return colors[status] || 'gray'
 }
 
-const getStatusText = (status) => {
-  const texts = {
+const getStatusText = (status: string) => {
+  const texts: Record<string, string> = {
     completed: '已完成',
     running: '执行中',
     failed: '失败'
@@ -424,7 +426,7 @@ const getStatusText = (status) => {
   return texts[status] || '未知'
 }
 
-const formatTime = (timeStr) => {
+const formatTime = (timeStr: string) => {
   if (!timeStr) {return '-'}
   const date = new Date(timeStr)
   return date.toLocaleString('zh-CN')
@@ -432,7 +434,7 @@ const formatTime = (timeStr) => {
 
 
 
-const formatCellValue = (value) => {
+const formatCellValue = (value: any) => {
   if (value === null || value === undefined) {
     return '-'
   }

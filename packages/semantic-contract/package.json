@@ -1,0 +1,20 @@
+{
+  "name": "@data-community/semantic-contract",
+  "version": "0.1.0",
+  "private": true,
+  "description": "语义契约包：指标 / 术语 / 部门语境的唯一事实源（源码直出，供各子应用编译期引用）",
+  "type": "module",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types.ts",
+    "./data/metrics": "./src/data/metrics.ts",
+    "./data/knowledge": "./src/data/knowledge.ts",
+    "./query": "./src/query.ts"
+  },
+  "files": [
+    "src"
+  ]
+}

@@ -11,7 +11,6 @@ import type {
   BatchValidationResult,
   BatchValidationRow,
   MetricTreeNode,
-  VersionStatus,
   MetricValueSeries,
   DashboardCardConfig,
   ResolvedCard,
@@ -22,6 +21,8 @@ import type {
   MetricLineageGraph,
   CompletenessScore,
   MetricReportMount,
+  MetricVersion,
+  MetricVersionSnapshot,
 } from './types'
 import { METRICS_DATA, PERSONS, buildMetricTree, SCENARIO_OPTIONS, BATCH_TEMPLATE_FIELDS, DASHBOARD_BOARDS, METRIC_VALUES, REPORTS_DATA, METRIC_LINEAGE, SOURCE_TYPE_OPTIONS, GRANULARITY_OPTIONS } from './data'
 
@@ -36,6 +37,51 @@ function clone<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj))
 }
 
+/** 从指标创建版本快照（全量快照核心字段） */
+function createSnapshot(m: MetricItem): MetricVersionSnapshot {
+  return {
+    name: m.name,
+    code: m.code,
+    domain: m.domain,
+    scenario: m.scenario,
+    businessOwner: m.businessOwner,
+    technicalOwner: m.technicalOwner,
+    businessDefinition: m.businessDefinition,
+    useCase: m.useCase,
+    calculationFrequency: m.calculationFrequency,
+    technicalDefinition: m.technicalDefinition,
+    technicalUsageNotes: m.technicalUsageNotes,
+    resultTable: m.resultTable,
+    queryCode: m.queryCode,
+    sourceType: m.sourceType,
+    granularity: m.granularity,
+    reportMounts: m.reportMounts ? clone(m.reportMounts) : undefined,
+    agentMeta: m.agentMeta ? clone(m.agentMeta) : undefined,
+    agentDoc: m.agentDoc,
+  }
+}
+
+/** 从快照恢复指标核心字段（激活历史版本时使用） */
+function restoreFromSnapshot(m: MetricItem, snap: MetricVersionSnapshot): void {
+  m.name = snap.name
+  m.domain = snap.domain
+  m.scenario = snap.scenario
+  m.businessOwner = snap.businessOwner
+  m.technicalOwner = snap.technicalOwner
+  m.businessDefinition = snap.businessDefinition
+  m.useCase = snap.useCase
+  m.calculationFrequency = snap.calculationFrequency
+  m.technicalDefinition = snap.technicalDefinition
+  m.technicalUsageNotes = snap.technicalUsageNotes
+  m.resultTable = snap.resultTable
+  m.queryCode = snap.queryCode
+  m.sourceType = snap.sourceType
+  m.granularity = snap.granularity
+  m.reportMounts = snap.reportMounts ? clone(snap.reportMounts) : undefined
+  m.agentMeta = snap.agentMeta ? clone(snap.agentMeta) : undefined
+  m.agentDoc = snap.agentDoc
+}
+
 /** 生成新ID */
 function nextId(): string {
   const max = metrics.value.reduce((mx, m) => {
@@ -43,13 +89,6 @@ function nextId(): string {
     return n > mx ? n : mx
   }, 0)
   return `m${String(max + 1).padStart(3, '0')}`
-}
-
-/** 获取下一个版本号 */
-function nextVersion(metricId: string): number {
-  const m = metrics.value.find(x => x.id === metricId)
-  if (!m) return 1
-  return Math.max(...m.versions.map(v => v.version)) + 1
 }
 
 /**
@@ -197,7 +236,7 @@ export const MetricsCenterStore = {
     return clone(metrics.value.find(m => m.id === id))
   },
 
-  // ── 获取全部指标（含归档/草稿，供地图页筛选树使用） ──
+  // ── 获取全部指标（含停用，供地图页筛选树使用） ──
   getAll(): MetricItem[] {
     return clone(metrics.value)
   },
@@ -209,7 +248,7 @@ export const MetricsCenterStore = {
 
   /** 获取指标域列表 */
   getDomains(): string[] {
-    const all = metrics.value.filter(m => m.status !== 'archived')
+    const all = metrics.value.filter(m => m.status === 'active')
     return [...new Set(all.map(m => m.domain))]
   },
 
@@ -220,43 +259,35 @@ export const MetricsCenterStore = {
     return metrics.value.find(m => m.code === code)
   },
 
-  /** 取指标最新值序列（模拟按当前启用版本从结果表查得） */
+  /** 取指标最新值序列（模拟从结果表查得，始终跟随当前启用口径） */
   getMetricValues(code: string): MetricValueSeries | undefined {
     const metric = this.getByCode(code)
     const series = METRIC_VALUES[code]
     if (!metric || !series) return series
-    // 口径升版后取值版本应跟随当前启用版本
-    return metric.currentVersion !== series.version
-      ? { ...series, version: metric.currentVersion }
-      : series
+    return series
   },
 
   /** 解析单个指标引用：把「编码」翻译成「指标定义 + 取值 + 状态」 */
-  resolveRef(code: string, pinnedVersion?: number): ResolvedRef {
+  resolveRef(code: string): ResolvedRef {
     const metric = this.getByCode(code)
     if (!metric) {
-      return { code, status: 'missing', outdated: false, pinnedVersion }
+      return { code, status: 'missing' }
     }
-    if (metric.status === 'draft') {
-      return { code, metric, status: 'draft', outdated: false, pinnedVersion }
-    }
-    if (metric.status === 'archived') {
-      return { code, metric, status: 'archived', outdated: false, pinnedVersion }
+    if (metric.status === 'inactive') {
+      return { code, metric, status: 'inactive' }
     }
     return {
       code,
       metric,
       values: this.getMetricValues(code),
       status: 'ok',
-      outdated: pinnedVersion !== undefined && pinnedVersion !== metric.currentVersion,
-      pinnedVersion,
     }
   },
 
   /** 解析单张看板卡片 */
   resolveCard(card: DashboardCardConfig): ResolvedCard {
     const codes = card.metricCode ? [card.metricCode] : (card.metricCodes || [])
-    const refs = codes.map(code => this.resolveRef(code, card.pinnedVersions?.[code]))
+    const refs = codes.map(code => this.resolveRef(code))
     return { ...card, refs, primary: refs[0] }
   },
 
@@ -276,23 +307,20 @@ export const MetricsCenterStore = {
       for (const card of [...board.kpis, ...board.charts]) {
         const codes = card.metricCode ? [card.metricCode] : (card.metricCodes || [])
         if (!codes.includes(code)) continue
-        const metric = this.getByCode(code)
         consumers.push({
           boardId: board.id,
           boardTitle: board.title,
           cardKey: card.key,
           cardTitle: card.title,
-          pinnedVersion: card.pinnedVersions?.[code] ?? metric?.currentVersion ?? 1,
-          currentVersion: metric?.currentVersion ?? 1,
         })
       }
     }
     return consumers
   },
 
-  // ── 获取指标地图列表（仅启用+草稿，排除归档；搜索命中名称/编码/同义词） ──
+  // ── 获取指标地图列表（仅启用，排除停用；搜索命中名称/编码/同义词） ──
   getMapList(keyword?: string, domain?: string, scenario?: string): MetricItem[] {
-    let list = clone(metrics.value.filter(m => m.status !== 'archived' && m.status !== 'pending'))
+    let list = clone(metrics.value.filter(m => m.status === 'active'))
     if (keyword) {
       const kw = keyword.toLowerCase()
       list = list.filter(m =>
@@ -328,25 +356,19 @@ export const MetricsCenterStore = {
       .map(s => clone(s.m))
   },
 
-  // ── 新建指标（保存草稿 / 提交审核 / 直接上线） ──
-  create(data: Partial<MetricItem> & { versionDescription?: string }, action: 'draft' | 'submit' | 'publish'): MetricItem {
+  // ── 新建指标（v5.4：注册即生效，直接创建为启用状态） ──
+  create(data: Partial<MetricItem>): MetricItem {
     const id = nextId()
     const now = new Date().toLocaleString('zh-CN', { hour12: false })
 
-    // 检查名称+版本号唯一
+    // 检查名称唯一
     if (data.name && metrics.value.some(m => m.name === data.name)) {
       throw new Error('该指标名称已存在，请修改')
     }
-    // 检查编码+版本号唯一
+    // 检查编码唯一
     if (data.code && metrics.value.some(m => m.code === data.code)) {
       throw new Error('该指标编码已存在，请修改')
     }
-
-    // 状态机：草稿 →（提交审核）→ 审核中 →（审批通过）→ 启用
-    const status: MetricItem['status'] =
-      action === 'draft' ? 'draft' : action === 'submit' ? 'pending' : 'active'
-    const versionStatus: VersionStatus =
-      action === 'draft' ? 'draft' : action === 'submit' ? 'pending' : 'active'
 
     // 报表挂载为唯一维护入口，reportLocations 由挂载派生（人机同源）
     const mounts = data.reportMounts || []
@@ -376,26 +398,7 @@ export const MetricsCenterStore = {
       agentMeta: data.agentMeta || { synonyms: [] },
       agentDoc: data.agentDoc,
       reportMounts: mounts,
-      status,
-      currentVersion: 1,
-      versions: [{
-        version: 1,
-        status: versionStatus,
-        description: data.versionDescription || '指标创建',
-        createdAt: now,
-        createdBy: data.businessOwner || '',
-        snapshot: {
-          businessDefinition: data.businessDefinition || '',
-          useCase: data.useCase || '',
-          calculationFrequency: data.calculationFrequency || 'T+1',
-          technicalDefinition: data.technicalDefinition || '',
-          technicalUsageNotes: data.technicalUsageNotes || '',
-          reportLocations,
-          resultTable: data.resultTable || '',
-          queryCode: data.queryCode || '',
-          versionDescription: data.versionDescription || '指标创建',
-        },
-      }],
+      status: 'active',
       createdAt: now,
       updatedAt: now,
       createdBy: data.businessOwner || '',
@@ -404,12 +407,24 @@ export const MetricsCenterStore = {
       sortOrder: metrics.value.length + 1,
     }
 
+    // 监管指标：初始化版本管理（v1 全量快照）
+    if (metric.type === 'regulatory') {
+      metric.version = 1
+      metric.versions = [{
+        version: 1,
+        changeNote: '初始创建',
+        createdAt: now,
+        createdBy: metric.createdBy,
+        snapshot: createSnapshot(metric),
+      }]
+    }
+
     metrics.value.push(metric)
     return clone(metric)
   },
 
-  // ── 更新指标（不更新版本号；草稿与审核中可改） ──
-  update(id: string, data: Partial<MetricItem>): MetricItem | undefined {
+  // ── 更新指标（v5.4：保存即生效；监管指标保存前做全量快照，版本号递增） ──
+  update(id: string, data: Partial<MetricItem> & { changeNote?: string }): MetricItem | undefined {
     const idx = metrics.value.findIndex(m => m.id === id)
     if (idx === -1) return undefined
 
@@ -443,233 +458,70 @@ export const MetricsCenterStore = {
       updatedAt: now,
     }
 
-    // 更新当前版本的快照
-    const activeVersion = updated.versions.find(v => v.version === updated.currentVersion)
-    if (activeVersion) {
-      activeVersion.snapshot = {
-        businessDefinition: updated.businessDefinition,
-        useCase: updated.useCase,
-        calculationFrequency: updated.calculationFrequency,
-        technicalDefinition: updated.technicalDefinition,
-        technicalUsageNotes: updated.technicalUsageNotes,
-        reportLocations: updated.reportLocations,
-        resultTable: updated.resultTable,
-        queryCode: updated.queryCode,
-        versionDescription: activeVersion.snapshot.versionDescription,
-      }
+    // 监管指标：保存前将当前状态做全量快照，版本号递增
+    if (updated.type === 'regulatory') {
+      const newVersion = (prev.version ?? 1) + 1
+      const prevVersions = prev.versions ? clone(prev.versions) : []
+      // 将更新前的状态保存为上一个版本的快照
+      prevVersions.push({
+        version: newVersion,
+        changeNote: data.changeNote || '更新保存',
+        createdAt: now,
+        createdBy: prev.businessOwner,
+        snapshot: createSnapshot(updated),
+      })
+      updated.version = newVersion
+      updated.versions = prevVersions
     }
 
     metrics.value[idx] = updated
     return clone(updated)
   },
 
-  // ── 保存草稿（新增草稿版本，当前展示仍为启用版本） ──
-  saveDraft(id: string, data: Partial<MetricItem> & { versionDescription?: string }): MetricItem | undefined {
-    const idx = metrics.value.findIndex(m => m.id === id)
-    if (idx === -1) return undefined
-
-    const now = new Date().toLocaleString('zh-CN', { hour12: false })
-    const newVersion = nextVersion(id)
-
-    const metric = metrics.value[idx]
-    metric.versions.unshift({
-      version: newVersion,
-      status: 'draft',
-      description: data.versionDescription || '新增版本',
-      createdAt: now,
-      createdBy: data.businessOwner || '',
-      snapshot: {
-        businessDefinition: data.businessDefinition || metric.businessDefinition,
-        useCase: data.useCase || metric.useCase,
-        calculationFrequency: data.calculationFrequency || metric.calculationFrequency,
-        technicalDefinition: data.technicalDefinition || metric.technicalDefinition,
-        technicalUsageNotes: data.technicalUsageNotes || metric.technicalUsageNotes,
-        reportLocations: data.reportLocations || metric.reportLocations,
-        resultTable: data.resultTable || metric.resultTable,
-        queryCode: data.queryCode || metric.queryCode,
-        versionDescription: data.versionDescription || '新增版本',
-      },
-    })
-
-    metric.updatedAt = now
-    return clone(metric)
-  },
-
-  // ── 上线新版本（当前版本变启用，原启用变归档） ──
-  publishVersion(id: string, data: Partial<MetricItem> & { versionDescription?: string }): MetricItem | undefined {
-    const idx = metrics.value.findIndex(m => m.id === id)
-    if (idx === -1) return undefined
-
-    const now = new Date().toLocaleString('zh-CN', { hour12: false })
-    const newVersion = nextVersion(id)
-    const metric = metrics.value[idx]
-
-    // 原启用版本变归档
-    metric.versions.forEach(v => {
-      if (v.status === 'active') {
-        v.status = 'archived'
-      }
-    })
-
-    // 新版本上线
-    metric.versions.unshift({
-      version: newVersion,
-      status: 'active',
-      description: data.versionDescription || `新版本上线 v${newVersion}`,
-      createdAt: now,
-      createdBy: data.businessOwner || '',
-      snapshot: {
-        businessDefinition: data.businessDefinition || metric.businessDefinition,
-        useCase: data.useCase || metric.useCase,
-        calculationFrequency: data.calculationFrequency || metric.calculationFrequency,
-        technicalDefinition: data.technicalDefinition || metric.technicalDefinition,
-        technicalUsageNotes: data.technicalUsageNotes || metric.technicalUsageNotes,
-        reportLocations: data.reportLocations || metric.reportLocations,
-        resultTable: data.resultTable || metric.resultTable,
-        queryCode: data.queryCode || metric.queryCode,
-        versionDescription: data.versionDescription || `新版本上线 v${newVersion}`,
-      },
-    })
-
-    metric.currentVersion = newVersion
-    metric.status = 'active'
-
-    // 更新指标字段
-    Object.assign(metric, {
-      domain: data.domain ?? metric.domain,
-      scenario: data.scenario ?? metric.scenario,
-      businessOwner: data.businessOwner ?? metric.businessOwner,
-      technicalOwner: data.technicalOwner ?? metric.technicalOwner,
-      businessDefinition: data.businessDefinition ?? metric.businessDefinition,
-      useCase: data.useCase ?? metric.useCase,
-      calculationFrequency: data.calculationFrequency ?? metric.calculationFrequency,
-      technicalDefinition: data.technicalDefinition ?? metric.technicalDefinition,
-      technicalUsageNotes: data.technicalUsageNotes ?? metric.technicalUsageNotes,
-      reportLocations: data.reportLocations ?? metric.reportLocations,
-      resultTable: data.resultTable ?? metric.resultTable,
-      queryCode: data.queryCode ?? metric.queryCode,
-      updatedAt: now,
-    })
-
-    return clone(metric)
-  },
-
-  // ── 激活版本 ──
+  // ── 激活监管指标历史版本（用历史快照覆盖当前数据，生成新版本） ──
   activateVersion(id: string, version: number): MetricItem | undefined {
     const idx = metrics.value.findIndex(m => m.id === id)
     if (idx === -1) return undefined
+    const m = metrics.value[idx]
+    if (m.type !== 'regulatory' || !m.versions) return undefined
 
-    const metric = metrics.value[idx]
+    const target = m.versions.find(v => v.version === version)
+    if (!target) throw new Error(`版本 v${version} 不存在`)
 
-    // 禁止激活正在启用的版本
-    const target = metric.versions.find(v => v.version === version)
-    if (!target || target.status === 'active') return clone(metric)
+    const now = new Date().toLocaleString('zh-CN', { hour12: false })
+    // 用历史快照恢复核心字段
+    restoreFromSnapshot(m, target.snapshot)
 
-    // 原启用版本变归档
-    metric.versions.forEach(v => {
-      if (v.status === 'active') v.status = 'archived'
+    // 生成新版本（激活历史版本 = 基于历史快照创建新版本）
+    const newVersion = (m.version ?? 1) + 1
+    m.versions.push({
+      version: newVersion,
+      changeNote: `激活历史版本 v${version}`,
+      createdAt: now,
+      createdBy: m.businessOwner,
+      snapshot: createSnapshot(m),
     })
-
-    // 当前版本变启用
-    target.status = 'active'
-    metric.currentVersion = version
-
-    // 更新指标内容为该版本快照
-    const snap = target.snapshot
-    Object.assign(metric, {
-      businessDefinition: snap.businessDefinition,
-      useCase: snap.useCase,
-      calculationFrequency: snap.calculationFrequency,
-      technicalDefinition: snap.technicalDefinition,
-      technicalUsageNotes: snap.technicalUsageNotes,
-      reportLocations: snap.reportLocations,
-      resultTable: snap.resultTable,
-      queryCode: snap.queryCode,
-    })
-
-    metric.updatedAt = new Date().toLocaleString('zh-CN', { hour12: false })
-    return clone(metric)
+    m.version = newVersion
+    m.updatedAt = now
+    return clone(m)
   },
 
-  // ── 删除版本 ──
-  deleteVersion(id: string, version: number): MetricItem | undefined {
-    const idx = metrics.value.findIndex(m => m.id === id)
-    if (idx === -1) return undefined
-
-    const metric = metrics.value[idx]
-    const target = metric.versions.find(v => v.version === version)
-    if (!target) return clone(metric)
-
-    // 禁止删除正在启用的版本
-    if (target.status === 'active') {
-      throw new Error('不能删除正在启用的版本，请先激活其他版本')
-    }
-
-    metric.versions = metric.versions.filter(v => v.version !== version)
-    metric.updatedAt = new Date().toLocaleString('zh-CN', { hour12: false })
-    return clone(metric)
-  },
-
-  // ── 归档指标 ──
+  // ── 停用指标（v5.4：仅启用/停用两态） ──
   archive(id: string): MetricItem | undefined {
     const idx = metrics.value.findIndex(m => m.id === id)
     if (idx === -1) return undefined
-    metrics.value[idx].status = 'archived'
+    metrics.value[idx].status = 'inactive'
     metrics.value[idx].updatedAt = new Date().toLocaleString('zh-CN', { hour12: false })
     return clone(metrics.value[idx])
   },
 
-  // ── 重新激活指标 ──
+  // ── 启用指标 ──
   reactivate(id: string): MetricItem | undefined {
     const idx = metrics.value.findIndex(m => m.id === id)
     if (idx === -1) return undefined
     metrics.value[idx].status = 'active'
     metrics.value[idx].updatedAt = new Date().toLocaleString('zh-CN', { hour12: false })
     return clone(metrics.value[idx])
-  },
-
-  // ── 状态机动作：草稿 → 审核中 → 启用（R11 上线必经审核） ──
-
-  /** 提交审核 */
-  submitReview(id: string): MetricItem | undefined {
-    const m = metrics.value.find(x => x.id === id)
-    if (!m) return undefined
-    if (m.status !== 'draft') throw new Error('仅草稿状态可提交审核')
-    m.status = 'pending'
-    const v = m.versions.find(ver => ver.status === 'draft')
-    if (v) v.status = 'pending'
-    m.updatedAt = new Date().toLocaleString('zh-CN', { hour12: false })
-    return clone(m)
-  },
-
-  /** 审批通过：指标与待审版本转为启用 */
-  approve(id: string): MetricItem | undefined {
-    const m = metrics.value.find(x => x.id === id)
-    if (!m) return undefined
-    if (m.status !== 'pending') throw new Error('仅审核中状态可审批通过')
-    m.status = 'active'
-    const v = m.versions.find(ver => ver.status === 'pending')
-    if (v) {
-      v.status = 'active'
-      m.currentVersion = v.version
-    }
-    m.reviewNote = ''
-    m.updatedAt = new Date().toLocaleString('zh-CN', { hour12: false })
-    return clone(m)
-  },
-
-  /** 驳回：退回草稿并记录意见 */
-  reject(id: string, reason: string): MetricItem | undefined {
-    const m = metrics.value.find(x => x.id === id)
-    if (!m) return undefined
-    if (m.status !== 'pending') throw new Error('仅审核中状态可驳回')
-    if (!reason) throw new Error('驳回必须填写意见')
-    m.status = 'draft'
-    const v = m.versions.find(ver => ver.status === 'pending')
-    if (v) v.status = 'draft'
-    m.reviewNote = reason
-    m.updatedAt = new Date().toLocaleString('zh-CN', { hour12: false })
-    return clone(m)
   },
 
   // ── 血缘（A4：上溯加工来源 / 下追消费去向） ──
@@ -758,7 +610,7 @@ export const MetricsCenterStore = {
       const refs = this.getReportReferencedMetrics(id)
       if (refs.length > 0) {
         throw new Error(
-          `该报表被 ${refs.length} 个指标挂载引用（${refs.slice(0, 3).map(x => x.name).join('、')}${refs.length > 3 ? ' 等' : ''}），请先解除挂载再下线`
+          `该报表被 ${refs.length} 个指标挂载引用（${refs.slice(0, 3).map((x: { id: string; name: string; code: string }) => x.name).join('、')}${refs.length > 3 ? ' 等' : ''}），请先解除挂载再下线`
         )
       }
     }
@@ -885,19 +737,11 @@ export const MetricsCenterStore = {
         errors.push(`来源类型取值无效，须为：${SOURCE_TYPE_OPTIONS.map(s => s.label).join('/')}`)
       }
 
-      // 版本状态
-      const vs = row['版本状态']
-      if (vs && !['启用', '归档'].includes(vs)) {
-        errors.push('版本状态必须为"启用"或"归档"')
-      }
-
-      // 编码+版本号唯一
-      const versionStr = row['版本号'] || '1'
-      const codeVersion = `${row['指标编码']}_v${versionStr}`
-      if (existingCodes.has(`${row['指标编码']}_v${versionStr}`)) {
-        errors.push(`指标编码+版本号已存在: ${row['指标编码']}_v${versionStr}`)
+      // 编码唯一（v5.4：无版本号，编码全局唯一）
+      if (existingCodes.has(row['指标编码'])) {
+        errors.push(`指标编码已存在: ${row['指标编码']}`)
       } else {
-        existingCodes.add(codeVersion) // 防止同批次重复
+        existingCodes.add(row['指标编码']) // 防止同批次重复
       }
 
       result.push({
@@ -950,7 +794,7 @@ export const MetricsCenterStore = {
           sourceType,
           granularity,
           agentMeta: { synonyms },
-        }, 'publish')
+        })
         success++
       } catch {
         failed++

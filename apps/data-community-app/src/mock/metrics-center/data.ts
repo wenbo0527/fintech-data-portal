@@ -6,7 +6,7 @@ import type {
   MetricItem, MetricTreeNode, Person, CalculationFrequency,
   MetricValueSeries, DashboardBoardConfig, ReportItem,
   MetricAgentMeta, MetricSourceType, MetricGranularity,
-  MetricReportMount, MetricLineageGraph,
+  MetricReportMount, MetricLineageGraph, MetricVersion,
 } from './types'
 
 /** 计算时效选项 */
@@ -33,12 +33,10 @@ export const TYPE_OPTIONS = [
   { label: '监管指标', value: 'regulatory' },
 ]
 
-/** 状态选项（对齐状态机：草稿→审核中→启用→归档） */
+/** 状态选项（对齐 v5.4 生命周期：启用/停用两态） */
 export const STATUS_OPTIONS = [
   { label: '启用', value: 'active' },
-  { label: '审核中', value: 'pending' },
-  { label: '归档', value: 'archived' },
-  { label: '草稿', value: 'draft' },
+  { label: '停用', value: 'inactive' },
 ]
 
 /** 来源类型选项（结构化字段 R12） */
@@ -102,7 +100,6 @@ export const BATCH_TEMPLATE_FIELDS = [
   '业务负责人', '技术负责人', '业务口径', '使用场景', '计算时效',
   '统计粒度', '来源类型', '同义词',
   '技术口径', '技术口径使用说明', '结果表', '查询代码', '报表路径',
-  '版本号', '版本说明', '版本状态',
 ]
 
 /**
@@ -680,21 +677,6 @@ export const METRIC_LINEAGE: Record<string, MetricLineageGraph> = {
   },
 }
 
-/** 生成版本快照的辅助函数 */
-function snapshot(m: Partial<MetricItem>) {
-  return {
-    businessDefinition: m.businessDefinition || '',
-    useCase: m.useCase || '',
-    calculationFrequency: m.calculationFrequency || ('T+1' as CalculationFrequency),
-    technicalDefinition: m.technicalDefinition || '',
-    technicalUsageNotes: m.technicalUsageNotes || '',
-    reportLocations: m.reportLocations || [],
-    resultTable: m.resultTable || '',
-    queryCode: m.queryCode || '',
-    versionDescription: m.versions?.[0]?.description || '',
-  }
-}
-
 /** 指标 Mock 原始数据 - 首批核心指标（语义契约在 METRIC_SEMANTICS 中单独维护） */
 const RAW_METRICS_DATA: MetricItem[] = [
   {
@@ -718,12 +700,6 @@ const RAW_METRICS_DATA: MetricItem[] = [
     resultTable: 'adm.ads_credit_core_metrics',
     queryCode: "SELECT pass_rate FROM adm.ads_credit_core_metrics WHERE dt = ${date}",
     status: 'active',
-    currentVersion: 3,
-    versions: [
-      { version: 3, status: 'active', description: '增加去重逻辑，排除内部员工', createdAt: '2026-08-15 10:30:00', createdBy: '张三', snapshot: snapshot({}) },
-      { version: 2, status: 'archived', description: '优化统计逻辑，排除测试账号', createdAt: '2026-07-01 14:20:00', createdBy: '张三', snapshot: snapshot({}) },
-      { version: 1, status: 'archived', description: '指标创建', createdAt: '2026-06-01 09:00:00', createdBy: '张三', snapshot: snapshot({}) },
-    ],
     createdAt: '2026-06-01 09:00:00',
     updatedAt: '2026-08-15 10:30:00',
     createdBy: '张三',
@@ -751,11 +727,6 @@ const RAW_METRICS_DATA: MetricItem[] = [
     resultTable: 'adm.ads_risk_core_metrics',
     queryCode: "SELECT fpd30_rate FROM adm.ads_risk_core_metrics WHERE loan_month = ${month}",
     status: 'active',
-    currentVersion: 2,
-    versions: [
-      { version: 2, status: 'active', description: '排除核销账户', createdAt: '2026-08-01 11:00:00', createdBy: '李四', snapshot: snapshot({}) },
-      { version: 1, status: 'archived', description: '指标创建', createdAt: '2026-06-15 09:00:00', createdBy: '李四', snapshot: snapshot({}) },
-    ],
     createdAt: '2026-06-15 09:00:00',
     updatedAt: '2026-08-01 11:00:00',
     createdBy: '李四',
@@ -784,11 +755,6 @@ const RAW_METRICS_DATA: MetricItem[] = [
     resultTable: 'adm.ads_user_core_metrics',
     queryCode: "SELECT dau FROM adm.ads_user_core_metrics WHERE dt = ${date}",
     status: 'active',
-    currentVersion: 2,
-    versions: [
-      { version: 2, status: 'active', description: '优化统计逻辑，排除测试账号', createdAt: '2026-07-15 14:20:00', createdBy: '陈七', snapshot: snapshot({}) },
-      { version: 1, status: 'archived', description: '指标创建', createdAt: '2026-06-01 09:00:00', createdBy: '陈七', snapshot: snapshot({}) },
-    ],
     createdAt: '2026-06-01 09:00:00',
     updatedAt: '2026-07-15 14:20:00',
     createdBy: '陈七',
@@ -817,10 +783,6 @@ const RAW_METRICS_DATA: MetricItem[] = [
     resultTable: 'adm.ads_credit_core_metrics',
     queryCode: "SELECT loan_balance FROM adm.ads_credit_core_metrics WHERE dt = ${date}",
     status: 'active',
-    currentVersion: 1,
-    versions: [
-      { version: 1, status: 'active', description: '指标创建', createdAt: '2026-06-10 09:00:00', createdBy: '王五', snapshot: snapshot({}) },
-    ],
     createdAt: '2026-06-10 09:00:00',
     updatedAt: '2026-06-10 09:00:00',
     createdBy: '王五',
@@ -849,17 +811,49 @@ const RAW_METRICS_DATA: MetricItem[] = [
     resultTable: 'adm.ads_regulatory_metrics',
     queryCode: "SELECT npl_ratio FROM adm.ads_regulatory_metrics WHERE report_month = ${month}",
     status: 'active',
-    currentVersion: 2,
-    versions: [
-      { version: 2, status: 'active', description: '对齐银保监会最新报表口径', createdAt: '2026-07-20 10:00:00', createdBy: '吴十', snapshot: snapshot({}) },
-      { version: 1, status: 'archived', description: '指标创建', createdAt: '2026-06-05 09:00:00', createdBy: '吴十', snapshot: snapshot({}) },
-    ],
     createdAt: '2026-06-05 09:00:00',
     updatedAt: '2026-07-20 10:00:00',
     createdBy: '吴十',
     isFavorite: true,
     isSubscribed: true,
     sortOrder: 5,
+    version: 2,
+    versions: [
+      {
+        version: 1,
+        changeNote: '初始创建',
+        createdAt: '2026-06-05 09:00:00',
+        createdBy: '吴十',
+        snapshot: {
+          name: '不良贷款率', code: 'NPL_RATIO', domain: '监管域', scenario: '银保监会',
+          businessOwner: '吴十', technicalOwner: '周九',
+          businessDefinition: '<p>不良贷款率 = 不良贷款余额 / 各项贷款余额 × 100%</p>',
+          useCase: '监管报送G01报表核心指标',
+          calculationFrequency: 'monthly',
+          technicalDefinition: "SELECT SUM(CASE WHEN risk_level IN ('SUBSTANDARD','DOUBTFUL','LOSS') THEN remaining_principal ELSE 0 END) * 100.0 / SUM(remaining_principal) AS npl_ratio FROM dwd.loan_detail WHERE status IN ('ACTIVE', 'OVERDUE')",
+          technicalUsageNotes: '按月统计',
+          resultTable: 'adm.ads_regulatory_metrics',
+          queryCode: "SELECT npl_ratio FROM adm.ads_regulatory_metrics WHERE report_month = ${month}",
+        },
+      } as MetricVersion,
+      {
+        version: 2,
+        changeNote: '新增 IMPAIRED 状态贷款纳入不良口径',
+        createdAt: '2026-07-20 10:00:00',
+        createdBy: '吴十',
+        snapshot: {
+          name: '不良贷款率', code: 'NPL_RATIO', domain: '监管域', scenario: '银保监会',
+          businessOwner: '吴十', technicalOwner: '周九',
+          businessDefinition: '<p><strong>不良贷款率</strong> = 不良贷款余额 / 各项贷款余额 × 100%</p><p>口径说明：不良贷款包括次级、可疑、损失类贷款。按银保监会G01报表口径统计。</p>',
+          useCase: '监管报送G01报表核心指标，反映资产质量',
+          calculationFrequency: 'monthly',
+          technicalDefinition: "SELECT\n  SUM(CASE WHEN risk_level IN ('SUBSTANDARD','DOUBTFUL','LOSS') THEN remaining_principal ELSE 0 END) * 100.0\n  / SUM(remaining_principal) AS npl_ratio\nFROM dwd.loan_detail\nWHERE status IN ('ACTIVE', 'OVERDUE', 'IMPAIRED')\n  AND data_dt = ${date}",
+          technicalUsageNotes: '按月统计，数据截止日为月末，需在次月5日前完成报送',
+          resultTable: 'adm.ads_regulatory_metrics',
+          queryCode: "SELECT npl_ratio FROM adm.ads_regulatory_metrics WHERE report_month = ${month}",
+        },
+      } as MetricVersion,
+    ],
   },
   {
     id: 'm006',
@@ -881,16 +875,32 @@ const RAW_METRICS_DATA: MetricItem[] = [
     resultTable: 'adm.ads_regulatory_metrics',
     queryCode: "SELECT car FROM adm.ads_regulatory_metrics WHERE report_month = ${month}",
     status: 'active',
-    currentVersion: 1,
-    versions: [
-      { version: 1, status: 'active', description: '指标创建', createdAt: '2026-06-08 09:00:00', createdBy: '吴十', snapshot: snapshot({}) },
-    ],
     createdAt: '2026-06-08 09:00:00',
     updatedAt: '2026-06-08 09:00:00',
     createdBy: '吴十',
     isFavorite: false,
     isSubscribed: true,
     sortOrder: 6,
+    version: 1,
+    versions: [
+      {
+        version: 1,
+        changeNote: '初始创建',
+        createdAt: '2026-06-08 09:00:00',
+        createdBy: '吴十',
+        snapshot: {
+          name: '资本充足率', code: 'CAR', domain: '监管域', scenario: '人行报送',
+          businessOwner: '吴十', technicalOwner: '周九',
+          businessDefinition: '<p><strong>资本充足率</strong> = (资本净额 - 扣减项) / 风险加权资产 × 100%</p><p>口径说明：按照《商业银行资本管理办法》计算，含一级资本和二级资本。</p>',
+          useCase: '人行监管报送核心指标，衡量银行抵御风险能力',
+          calculationFrequency: 'monthly',
+          technicalDefinition: "SELECT\n  (capital_net - deductions) * 100.0 / risk_weighted_assets AS car\nFROM dwd.capital_adequacy\nWHERE report_month = ${month}",
+          technicalUsageNotes: '资本净额含核心一级资本、其他一级资本、二级资本',
+          resultTable: 'adm.ads_regulatory_metrics',
+          queryCode: "SELECT car FROM adm.ads_regulatory_metrics WHERE report_month = ${month}",
+        },
+      } as MetricVersion,
+    ],
   },
   {
     id: 'm007',
@@ -912,10 +922,6 @@ const RAW_METRICS_DATA: MetricItem[] = [
     resultTable: 'adm.ads_marketing_metrics',
     queryCode: "SELECT cac FROM adm.ads_marketing_metrics WHERE week_start = ${start}",
     status: 'active',
-    currentVersion: 1,
-    versions: [
-      { version: 1, status: 'active', description: '指标创建', createdAt: '2026-07-01 09:00:00', createdBy: '陈七', snapshot: snapshot({}) },
-    ],
     createdAt: '2026-07-01 09:00:00',
     updatedAt: '2026-07-01 09:00:00',
     createdBy: '陈七',
@@ -943,10 +949,6 @@ const RAW_METRICS_DATA: MetricItem[] = [
     resultTable: 'adm.ads_finance_metrics',
     queryCode: "SELECT nim FROM adm.ads_finance_metrics WHERE report_month = ${month}",
     status: 'active',
-    currentVersion: 1,
-    versions: [
-      { version: 1, status: 'active', description: '指标创建', createdAt: '2026-06-20 09:00:00', createdBy: '赵六', snapshot: snapshot({}) },
-    ],
     createdAt: '2026-06-20 09:00:00',
     updatedAt: '2026-06-20 09:00:00',
     createdBy: '赵六',
@@ -974,16 +976,32 @@ const RAW_METRICS_DATA: MetricItem[] = [
     resultTable: 'adm.ads_regulatory_metrics',
     queryCode: "SELECT provision_coverage FROM adm.ads_regulatory_metrics WHERE report_month = ${month}",
     status: 'active',
-    currentVersion: 1,
-    versions: [
-      { version: 1, status: 'active', description: '指标创建', createdAt: '2026-06-12 09:00:00', createdBy: '吴十', snapshot: snapshot({}) },
-    ],
     createdAt: '2026-06-12 09:00:00',
     updatedAt: '2026-06-12 09:00:00',
     createdBy: '吴十',
     isFavorite: false,
     isSubscribed: true,
     sortOrder: 9,
+    version: 1,
+    versions: [
+      {
+        version: 1,
+        changeNote: '初始创建',
+        createdAt: '2026-06-12 09:00:00',
+        createdBy: '吴十',
+        snapshot: {
+          name: '拨备覆盖率', code: 'PROVISION_COVERAGE', domain: '监管域', scenario: '银保监会',
+          businessOwner: '吴十', technicalOwner: '周九',
+          businessDefinition: '<p><strong>拨备覆盖率</strong> = 贷款损失准备余额 / 不良贷款余额 × 100%</p><p>口径说明：按银保监会监管口径，不良贷款含次级、可疑、损失类。</p>',
+          useCase: '监管报送核心指标，反映风险缓释能力',
+          calculationFrequency: 'monthly',
+          technicalDefinition: "SELECT\n  provision_balance * 100.0 / NULLIF(npl_balance, 0) AS coverage\nFROM dwd.provision_detail\nWHERE report_month = ${month}",
+          technicalUsageNotes: '拨备余额含一般准备、专项准备、特种准备',
+          resultTable: 'adm.ads_regulatory_metrics',
+          queryCode: "SELECT provision_coverage FROM adm.ads_regulatory_metrics WHERE report_month = ${month}",
+        },
+      } as MetricVersion,
+    ],
   },
   {
     id: 'm010',
@@ -1005,10 +1023,6 @@ const RAW_METRICS_DATA: MetricItem[] = [
     resultTable: 'adm.ads_credit_core_metrics',
     queryCode: "SELECT repeat_loan_rate FROM adm.ads_credit_core_metrics WHERE dt = ${month}",
     status: 'active',
-    currentVersion: 1,
-    versions: [
-      { version: 1, status: 'active', description: '指标创建', createdAt: '2026-07-10 09:00:00', createdBy: '王五', snapshot: snapshot({}) },
-    ],
     createdAt: '2026-07-10 09:00:00',
     updatedAt: '2026-07-10 09:00:00',
     createdBy: '王五',
@@ -1036,10 +1050,6 @@ const RAW_METRICS_DATA: MetricItem[] = [
     resultTable: 'adm.ads_user_core_metrics',
     queryCode: "SELECT mau FROM adm.ads_user_core_metrics WHERE month = ${month}",
     status: 'active',
-    currentVersion: 1,
-    versions: [
-      { version: 1, status: 'active', description: '指标创建', createdAt: '2026-06-25 09:00:00', createdBy: '陈七', snapshot: snapshot({}) },
-    ],
     createdAt: '2026-06-25 09:00:00',
     updatedAt: '2026-06-25 09:00:00',
     createdBy: '陈七',
@@ -1067,16 +1077,32 @@ const RAW_METRICS_DATA: MetricItem[] = [
     resultTable: 'adm.ads_regulatory_metrics',
     queryCode: "SELECT lcr FROM adm.ads_regulatory_metrics WHERE dt = ${date}",
     status: 'active',
-    currentVersion: 1,
-    versions: [
-      { version: 1, status: 'active', description: '指标创建', createdAt: '2026-07-05 09:00:00', createdBy: '赵六', snapshot: snapshot({}) },
-    ],
     createdAt: '2026-07-05 09:00:00',
     updatedAt: '2026-07-05 09:00:00',
     createdBy: '赵六',
     isFavorite: false,
     isSubscribed: true,
     sortOrder: 12,
+    version: 1,
+    versions: [
+      {
+        version: 1,
+        changeNote: '初始创建',
+        createdAt: '2026-07-05 09:00:00',
+        createdBy: '赵六',
+        snapshot: {
+          name: '流动性覆盖率', code: 'LCR', domain: '监管域', scenario: '人行报送',
+          businessOwner: '赵六', technicalOwner: '刘八',
+          businessDefinition: '<p><strong>流动性覆盖率（LCR）</strong> = 优质流动性资产 / 未来30天净现金流出 × 100%</p><p>口径说明：按银保监会流动性风险管理办法计算。</p>',
+          useCase: '人行监管报送，衡量短期流动性风险抵御能力',
+          calculationFrequency: 'T+1',
+          technicalDefinition: "SELECT\n  hqla * 100.0 / NULLIF(net_cash_outflow_30d, 0) AS lcr\nFROM dwd.liquidity_detail\nWHERE data_dt = ${date}",
+          technicalUsageNotes: 'HQLA含一级资产和二级资产，需按折算率计算',
+          resultTable: 'adm.ads_regulatory_metrics',
+          queryCode: "SELECT lcr FROM adm.ads_regulatory_metrics WHERE dt = ${date}",
+        },
+      } as MetricVersion,
+    ],
   },
   {
     id: 'm013',
@@ -1087,7 +1113,7 @@ const RAW_METRICS_DATA: MetricItem[] = [
     scenario: '渠道运营',
     businessOwner: '陈七',
     technicalOwner: '周九',
-    businessDefinition: '<p>渠道转化率草稿定义</p>',
+    businessDefinition: '<p>渠道转化率定义</p>',
     useCase: '',
     calculationFrequency: 'T+1',
     technicalDefinition: 'SELECT channel, COUNT(DISTINCT user_id) AS conversions FROM dwd.channel_log WHERE dt = ${date} GROUP BY channel',
@@ -1095,12 +1121,7 @@ const RAW_METRICS_DATA: MetricItem[] = [
     reportLocations: [],
     resultTable: '',
     queryCode: '',
-    status: 'draft',
-    currentVersion: 2,
-    versions: [
-      { version: 2, status: 'draft', description: '新增版本', createdAt: '2026-09-01 10:00:00', createdBy: '陈七', snapshot: snapshot({}) },
-      { version: 1, status: 'active', description: '指标创建', createdAt: '2026-08-20 09:00:00', createdBy: '陈七', snapshot: snapshot({}) },
-    ],
+    status: 'inactive',
     createdAt: '2026-08-20 09:00:00',
     updatedAt: '2026-09-01 10:00:00',
     createdBy: '陈七',
@@ -1110,14 +1131,14 @@ const RAW_METRICS_DATA: MetricItem[] = [
   },
   {
     id: 'm014',
-    name: '已归档指标示例',
+    name: '已停用指标示例',
     code: 'ARCHIVED_METRIC_01',
     type: 'business',
     domain: '业务域',
     scenario: '交易分析',
     businessOwner: '王五',
     technicalOwner: '刘八',
-    businessDefinition: '<p>已归档的交易量指标</p>',
+    businessDefinition: '<p>已停用的交易量指标</p>',
     useCase: '已废弃，不再使用',
     calculationFrequency: 'T+1',
     technicalDefinition: 'SELECT COUNT(*) AS tx_count FROM dwd.transaction_detail WHERE dt = ${date}',
@@ -1125,11 +1146,7 @@ const RAW_METRICS_DATA: MetricItem[] = [
     reportLocations: [],
     resultTable: 'adm.ads_transaction_metrics',
     queryCode: 'SELECT tx_count FROM adm.ads_transaction_metrics WHERE dt = ${date}',
-    status: 'archived',
-    currentVersion: 1,
-    versions: [
-      { version: 1, status: 'archived', description: '指标创建后归档', createdAt: '2026-05-01 09:00:00', createdBy: '王五', snapshot: snapshot({}) },
-    ],
+    status: 'inactive',
     createdAt: '2026-05-01 09:00:00',
     updatedAt: '2026-05-01 09:00:00',
     createdBy: '王五',
@@ -1157,10 +1174,6 @@ const RAW_METRICS_DATA: MetricItem[] = [
     resultTable: 'adm.ads_marketing_metrics',
     queryCode: "SELECT channel, roi FROM adm.ads_marketing_metrics WHERE month = ${month}",
     status: 'active',
-    currentVersion: 1,
-    versions: [
-      { version: 1, status: 'active', description: '指标创建', createdAt: '2026-07-15 09:00:00', createdBy: '陈七', snapshot: snapshot({}) },
-    ],
     createdAt: '2026-07-15 09:00:00',
     updatedAt: '2026-07-15 09:00:00',
     createdBy: '陈七',
@@ -1179,7 +1192,7 @@ export function buildMetricTree(metrics: MetricItem[]): MetricTreeNode[] {
   const domainMap = new Map<string, Map<string, MetricTreeNode>>()
 
   for (const m of metrics) {
-    if (m.status === 'archived') continue
+    if (m.status === 'inactive') continue
 
     if (!domainMap.has(m.domain)) {
       domainMap.set(m.domain, new Map())
@@ -1213,7 +1226,6 @@ export function buildMetricTree(metrics: MetricItem[]): MetricTreeNode[] {
  */
 export const METRIC_VALUES: Record<string, MetricValueSeries> = {
   CREDIT_PASS_RATE: {
-    version: 3,
     unit: '%',
     trend: 1.8,
     mom: 1.8,
@@ -1233,7 +1245,6 @@ export const METRIC_VALUES: Record<string, MetricValueSeries> = {
     ],
   },
   FPD30_RATE: {
-    version: 2,
     unit: '%',
     trend: -0.12,
     mom: -0.12,
@@ -1254,7 +1265,6 @@ export const METRIC_VALUES: Record<string, MetricValueSeries> = {
     ],
   },
   DAU: {
-    version: 1,
     unit: '万人',
     trend: 4.6,
     mom: 4.6,
@@ -1269,7 +1279,6 @@ export const METRIC_VALUES: Record<string, MetricValueSeries> = {
     ],
   },
   LOAN_BALANCE: {
-    version: 1,
     unit: '亿元',
     trend: 2.3,
     mom: 1.6,
@@ -1284,7 +1293,6 @@ export const METRIC_VALUES: Record<string, MetricValueSeries> = {
     ],
   },
   NPL_RATIO: {
-    version: 2,
     unit: '%',
     trend: -0.05,
     mom: -2.05,
@@ -1307,7 +1315,6 @@ export const METRIC_VALUES: Record<string, MetricValueSeries> = {
     threshold: 5,
   },
   CAR: {
-    version: 1,
     unit: '%',
     trend: 0.15,
     mom: 1.1,
@@ -1323,7 +1330,6 @@ export const METRIC_VALUES: Record<string, MetricValueSeries> = {
     threshold: 10.5,
   },
   CAC: {
-    version: 1,
     unit: '元',
     trend: -5.2,
     mom: -5.2,
@@ -1343,7 +1349,6 @@ export const METRIC_VALUES: Record<string, MetricValueSeries> = {
     ],
   },
   NIM: {
-    version: 2,
     unit: '%',
     trend: 0.06,
     mom: 0.55,
@@ -1358,7 +1363,6 @@ export const METRIC_VALUES: Record<string, MetricValueSeries> = {
     ],
   },
   PROVISION_COVERAGE: {
-    version: 1,
     unit: '%',
     trend: 1.5,
     mom: 0.6,
@@ -1374,7 +1378,6 @@ export const METRIC_VALUES: Record<string, MetricValueSeries> = {
     threshold: 150,
   },
   REPEAT_LOAN_RATE: {
-    version: 1,
     unit: '%',
     trend: 2.1,
     mom: 2.1,
@@ -1389,7 +1392,6 @@ export const METRIC_VALUES: Record<string, MetricValueSeries> = {
     ],
   },
   MAU: {
-    version: 1,
     unit: '万人',
     trend: 3.8,
     mom: 3.8,
@@ -1404,7 +1406,6 @@ export const METRIC_VALUES: Record<string, MetricValueSeries> = {
     ],
   },
   LCR: {
-    version: 1,
     unit: '%',
     trend: 3.2,
     mom: 1.34,
@@ -1420,7 +1421,6 @@ export const METRIC_VALUES: Record<string, MetricValueSeries> = {
     threshold: 100,
   },
   CHANNEL_ROI: {
-    version: 1,
     unit: '',
     trend: 0.18,
     mom: 6.4,
@@ -1452,20 +1452,19 @@ export const DASHBOARD_BOARDS: DashboardBoardConfig[] = [
     subtitle: '面向金融市场部管理层 · 数据来源于指标中心统一定义',
     audience: '金融市场部',
     kpis: [
-      { key: 'kpi-loan', title: '贷款余额', chartType: 'kpi', metricCode: 'LOAN_BALANCE', pinnedVersions: { LOAN_BALANCE: 1 } },
-      { key: 'kpi-car', title: '资本充足率', chartType: 'kpi', metricCode: 'CAR', pinnedVersions: { CAR: 1 } },
-      { key: 'kpi-npl', title: '不良贷款率', chartType: 'kpi', metricCode: 'NPL_RATIO', pinnedVersions: { NPL_RATIO: 1 } },
-      { key: 'kpi-lcr', title: '流动性覆盖率', chartType: 'kpi', metricCode: 'LCR', pinnedVersions: { LCR: 1 } },
+      { key: 'kpi-loan', title: '贷款余额', chartType: 'kpi', metricCode: 'LOAN_BALANCE' },
+      { key: 'kpi-car', title: '资本充足率', chartType: 'kpi', metricCode: 'CAR' },
+      { key: 'kpi-npl', title: '不良贷款率', chartType: 'kpi', metricCode: 'NPL_RATIO' },
+      { key: 'kpi-lcr', title: '流动性覆盖率', chartType: 'kpi', metricCode: 'LCR' },
     ],
     charts: [
-      { key: 'chart-loan-trend', title: '贷款余额趋势', chartType: 'line', metricCode: 'LOAN_BALANCE', pinnedVersions: { LOAN_BALANCE: 1 } },
-      { key: 'chart-asset-quality', title: '资产质量分布', chartType: 'pie', metricCode: 'NPL_RATIO', pinnedVersions: { NPL_RATIO: 1 } },
+      { key: 'chart-loan-trend', title: '贷款余额趋势', chartType: 'line', metricCode: 'LOAN_BALANCE' },
+      { key: 'chart-asset-quality', title: '资产质量分布', chartType: 'pie', metricCode: 'NPL_RATIO' },
       {
         key: 'chart-regulatory',
         title: '监管指标达标情况',
         chartType: 'bar',
         metricCodes: ['CAR', 'NPL_RATIO', 'PROVISION_COVERAGE', 'LCR'],
-        pinnedVersions: { CAR: 1, NPL_RATIO: 1, PROVISION_COVERAGE: 1, LCR: 1 },
       },
     ],
   },

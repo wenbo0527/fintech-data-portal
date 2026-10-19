@@ -13,10 +13,9 @@
             <span class="ref-name">{{ metricRef.metric?.name || metricRef.code }}</span>
             <a-tag v-if="metricRef.metric?.type === 'regulatory'" color="red" size="small">监管</a-tag>
             <a-tag v-else-if="metricRef.metric" color="blue" size="small">业务</a-tag>
-            <a-tag v-if="metricRef.status === 'ok'" color="green" size="small">v{{ metricRef.metric?.currentVersion }}</a-tag>
+            <a-tag v-if="metricRef.status === 'ok'" color="green" size="small">已启用</a-tag>
             <a-tag v-else-if="metricRef.status === 'missing'" color="orangered" size="small">未注册</a-tag>
-            <a-tag v-else-if="metricRef.status === 'draft'" color="orange" size="small">草稿</a-tag>
-            <a-tag v-else color="gray" size="small">已归档</a-tag>
+            <a-tag v-else color="gray" size="small">已停用</a-tag>
           </div>
           <div class="ref-row"><span class="ref-label">指标编码</span>{{ metricRef.code }}</div>
           <template v-if="metricRef.metric">
@@ -29,9 +28,6 @@
             </div>
             <div class="ref-row definition">
               <span class="ref-label">业务口径</span>{{ stripHtml(metricRef.metric.businessDefinition) }}
-            </div>
-            <div v-if="metricRef.outdated" class="ref-warn">
-              看板锁定 v{{ metricRef.pinnedVersion }}，指标已升级至 v{{ metricRef.metric.currentVersion }}
             </div>
             <div class="ref-actions">
               <a-link size="small" @click="emit('detail', metricRef.metric!.id, card)">查看指标详情</a-link>
@@ -83,8 +79,7 @@ function stripHtml(html?: string) {
     font-size: 13px;
 
     & + .ref-block { border-top: 1px dashed #e5e6eb; }
-    &.status-missing, &.status-archived, &.status-draft { background: #fff7e8; }
-    &.status-archived { background: #f7f8fa; }
+    &.status-missing, &.status-inactive { background: #f7f8fa; }
   }
 
   .ref-title {

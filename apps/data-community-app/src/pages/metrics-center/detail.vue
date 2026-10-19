@@ -12,6 +12,7 @@
             <a-tag :color="metric.type === 'business' ? 'blue' : 'red'" size="small">
               {{ metric.type === 'business' ? '业务核心指标' : '监管指标' }}
             </a-tag>
+            <a-tag v-if="metric.type === 'regulatory' && metric.version" size="small" color="purple">v{{ metric.version }}</a-tag>
             <a-badge :status="statusMap[metric.status]" :text="statusText[metric.status]" />
           </div>
           <div class="header-meta">
@@ -20,8 +21,6 @@
             <span>{{ metric.scenario }}</span>
             <a-divider direction="vertical" />
             <span>指标ID：{{ metric.id }}</span>
-            <a-divider direction="vertical" />
-            <span>当前版本：v{{ metric.currentVersion }}</span>
           </div>
         </div>
       </div>
@@ -39,29 +38,19 @@
               <IconBell v-else />
             </a-button>
           </a-tooltip>
-          <a-button @click="goEdit" v-if="metric.status !== 'pending'">
+          <a-button @click="goEdit">
             <template #icon><IconEdit /></template>
             编辑
           </a-button>
-          <template v-if="metric.status === 'draft'">
-            <a-button type="outline" @click="handleSubmitReview">提交审核</a-button>
-          </template>
-          <template v-if="metric.status === 'pending'">
-            <a-popconfirm content="确定审批通过并上线该指标？" @ok="handleApprove">
-              <a-button type="primary">审批通过</a-button>
-            </a-popconfirm>
-            <a-button status="danger" @click="rejectVisible = true">驳回</a-button>
-          </template>
+          <a-popconfirm v-if="metric.status === 'active'" content="确定停用该指标？" @ok="handleArchive">
+            <a-button status="warning">停用</a-button>
+          </a-popconfirm>
+          <a-popconfirm v-if="metric.status === 'inactive'" content="确定启用该指标？" @ok="handleReactivate">
+            <a-button type="primary">启用</a-button>
+          </a-popconfirm>
         </a-space>
       </div>
     </div>
-
-    <a-alert v-if="metric.status === 'pending'" type="warning" style="margin-bottom: 16px">
-      该指标正在审核中，审批通过后将以上待生效版本上线
-    </a-alert>
-    <a-alert v-else-if="metric.status === 'draft' && metric.reviewNote" type="error" style="margin-bottom: 16px">
-      最近一次审核被驳回：{{ metric.reviewNote }}
-    </a-alert>
 
     <!-- 内容区域 -->
     <div class="detail-body">
@@ -87,15 +76,12 @@
             <div class="completeness-cell">
               <a-progress :percent="completeness.metaScore / 100" size="small" :show-text="false" :status="progressStatus(completeness.metaScore)" style="width: 80px" />
               <span class="completeness-label">人读 {{ completeness.metaScore }}</span>
-              <a-progress :percent="completeness.agentScore / 100" size="small" :show-text="false" :status="progressStatus(completeness.agentScore)" style="width: 80px" />
-              <span class="completeness-label">Agent {{ completeness.agentScore }}</span>
             </div>
           </a-descriptions-item>
         </a-descriptions>
-        <div v-if="completeness.metaMissing.length || completeness.agentMissing.length" class="completeness-gaps">
+        <div v-if="completeness.metaMissing.length" class="completeness-gaps">
           缺口：
           <a-tag v-for="g in completeness.metaMissing" :key="'m-' + g" color="orange" size="small">{{ g }}</a-tag>
-          <a-tag v-for="g in completeness.agentMissing" :key="'a-' + g" color="red" size="small">{{ g }}</a-tag>
         </div>
       </a-card>
 
@@ -107,25 +93,11 @@
         </template>
         <div class="consume-summary">
           <span>最新取值：<strong>{{ latestValueText }}</strong></span>
-          <a-divider direction="vertical" />
-          <span>取值版本：v{{ metric.currentVersion }}</span>
         </div>
         <a-table :data="consumers" :pagination="false" row-key="cardKey" size="small" style="margin-top: 12px">
           <template #columns>
             <a-table-column title="消费方" data-index="boardTitle" :width="180" />
             <a-table-column title="看板卡片" data-index="cardTitle" :width="160" />
-            <a-table-column title="看板锁定版本" :width="120">
-              <template #cell="{ record }">v{{ record.pinnedVersion }}</template>
-            </a-table-column>
-            <a-table-column title="指标当前版本" :width="120">
-              <template #cell="{ record }">v{{ record.currentVersion }}</template>
-            </a-table-column>
-            <a-table-column title="状态" :width="120">
-              <template #cell="{ record }">
-                <a-tag v-if="record.pinnedVersion !== record.currentVersion" color="orange" size="small">口径已更新</a-tag>
-                <a-tag v-else color="green" size="small">一致</a-tag>
-              </template>
-            </a-table-column>
             <a-table-column title="操作" :width="100">
               <template #cell="{ record }">
                 <a-button type="text" size="small" @click="goBoard(record.boardId)">前往看板</a-button>
@@ -178,28 +150,6 @@
         </div>
       </a-card>
 
-      <!-- Agent 信息（语义契约） -->
-      <a-card class="detail-card">
-        <template #title>
-          Agent 信息（语义契约）
-          <a-tag size="small" color="orangered" style="margin-left: 8px">机器可读 · 二期智能问数地基</a-tag>
-        </template>
-        <a-descriptions :column="1" bordered size="small">
-          <a-descriptions-item label="同义词 / 别名（AG-01）">
-            <a-space wrap>
-              <a-tag v-for="s in metric.agentMeta?.synonyms" :key="s" color="arcoblue">{{ s }}</a-tag>
-              <span v-if="!metric.agentMeta?.synonyms?.length" class="gap-text">缺失</span>
-            </a-space>
-          </a-descriptions-item>
-        </a-descriptions>
-        <!-- Agent 说明文档（Markdown，统一承载 AG-02~08 语义内容） -->
-        <div v-if="metric.agentDoc" class="agent-doc">
-          <h4 class="block-subtitle">Agent 说明文档（AG-02~08：口径约束 / 枚举映射 / 维度组 / 适用禁用 / 回答行为）</h4>
-          <MarkdownView :content="metric.agentDoc" />
-        </div>
-        <span v-else class="gap-text" style="display: block; margin-top: 12px">未维护 Agent 说明文档（语义类型、枚举映射、必需过滤、维度组、适用禁用场景等请在此文档中补充）</span>
-      </a-card>
-
       <!-- 报表挂载 / 报表位置 -->
       <a-card title="报表位置" class="detail-card" v-if="metric.reportLocations.length > 0 || metric.reportMounts?.length">
         <a-table v-if="metric.reportMounts?.length" :data="mountRows" :pagination="false" size="small" row-key="reportId" style="margin-bottom: 12px">
@@ -239,6 +189,39 @@
         <div v-if="metric.reportMounts?.length" class="derive-hint">"访问入口"列由报表侧统一派生（人机同源），如需调整请到报表管理修改</div>
       </a-card>
 
+      <!-- 版本历史（仅监管指标） -->
+      <a-card v-if="metric.type === 'regulatory' && metric.versions?.length" class="detail-card">
+        <template #title>
+          版本历史
+          <a-tag size="small" color="purple" style="margin-left: 8px">当前 v{{ metric.version }}</a-tag>
+        </template>
+        <a-table :data="metric.versions" :pagination="false" row-key="version" size="small">
+          <template #columns>
+            <a-table-column title="版本" :width="80">
+              <template #cell="{ record }">
+                <a-tag :color="record.version === metric.version ? 'purple' : 'gray'" size="small">v{{ record.version }}</a-tag>
+                <span v-if="record.version === metric.version" style="margin-left: 4px; font-size: 12px; color: #722ed1;">当前</span>
+              </template>
+            </a-table-column>
+            <a-table-column title="变更说明" data-index="changeNote" />
+            <a-table-column title="变更时间" data-index="createdAt" :width="180" />
+            <a-table-column title="变更人" data-index="createdBy" :width="100" />
+            <a-table-column title="操作" :width="160">
+              <template #cell="{ record }">
+                <a-button type="text" size="small" @click="openVersionSnapshot(record.version)">查看快照</a-button>
+                <a-popconfirm
+                  v-if="record.version !== metric.version"
+                  :content="`确定激活 v${record.version}？将以此版本内容覆盖当前指标，并生成新版本。`"
+                  @ok="handleActivateVersion(record.version)"
+                >
+                  <a-button type="text" size="small" status="warning">激活此版本</a-button>
+                </a-popconfirm>
+              </template>
+            </a-table-column>
+          </template>
+        </a-table>
+      </a-card>
+
       <!-- 数据血缘 -->
       <a-card title="数据血缘" class="detail-card">
         <a-empty v-if="!lineage" description="暂未采集血缘（元数据系统未接通）；可参考上方技术口径 SQL 与结果表" />
@@ -265,49 +248,6 @@
         </div>
       </a-card>
 
-      <!-- 版本历史 -->
-      <a-card title="版本历史" class="detail-card">
-        <a-alert v-if="metric.versions.length > 50" type="info" style="margin-bottom: 12px;">
-          仅展示最近50条版本记录
-        </a-alert>
-        <a-table :data="metric.versions.slice(0, 50)" :pagination="false" row-key="version" :scroll="{ x: 800 }">
-          <template #columns>
-            <a-table-column title="版本号" data-index="version" :width="100">
-              <template #cell="{ record }">v{{ record.version }}</template>
-            </a-table-column>
-            <a-table-column title="状态" data-index="status" :width="100">
-              <template #cell="{ record }">
-                <a-tag :color="versionStatusColor[record.status]" size="small">{{ versionStatusText[record.status] }}</a-tag>
-              </template>
-            </a-table-column>
-            <a-table-column title="版本说明" data-index="description" :width="200" />
-            <a-table-column title="创建时间" data-index="createdAt" :width="180" />
-            <a-table-column title="创建人" data-index="createdBy" :width="100" />
-            <a-table-column title="操作" :width="200" fixed="right">
-              <template #cell="{ record }">
-                <a-space>
-                  <a-button type="text" size="small" @click="viewVersion(record.version)">查看详情</a-button>
-                  <a-button
-                    v-if="record.status !== 'active'"
-                    type="text"
-                    size="small"
-                    status="success"
-                    @click="activateVersion(record.version)"
-                  >激活版本</a-button>
-                  <a-popconfirm
-                    v-if="record.status !== 'active'"
-                    content="确定删除该版本？删除后不可恢复"
-                    @ok="deleteVersion(record.version)"
-                  >
-                    <a-button type="text" size="small" status="danger">删除</a-button>
-                  </a-popconfirm>
-                  <span v-else style="color: #86909c; font-size: 12px;">当前启用</span>
-                </a-space>
-              </template>
-            </a-table-column>
-          </template>
-        </a-table>
-      </a-card>
     </div>
 
     <!-- 血缘节点详情弹窗 -->
@@ -327,12 +267,30 @@
       <a-empty v-else description="该节点暂无字段级详情" />
     </a-modal>
 
-    <!-- 驳回原因弹窗 -->
-    <a-modal v-model:visible="rejectVisible" title="驳回审核" @before-ok="confirmReject" :ok-button-props="{ disabled: !rejectReason.trim() }" ok-text="确认驳回">
-      <a-form-item label="驳回原因（必填，将展示给提交人）">
-        <a-textarea v-model="rejectReason" placeholder="如：业务口径与技术口径不一致，请补充" :max-length="200" show-word-limit :auto-size="{ minRows: 3 }" />
-      </a-form-item>
+    <!-- 版本快照查看弹窗 -->
+    <a-modal v-model:visible="snapshotVisible" :title="`版本快照 v${viewingVersion?.version ?? ''}`" :footer="false" width="720px" unmount-on-close>
+      <a-descriptions v-if="viewingVersion" :column="2" bordered size="small">
+        <a-descriptions-item label="指标名称">{{ viewingVersion.snapshot.name }}</a-descriptions-item>
+        <a-descriptions-item label="指标编码">{{ viewingVersion.snapshot.code }}</a-descriptions-item>
+        <a-descriptions-item label="指标域">{{ viewingVersion.snapshot.domain }}</a-descriptions-item>
+        <a-descriptions-item label="归属场景">{{ viewingVersion.snapshot.scenario }}</a-descriptions-item>
+        <a-descriptions-item label="业务负责人">{{ viewingVersion.snapshot.businessOwner }}</a-descriptions-item>
+        <a-descriptions-item label="技术负责人">{{ viewingVersion.snapshot.technicalOwner }}</a-descriptions-item>
+        <a-descriptions-item label="计算时效">{{ frequencyLabel(viewingVersion.snapshot.calculationFrequency) }}</a-descriptions-item>
+        <a-descriptions-item label="来源类型">{{ optionLabel(SOURCE_TYPE_OPTIONS, viewingVersion.snapshot.sourceType) || '未填写' }}</a-descriptions-item>
+        <a-descriptions-item label="业务口径" :span="2">
+          <div class="rich-text-content" v-html="viewingVersion.snapshot.businessDefinition"></div>
+        </a-descriptions-item>
+        <a-descriptions-item v-if="viewingVersion.snapshot.useCase" label="使用场景" :span="2">
+          <div class="rich-text-content" v-html="viewingVersion.snapshot.useCase"></div>
+        </a-descriptions-item>
+        <a-descriptions-item label="技术口径" :span="2">
+          <pre class="sql-block" style="max-height: 200px">{{ viewingVersion.snapshot.technicalDefinition }}</pre>
+        </a-descriptions-item>
+        <a-descriptions-item v-if="viewingVersion.snapshot.resultTable" label="结果表" :span="2">{{ viewingVersion.snapshot.resultTable }}</a-descriptions-item>
+      </a-descriptions>
     </a-modal>
+
   </div>
 
   <a-empty v-else description="指标不存在" style="padding: 60px;">
@@ -345,11 +303,10 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { MetricsCenterStore, calcCompleteness } from '@/mock-dca/metrics-center/store'
-import MarkdownView from '@/components-dca/common/MarkdownView.vue'
 import {
   FREQUENCY_OPTIONS, SOURCE_TYPE_OPTIONS, GRANULARITY_OPTIONS,
 } from '@/mock-dca/metrics-center/data'
-import type { MetricItem, LineageNode, LineageNodeType } from '@/mock-dca/metrics-center/types'
+import type { MetricItem, MetricVersion, LineageNode, LineageNodeType } from '@/mock-dca/metrics-center/types'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
@@ -372,10 +329,8 @@ const latestValueText = computed(() => {
   return `${last.value.toLocaleString('zh-CN')} ${series.unit}（${last.period}）`
 })
 
-const statusMap: Record<string, string> = { active: 'success', pending: 'processing', archived: 'default', draft: 'warning' }
-const statusText: Record<string, string> = { active: '启用', pending: '审核中', archived: '归档', draft: '草稿' }
-const versionStatusColor: Record<string, string> = { active: 'green', pending: 'blue', archived: 'gray', draft: 'orange' }
-const versionStatusText: Record<string, string> = { active: '启用', pending: '待生效', archived: '归档', draft: '草稿' }
+const statusMap: Record<string, string> = { active: 'success', inactive: 'default' }
+const statusText: Record<string, string> = { active: '启用', inactive: '停用' }
 
 function frequencyLabel(val: string) {
   return FREQUENCY_OPTIONS.find(f => f.value === val)?.label || val
@@ -440,40 +395,50 @@ function viewLineageNode(node: LineageNode) {
   nodeVisible.value = true
 }
 
-/* ---------------- 审核状态机动作 ---------------- */
-const rejectVisible = ref(false)
-const rejectReason = ref('')
+/* ---------------- 版本管理（仅监管指标） ---------------- */
+const snapshotVisible = ref(false)
+const viewingVersion = ref<MetricVersion | undefined>()
 
-function handleSubmitReview() {
+function openVersionSnapshot(version: number) {
+  const v = metric.value?.versions?.find(item => item.version === version)
+  if (!v) {
+    Message.error('版本不存在')
+    return
+  }
+  viewingVersion.value = v
+  snapshotVisible.value = true
+}
+
+function handleActivateVersion(version: number) {
   try {
-    MetricsCenterStore.submitReview(props.id)
-    Message.success('已提交审核，等待管理员审批')
-    loadData()
+    const updated = MetricsCenterStore.activateVersion(props.id, version)
+    if (updated) {
+      metric.value = updated
+      Message.success(`已激活历史版本 v${version}，当前版本 v${updated.version}`)
+    }
   } catch (e: any) {
-    Message.error(e.message || '提交失败')
+    Message.error(e.message || '激活失败')
   }
 }
 
-function handleApprove() {
+/* ---------------- 生命周期动作 ---------------- */
+function handleArchive() {
   try {
-    MetricsCenterStore.approve(props.id)
-    Message.success('审批通过，指标已上线')
+    MetricsCenterStore.archive(props.id)
     loadData()
+    Message.success('指标已停用')
   } catch (e: any) {
     Message.error(e.message || '操作失败')
   }
 }
 
-function confirmReject() {
+function handleReactivate() {
   try {
-    MetricsCenterStore.reject(props.id, rejectReason.value.trim())
-    Message.success('已驳回，指标退回草稿状态')
-    rejectReason.value = ''
+    MetricsCenterStore.reactivate(props.id)
     loadData()
-    return true
+    Message.success('指标已启用')
   } catch (e: any) {
-    Message.error(e.message || '驳回失败')
-    return false
+    Message.error(e.message || '操作失败')
   }
 }
 
@@ -517,46 +482,6 @@ function goBack() {
     return
   }
   router.push({ name: 'metrics-center' })
-}
-
-function viewVersion(version: number) {
-  const v = metric.value?.versions.find(x => x.version === version)
-  if (v && metric.value) {
-    const snap = v.snapshot
-    metric.value.businessDefinition = snap.businessDefinition
-    metric.value.useCase = snap.useCase
-    metric.value.calculationFrequency = snap.calculationFrequency
-    metric.value.technicalDefinition = snap.technicalDefinition
-    metric.value.technicalUsageNotes = snap.technicalUsageNotes
-    metric.value.reportLocations = JSON.parse(JSON.stringify(snap.reportLocations))
-    metric.value.resultTable = snap.resultTable
-    metric.value.queryCode = snap.queryCode
-    Message.info(`已切换到 v${version} 的内容`)
-  }
-}
-
-function activateVersion(version: number) {
-  try {
-    const updated = MetricsCenterStore.activateVersion(props.id, version)
-    if (updated) {
-      metric.value = updated
-      Message.success(`v${version} 已激活，原启用版本已归档`)
-    }
-  } catch (e: any) {
-    Message.error(e.message)
-  }
-}
-
-function deleteVersion(version: number) {
-  try {
-    const updated = MetricsCenterStore.deleteVersion(props.id, version)
-    if (updated) {
-      metric.value = updated
-      Message.success(`v${version} 已删除`)
-    }
-  } catch (e: any) {
-    Message.error(e.message)
-  }
 }
 
 onMounted(() => {
@@ -629,12 +554,6 @@ onMounted(() => {
   .gap-text {
     color: #f53f3f;
     font-size: 12px;
-  }
-
-  .agent-doc {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px dashed #e5e6eb;
   }
 
   .block-subtitle {

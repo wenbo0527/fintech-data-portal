@@ -31,11 +31,7 @@
           </template>
           <template #extra>
             <a-tag v-if="stateOf(card) === 'missing'" color="orangered" size="small">未注册</a-tag>
-            <a-tag v-else-if="stateOf(card) === 'draft'" color="orange" size="small">草稿不可用</a-tag>
-            <a-tag v-else-if="stateOf(card) === 'archived'" color="gray" size="small">口径已归档</a-tag>
-            <a-link v-else-if="isOutdated(card)" size="small" @click="goDetail(card.primary!.metric!.id, card, true)">
-              口径已更新
-            </a-link>
+            <a-tag v-else-if="stateOf(card) === 'inactive'" color="gray" size="small">已停用</a-tag>
           </template>
           <a-statistic
             :value="(displayValue(card) as unknown) as number"
@@ -58,9 +54,6 @@
             </template>
             <template v-else>
               <span>{{ card.primary?.metric?.businessOwner || '-' }} · {{ card.primary?.metric?.code }}</span>
-              <span v-if="isOutdated(card)" class="foot-warn">
-                v{{ card.primary?.pinnedVersion }} → v{{ card.primary?.metric?.currentVersion }}
-              </span>
             </template>
           </div>
           <!-- 环比 / 同比（R16：与上期、去年同期对比） -->
@@ -84,7 +77,6 @@
             <div class="card-title">
               <span>{{ card.title }}</span>
               <metric-ref-popover :card="card" @detail="goDetail" />
-              <a-tag v-if="isOutdated(card)" color="orange" size="small">口径已更新</a-tag>
             </div>
           </template>
           <div :ref="el => setChartEl(card.key, el)" style="height: 300px"></div>
@@ -99,15 +91,13 @@
             <div class="card-title">
               <span>{{ card.title }}</span>
               <metric-ref-popover :card="card" @detail="goDetail" />
-              <a-tag v-if="outdatedCount(card)" color="orange" size="small">{{ outdatedCount(card) }} 项口径已更新</a-tag>
             </div>
           </template>
           <div :ref="el => setChartEl(card.key, el)" style="height: 280px"></div>
           <div class="ref-list">
-            <span v-for="metricRef in card.refs" :key="metricRef.code" class="ref-item" :class="{ outdated: metricRef.outdated }">
+            <span v-for="metricRef in card.refs" :key="metricRef.code" class="ref-item">
               <a-link size="small" @click="metricRef.metric && goDetail(metricRef.metric.id, card)">{{ metricRef.metric?.name || metricRef.code }}</a-link>
               <span class="ref-code">{{ metricRef.code }}</span>
-              <span v-if="metricRef.outdated" class="foot-warn">v{{ metricRef.pinnedVersion }} → v{{ metricRef.metric?.currentVersion }}</span>
             </span>
           </div>
         </a-card>
@@ -119,13 +109,10 @@
       <template #title>数据来源说明</template>
       本看板共 {{ totalCards }} 张卡片，引用指标中心 {{ distinctCodes.length }} 个指标编码，口径与取值均来自指标定义；
       <template v-if="issueRefs.length">
-        其中 {{ issueRefs.length }} 处引用异常（未注册 / 草稿 / 已归档），
+        其中 {{ issueRefs.length }} 处引用异常（未注册 / 已停用），
       </template>
-      <template v-if="outdatedRefs.length">
-        {{ outdatedRefs.length }} 处口径已升版（{{ outdatedRefs.map(r => `${r.metric?.name} v${r.pinnedVersion}→v${r.metric?.currentVersion}`).join('、') }}），请确认是否更新看板锁定版本。
-      </template>
-      <template v-else-if="!issueRefs.length">
-        全部引用与当前启用版本一致。
+      <template v-else>
+        全部引用正常。
       </template>
     </a-alert>
   </div>
@@ -149,21 +136,13 @@ const allRefs = computed(() => allCards.value.flatMap(c => c.refs))
 const totalCards = computed(() => allCards.value.length)
 const distinctCodes = computed(() => [...new Set(allRefs.value.map(r => r.code))])
 const issueRefs = computed(() => allRefs.value.filter(r => r.status !== 'ok'))
-const outdatedRefs = computed(() => allRefs.value.filter(r => r.outdated))
 
 function stateOf(card: ResolvedCard) {
   return card.primary?.status || 'missing'
 }
-function isOutdated(card: ResolvedCard) {
-  return !!card.primary?.outdated
-}
-function outdatedCount(card: ResolvedCard) {
-  return card.refs.filter(r => r.outdated).length
-}
 function cardClass(card: ResolvedCard) {
   return {
     'ref-disabled': stateOf(card) !== 'ok',
-    'ref-outdated': isOutdated(card),
   }
 }
 function displayValue(card: ResolvedCard) {
@@ -193,11 +172,11 @@ function pctClass(v: number | undefined) {
   return v >= 0 ? 'pct-up' : 'pct-down'
 }
 
-function goDetail(id: string, card: ResolvedCard, focusVersion = false) {
+function goDetail(id: string, card: ResolvedCard) {
   router.push({
     name: 'metrics-center-detail',
     params: { id },
-    query: { from: 'dashboard', board: board.value.config.id, card: card.key, ...(focusVersion ? { tab: 'versions' } : {}) },
+    query: { from: 'dashboard', board: board.value.config.id, card: card.key },
   })
 }
 function goRegister(card: ResolvedCard) {
@@ -367,10 +346,6 @@ onUnmounted(() => {
     }
   }
 
-  .ref-outdated {
-    border-color: #ffcf8b;
-  }
-
   .ref-disabled {
     :deep(.arco-statistic-content) { color: #c9cdd4; }
   }
@@ -391,7 +366,6 @@ onUnmounted(() => {
       gap: 6px;
       font-size: 12px;
 
-      &.outdated .ref-code { color: #ff7d00; }
     }
   }
 

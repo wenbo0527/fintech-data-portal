@@ -133,20 +133,13 @@
         </template>
         <div v-for="(mount, idx) in formData.reportMounts" :key="idx" class="mount-item">
           <div class="mount-row">
-            <a-select v-model="mount.reportId" placeholder="选择报表（报表库）" show-search :filter-option="filterReportOption" style="width: 300px" @change="onMountChange(mount)">
-              <a-option v-for="r in reportOptions" :key="r.id" :value="r.id">{{ r.name }}（{{ r.code }}）</a-option>
+            <a-select v-model="mount.reportId" placeholder="选择报表（报表库）" show-search :filter-option="filterReportOption" style="width: 360px" @change="onMountChange(mount)">
+              <a-option v-for="r in reportOptions" :key="r.id" :value="r.id">{{ r.name }}</a-option>
             </a-select>
-            <a-select v-model="mount.visibility" style="width: 150px; margin-left: 8px">
-              <a-option v-for="v in visibilityOptions" :key="v.value" :value="v.value">{{ v.label }}</a-option>
-            </a-select>
-            <a-input v-model="mount.role" placeholder="使用方/白名单（如 风险管理部, 张三）" style="width: 260px; margin-left: 8px" />
+            <a-input v-model="mount.scenarioRoutingPrompt" placeholder="场景路由提示词（AG-11：什么场景来这个报表）" style="width: 460px; margin-left: 8px" />
             <a-button type="text" status="danger" @click="removeMount(idx)">
               <template #icon><IconDelete /></template>
             </a-button>
-          </div>
-          <div class="mount-row" style="margin-top: 8px">
-            <a-input v-model="mount.params" placeholder="参数说明（如：branchCode 必填，统计周期）" style="width: 300px" />
-            <a-input v-model="mount.scenarioRoutingPrompt" placeholder="场景路由提示词（AG-11：什么场景来这个报表）" style="width: 540px; margin-left: 8px" />
           </div>
           <div v-if="mountedEntry(mount.reportId)" class="mount-entry">访问入口：{{ mountedEntry(mount.reportId) }}</div>
         </div>
@@ -154,27 +147,6 @@
           <template #icon><IconPlus /></template>
           添加报表挂载（最多10个）
         </a-button>
-      </a-card>
-
-      <!-- 版本信息 -->
-      <a-card title="版本信息" class="form-card">
-        <a-row :gutter="16">
-          <a-col :span="6">
-            <a-form-item label="版本号">
-              <a-input :model-value="versionDisplay" disabled />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item label="版本状态">
-              <a-tag :color="isEdit ? 'blue' : 'orange'">{{ isEdit ? '编辑中' : '草稿' }}</a-tag>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item field="versionDescription" label="版本说明" :rules="[{ maxLength: 100, message: '最大100字符' }]">
-              <a-input v-model="formData.versionDescription" placeholder="最大100字符" :max-length="100" show-word-limit />
-            </a-form-item>
-          </a-col>
-        </a-row>
       </a-card>
 
       <!-- 相似性检测 -->
@@ -240,10 +212,7 @@
       <div class="form-actions">
         <a-space>
           <a-button @click="goBack">取消</a-button>
-          <a-button type="outline" @click="handleSave('draft')" v-if="!isEdit">保存草稿</a-button>
-          <a-button type="outline" @click="handleSave('submit')" v-if="!isEdit">提交审核</a-button>
-          <a-button type="outline" @click="handleUpdate" v-if="isEdit">更新指标</a-button>
-          <a-button type="primary" @click="handleSave('publish')">{{ isEdit ? '新版本上线' : '直接上线' }}</a-button>
+          <a-button type="primary" @click="handleSave">保存</a-button>
         </a-space>
       </div>
     </a-form>
@@ -308,7 +277,6 @@ const formData = reactive({
   reportMounts: [] as MetricReportMount[],
   resultTable: '',
   queryCode: '',
-  versionDescription: '',
 })
 
 const fieldStatus = reactive<Record<string, string>>({})
@@ -316,14 +284,6 @@ const fieldStatus = reactive<Record<string, string>>({})
 const currentScenarios = computed(() => {
   if (formData.domain) return SCENARIO_OPTIONS[formData.domain] || []
   return []
-})
-
-const versionDisplay = computed(() => {
-  if (isEdit.value && editId.value) {
-    const m = MetricsCenterStore.getById(editId.value)
-    if (m) return `v${Math.max(...m.versions.map(v => v.version)) + 1}`
-  }
-  return 'v1'
 })
 
 const similarityLoading = ref(false)
@@ -411,7 +371,7 @@ function validateForm(): boolean {
 }
 
 /** 组装 store 入参：空串枚举转 undefined；reportLocations 由 store 按挂载派生 */
-function metricPayload(): Partial<MetricItem> & { versionDescription?: string } {
+function metricPayload(): Partial<MetricItem> {
   const { type, calculationFrequency, sourceType, granularity, reportMounts, agentMeta, ...rest } = { ...formData }
   return {
     ...rest,
@@ -421,10 +381,10 @@ function metricPayload(): Partial<MetricItem> & { versionDescription?: string } 
     granularity: granularity || undefined,
     agentMeta: { synonyms: agentMeta.synonyms },
     reportMounts: reportMounts.filter(m => m.reportId),
-  } as Partial<MetricItem> & { versionDescription?: string }
+  } as Partial<MetricItem>
 }
 
-function handleSave(action: 'draft' | 'submit' | 'publish') {
+function handleSave() {
   if (!validateForm()) {
     activeTab.value = 'human'
     Message.error('请填写"人读属性"页签中的必填字段')
@@ -433,35 +393,16 @@ function handleSave(action: 'draft' | 'submit' | 'publish') {
 
   try {
     if (isEdit.value) {
-      // 编辑模式：保存草稿新版本 或 上线新版本
-      if (action === 'draft') {
-        MetricsCenterStore.saveDraft(editId.value, metricPayload())
-        Message.success('草稿已保存，当前展示仍为启用版本')
-      } else {
-        MetricsCenterStore.publishVersion(editId.value, metricPayload())
-        Message.success('新版本已上线')
-      }
+      MetricsCenterStore.update(editId.value, metricPayload())
+      Message.success('指标已更新')
     } else {
-      // 新建模式：草稿 / 提交审核 / 直接上线
-      MetricsCenterStore.create(metricPayload(), action)
-      Message.success(action === 'draft' ? '指标已保存为草稿' : action === 'submit' ? '已提交审核，等待管理员审批' : '指标已上线')
+      MetricsCenterStore.create(metricPayload())
+      Message.success('指标已创建')
     }
     router.push({ name: 'metrics-center' })
   } catch (e: any) {
     Message.error(e.message || '操作失败')
   }
-}
-
-function handleUpdate() {
-  if (!validateForm()) {
-    activeTab.value = 'human'
-    Message.error('请填写"人读属性"页签中的必填字段')
-    return
-  }
-  const { versionDescription, ...metricData } = metricPayload()
-  MetricsCenterStore.update(editId.value, metricData)
-  Message.success('指标已更新，版本号不变')
-  router.push({ name: 'metrics-center' })
 }
 
 function goBack() {
@@ -498,7 +439,6 @@ function loadEditData() {
       formData.reportMounts = JSON.parse(JSON.stringify(m.reportMounts ?? []))
       formData.resultTable = m.resultTable
       formData.queryCode = m.queryCode
-      formData.versionDescription = ''
     }
   }
 }

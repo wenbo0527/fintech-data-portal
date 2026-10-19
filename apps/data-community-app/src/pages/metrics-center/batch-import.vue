@@ -26,14 +26,14 @@
         </a-space>
         <a-alert type="info" :show-icon="true">
           <template #title>模板字段说明</template>
-          指标编码、指标名称、指标类型、指标域、归属场景、业务负责人、技术负责人、业务口径、使用场景、计算时效、技术口径、技术口径使用说明、结果表、查询代码、报表路径、版本号、版本说明、版本状态
+          指标编码、指标名称、指标类型、指标域、归属场景、业务负责人、技术负责人、业务口径、使用场景、计算时效、技术口径、技术口径使用说明、结果表、查询代码、报表路径
         </a-alert>
         <a-alert type="warning" :show-icon="true">
           <template #title>注意事项</template>
           <ul style="margin: 0; padding-left: 20px;">
             <li>支持 .xlsx 和 .xls 格式，文件大小不超过10MB</li>
             <li>单次最多处理1000条记录</li>
-            <li>指标编码+版本号为唯一记录</li>
+            <li>指标编码为唯一记录</li>
             <li>技术负责人必须是系统内有效用户</li>
           </ul>
         </a-alert>

@@ -1,6 +1,7 @@
 /**
  * 指标中心 - 类型定义
- * 对应需求文档：指标中心 v3.0
+ * 对应需求文档：指标中心 v5.4（生命周期：注册即生效、仅启用/停用两态、保存即生效）
+ * 监管指标附加版本管理：全量快照、保存即生效、支持激活历史版本
  */
 
 /** 指标类型 */
@@ -9,11 +10,8 @@ export type MetricType = 'business' | 'regulatory'
 /** 指标域 */
 export type MetricDomain = 'business' | 'regulatory'
 
-/** 指标状态（含"审核中"，对齐需求状态机：草稿→审核中→启用→归档） */
-export type MetricStatus = 'active' | 'pending' | 'archived' | 'draft'
-
-/** 版本状态 */
-export type VersionStatus = 'active' | 'pending' | 'archived' | 'draft'
+/** 指标状态（v5.4：仅启用/停用两态，注册即生效） */
+export type MetricStatus = 'active' | 'inactive'
 
 /** 计算时效 */
 export type CalculationFrequency = 'realtime' | 'T+1' | 'T+2' | 'weekly' | 'monthly'
@@ -124,28 +122,40 @@ export interface MetricLineageGraph {
   edges: LineageEdge[]
 }
 
-/** 指标版本 */
+/** 监管指标版本快照（全量快照，仅监管指标） */
 export interface MetricVersion {
+  /** 版本号 */
   version: number
-  status: VersionStatus
-  description: string
+  /** 变更说明 */
+  changeNote: string
+  /** 版本创建时间 */
   createdAt: string
+  /** 创建人 */
   createdBy: string
-  /** 版本内容快照 */
+  /** 快照数据（版本时刻的核心字段副本） */
   snapshot: MetricVersionSnapshot
 }
 
-/** 版本内容快照（版本历史中存储的内容） */
+/** 版本快照数据（MetricItem 的核心可变字段） */
 export interface MetricVersionSnapshot {
+  name: string
+  code: string
+  domain: string
+  scenario: string
+  businessOwner: string
+  technicalOwner: string
   businessDefinition: string
   useCase: string
   calculationFrequency: CalculationFrequency
   technicalDefinition: string
   technicalUsageNotes: string
-  reportLocations: ReportLocation[]
   resultTable: string
   queryCode: string
-  versionDescription: string
+  sourceType?: MetricSourceType
+  granularity?: MetricGranularity
+  reportMounts?: MetricReportMount[]
+  agentMeta?: MetricAgentMeta
+  agentDoc?: string
 }
 
 /** 指标完整数据结构 */
@@ -194,12 +204,6 @@ export interface MetricItem {
   agentDoc?: string
   /** 报表挂载（从报表库选择，替代手填 reportLocations） */
   reportMounts?: MetricReportMount[]
-  /** 当前审核意见（状态=审核中/驳回提示用） */
-  reviewNote?: string
-  /** 当前版本号 */
-  currentVersion: number
-  /** 版本历史 */
-  versions: MetricVersion[]
   /** 创建时间 */
   createdAt: string
   /** 更新时间 */
@@ -212,6 +216,10 @@ export interface MetricItem {
   isSubscribed: boolean
   /** 排序权重（指标地图顺序） */
   sortOrder: number
+  /** 当前版本号（仅监管指标，从 1 开始） */
+  version?: number
+  /** 版本历史（仅监管指标，全量快照） */
+  versions?: MetricVersion[]
 }
 
 /** 指标树节点 */
@@ -297,10 +305,8 @@ export interface MetricValuePoint {
   value: number
 }
 
-/** 指标取值（Mock：模拟从结果表查得的数据，跟随当前启用版本） */
+/** 指标取值（Mock：模拟从结果表查得的数据，始终跟随当前启用口径） */
 export interface MetricValueSeries {
-  /** 取值对应的口径版本 */
-  version: number
   unit: string
   /** 较上期变化百分比 */
   trend: number
@@ -331,8 +337,6 @@ export interface DashboardCardConfig {
   metricCode?: string
   /** 组合图（如监管达标对比）引用多个指标编码 */
   metricCodes?: string[]
-  /** 看板设计时锁定的口径版本（key=指标编码），与当前版本不一致时提示「口径已更新」 */
-  pinnedVersions?: Record<string, number>
   /** 引用的编码在指标中心查不到时给出的注册入口 */
   registerHint?: string
 }
@@ -353,12 +357,8 @@ export interface ResolvedRef {
   code: string
   metric?: MetricItem
   values?: MetricValueSeries
-  /** 引用状态：正常 / 未注册 / 草稿 / 已归档 */
-  status: 'ok' | 'missing' | 'draft' | 'archived'
-  /** 看板锁定版本与指标当前版本不一致 */
-  outdated: boolean
-  /** 看板锁定的版本 */
-  pinnedVersion?: number
+  /** 引用状态：正常 / 未注册 / 已停用 */
+  status: 'ok' | 'missing' | 'inactive'
 }
 
 /** 卡片解析结果 */
@@ -381,6 +381,4 @@ export interface MetricConsumer {
   boardTitle: string
   cardKey: string
   cardTitle: string
-  pinnedVersion: number
-  currentVersion: number
 }

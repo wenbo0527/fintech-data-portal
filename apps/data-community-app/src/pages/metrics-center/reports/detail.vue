@@ -57,13 +57,8 @@
             </a-descriptions-item>
           </a-descriptions>
           <div class="contract-hint">
-            人机同源：指标详情页展示的"报表位置 / 访问入口"均由此处统一派生，修改后所有挂载指标同步生效；参数、维度、权限等调用语义在下方 Agent 说明文档维护。
+            人机同源：指标详情页展示的"报表位置 / 访问入口"均由此处统一派生，修改后所有挂载指标同步生效。
           </div>
-        </a-card>
-
-        <!-- Agent 说明文档（Markdown 长文本，统一样式渲染） -->
-        <a-card v-if="report.agentDoc" title="Agent 说明文档" :bordered="false" class="section-card">
-          <MarkdownView :content="report.agentDoc" />
         </a-card>
 
         <!-- 被引用指标（R25 反查） -->
@@ -101,7 +96,6 @@ import { Message } from '@arco-design/web-vue'
 import { IconLeft, IconEdit } from '@arco-design/web-vue/es/icon'
 import { MetricsCenterStore } from '@/mock-dca/metrics-center/store'
 import { REPORT_TYPE_OPTIONS, FREQUENCY_OPTIONS } from '@/mock-dca/metrics-center/data'
-import MarkdownView from '@/components-dca/common/MarkdownView.vue'
 import type { ReportItem, ReportType, CalculationFrequency } from '@/mock-dca/metrics-center/types'
 
 const props = defineProps<{ id: string }>()

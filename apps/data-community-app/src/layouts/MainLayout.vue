@@ -333,6 +333,8 @@ const managementMenus = [
     ]},
     { key: 'management/element-sub-service', title: '数据服务', children: [
       { key: 'management/service', title: '数据服务' },
+      // 2026-10 新增:数据任务服务(一期),Doris ↔ Hive 双向自助同步
+      { key: 'management/service/sync-tasks', title: '数据同步任务' },
       { key: 'management/service/api-management', title: 'API 管理' },
       { key: 'management/service/api-wizard', title: 'API 上架' },
       { key: 'management/service/monitor', title: '服务监控' },
@@ -642,6 +644,10 @@ const NAME_BY_PATH: Record<string, string> = {
   'management/asset-management/listing-management/data-source': 'data-source-listing-overview',
   'management/asset-management/listing-management/metric-management': 'metric-management',
   'management/service': 'service',
+  // 2026-10 新增:数据同步任务模块路由名映射
+  'management/service/sync-tasks': 'service-sync',
+  'management/service/sync-tasks/create': 'service-sync-create',
+  'management/service/sync-tasks/records': 'service-sync-records',
   'management/service/api-wizard': 'api-wizard',
   'management/service/api-management': 'service-api-management',
   'management/service/backtrack': 'service-backtrack',

@@ -534,6 +534,26 @@ const routes: RouteRecordRaw[] = [
         component: () => import('../pages/management/service/fund-usage-query/index.vue'),
         meta: { title: '客户资金用途外数查询' }
       },
+      // 2026-10 新增:数据任务服务(一期) · Doris ↔ Hive 双向自助同步
+      //   模块入口 → 新建任务 → 执行记录(本期不实现通知)
+      {
+        path: 'management/service/sync-tasks',
+        name: 'service-sync',
+        component: () => import('../pages/management/service/sync-tasks/index.vue'),
+        meta: { title: '数据同步任务' }
+      },
+      {
+        path: 'management/service/sync-tasks/create',
+        name: 'service-sync-create',
+        component: () => import('../pages/management/service/sync-tasks/create.vue'),
+        meta: { title: '新建同步任务' }
+      },
+      {
+        path: 'management/service/sync-tasks/records',
+        name: 'service-sync-records',
+        component: () => import('../pages/management/service/sync-tasks/records.vue'),
+        meta: { title: '同步任务·执行记录' }
+      },
       {
         path: 'management/service/api-management',
         name: 'service-api-management',

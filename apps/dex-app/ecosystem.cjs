@@ -3,7 +3,7 @@ module.exports = {
     name: 'dex-app',
     script: 'npx',
     args: 'vite preview --port 8003 --host',
-    cwd: '/Users/wenbo/Documents/project/data_community/apps/dex-app',
+    cwd: __dirname,
     interpreter: 'none',
     autorestart: false,
     watch: false

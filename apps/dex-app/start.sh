@@ -1,3 +1,3 @@
 #!/bin/bash
-cd /Users/wenbo/Documents/project/data_community/apps/dex-app/dist
-exec /opt/homebrew/bin/serve -l 8003 -s
+cd "$(dirname "$0")"
+exec npx serve -l 8003 -s dist

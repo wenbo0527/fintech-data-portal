@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@app/shared-api": "workspace:*",
+    "@app/shared-utils": "workspace:*",
     "vue": "^3.4.0",
     "vue-router": "^4.3.0",
     "pinia": "^2.1.0",

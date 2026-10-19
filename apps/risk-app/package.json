@@ -9,6 +9,7 @@
     "preview": "vite preview --port 5176"
   },
   "dependencies": {
+    "@app/lineage-graph": "workspace:*",
     "@app/shared-api": "workspace:*",
     "@arco-design/web-vue": "^2.55.2",
     "axios": "^1.13.2",

@@ -12,7 +12,7 @@ import { ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { useRouter } from 'vue-router'
 import { goBack } from '@/router/utils'
-import { templateAPI } from '@/api/coupon.js'
+import { templateAPI } from '@/api/coupon'
 import type { TemplateFormData } from './useTemplateForm'
 
 export function useTemplateSubmit(

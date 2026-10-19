@@ -175,7 +175,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
 import { IconPlus } from '@arco-design/web-vue/es/icon'
-import { templateAPI } from '@/api/coupon.js'
+import { templateAPI } from '@/api/coupon'
 
 const router = useRouter()
 

@@ -2,7 +2,7 @@
 
 > **版本**: v1.0 · 2026-08-10 拍板 · 任务 TASK-20260810-607A63EF 落地
 > **维护**: data_community_doc（PM WBS L5 收口）
-> **关联**: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) 技术细节 · [`CONTRIBUTING.md`](CONTRIBUTING.md) 开发流程
+> **关联**: [`docs/architecture/README.md`](docs/architecture/README.md) 技术细节 · [`CONTRIBUTING.md`](CONTRIBUTING.md) 开发流程
 
 ---
 
@@ -14,8 +14,8 @@
 
 - **技术栈**: Vue 3.4 + Vite 5 + TypeScript + Arco Design 2.55
 - **代码量**: ~41 万行（Vue + TS）
-- **子应用**: 12 个独立子应用（risk/mkt/dex/admin/dmt/dfd/asset/touch/horizontal-canvas 等）
-- **部署**: portal-shell 主入口 + 12 个子应用独立部署（8443 + 8444 staging + 8445 ask-xiaoshu）
+- **子应用**: 8 个活跃子应用（mkt/dex/risk/touch/horizontal-canvas/report-monitor/data-community-app/semantic-app）+ 4 个已归档（admin/dmt/dfd/asset，已合并至 data-community-app）
+- **部署**: 子应用独立部署（8443 + 8444 staging + 8445 ask-xiaoshu），主入口由外部 portal-shell 独立仓库承载
 
 ### 1.2 团队结构
 
@@ -41,28 +41,34 @@
 
 ```
 data_community/
-├── apps/                        # 12 个独立 Vue/TS 应用（pnpm workspace）
+├── apps/                        # pnpm workspace 子应用
 │   ├── mkt-app/                 # 营销中台（最大）
 │   ├── dex-app/                 # 数据探索
-│   ├── dmt-app/                 # 数据模型
-│   ├── dfd-app/                 # 数据发现
-│   ├── admin-app/               # 运营后台
-│   ├── asset-app/               # 资产管理
 │   ├── risk-app/                # 风控应用
 │   ├── touch/                   # 触达管理
 │   ├── horizontal-canvas/       # 横版画布
 │   ├── report-monitor/          # 报表监控
-│   └── report-monitor-backend/  # 报表后端
+│   ├── report-monitor-backend/  # 报表后端
+│   ├── data-community-app/       # 数据社区合并应用
+│   ├── semantic-app/            # 语义应用
+│   ├── admin-app/               # ⚠️ 已归档（ARCHIVED 2026-09-09）
+│   ├── dmt-app/                 # ⚠️ 已归档
+│   ├── dfd-app/                 # ⚠️ 已归档
+│   └── asset-app/               # ⚠️ 已归档
 ├── packages/
-│   └── shared-api/              # 共享 axios 封装（仅 packages 内部）
-├── src/                         # ⚠️ 主应用已冻结（2026-08-10 文博拍板）
-│   └── DEPRECATED.md            # 主应用冻结声明
-├── docs/                        # 项目文档（含 ARCHITECTURE.md 详细版）
-├── portal-shell/                # 主入口（portal-shell 独立仓库 · 派蒙协调）
+│   ├── shared-api/              # 共享 axios 封装
+│   ├── shared-utils/            # 共享工具函数
+│   ├── lineage-graph/           # 血缘图组件
+│   └── semantic-contract/       # 语义契约
+├── archive/
+│   └── legacy-src/              # ⚠️ 主应用已冻结（2026-08-10 文博拍板）
+│       └── DEPRECATED.md        # 主应用冻结声明
+├── docs/                        # 项目文档（含架构文档详细版）
 ├── scripts/                     # 部署 + worktree + 监控脚本
+├── shared/                      # 共享 Vite 配置
+├── public/                      # 静态资源
+├── tests/                       # 单元 + E2E 测试
 ├── .github/                     # GH Actions + PR/Issue 模板 + CODEOWNERS
-├── .husky/                      # git hooks（Husky v9）
-├── memory/                      # changelog 目录（PM/arch/doc 沉淀）
 └── pnpm-workspace.yaml          # pnpm monorepo 配置
 ```
 
@@ -82,7 +88,7 @@ apps/mkt-app/src/
 └── router/        9    路由模块
 ```
 
-详见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) 详细版（5785B · 5 章节 · 10 章节仓库结构）。
+详见 [`docs/architecture/README.md`](docs/architecture/README.md) 详细版。
 
 ---
 
@@ -90,10 +96,12 @@ apps/mkt-app/src/
 
 ### 3.1 主入口（portal-shell + iframe 沙箱）
 
+> portal-shell 为独立外部仓库，不在本仓库内。
+
 | 角色 | 实现 | 路径 |
 |:--|:--|:--|
-| 主入口 | `portal-shell`（1.5M，Vue 3 + Arco）| `/var/www/html/portal-shell/` |
-| 子应用 | 12 个独立静态构建 | `/var/www/html/{risk,mkt,dex,dfd,dmt,admin,asset,canvas,call,community,touch,horizontal-canvas}/` |
+| 主入口 | `portal-shell`（Vue 3 + Arco，独立仓库）| `/var/www/html/portal-shell/` |
+| 子应用 | 8 个活跃独立静态构建 | `/var/www/html/{risk,mkt,dex,touch,horizontal-canvas,report-monitor,...}/` |
 | 加载方式 | iframe 嵌入 | `https://118.196.79.130:8443/${key}/` |
 
 ### 3.2 部署环境
@@ -111,7 +119,7 @@ apps/mkt-app/src/
 - **STAGING_CONFIRM**: staging 部署确认门（防止误发布）
 - **nginx_path**: nginx 路径映射（fix(scripts) TASK-20260810）
 
-详细：见 [`memory/changelog/2026-08-10-arch-tech-stack-optimization.md`](../memory/changelog/) Arco + X6 优化方案 + scripts 改动。
+详细：见 scripts/deploy.sh 与 scripts/rollback.sh 部署逻辑。
 
 ---
 
@@ -127,7 +135,7 @@ apps/mkt-app/src/
 
 ### 4.2 分支规约
 
-详见 [`docs/BRANCH_NAMING.md`](docs/BRANCH_NAMING.md)（PR #13 已落地）：
+详见 [`docs/governance/BRANCH_NAMING.md`](docs/governance/BRANCH_NAMING.md)（PR #13 已落地）：
 
 - **标准前缀**: `feat/` / `fix/` / `refactor/` / `docs/` / `chore/` / `hotfix/`
 - **命名格式**: `<prefix>/<scope>-<short-desc>`（如 `feat/risk-app-variable-hub-v1`）
@@ -135,7 +143,7 @@ apps/mkt-app/src/
 
 ### 4.3 提交规范
 
-详见 Husky v9 commit-（PR #14 已落地）+ [`docs/BRANCH_NAMING.md`](docs/BRANCH_NAMING.md)：
+详见 Husky v9 commit-（PR #14 已落地）+ [`docs/governance/BRANCH_NAMING.md`](docs/governance/BRANCH_NAMING.md)：
 
 - **Conventional Commits**: `<type>(<scope>): <subject>`
 - **type**: feat / fix / refactor / docs / chore / hotfix / test / build / ci / style / perf / revert
@@ -190,7 +198,7 @@ apps/mkt-app/src/
 
 ---
 
-## 6. src/ 主应用冻结（2026-08-10 文博拍板）
+## 6. archive/legacy-src/ 主应用冻结（2026-08-10 文博拍板）
 
 ### 6.1 决策
 
@@ -198,17 +206,17 @@ apps/mkt-app/src/
 
 ### 6.2 实施
 
-- ✅ [`src/DEPRECATED.md`](src/DEPRECATED.md) 已落地（PR #12 · commit 7e0facef）
+- ✅ [`archive/legacy-src/DEPRECATED.md`](archive/legacy-src/DEPRECATED.md) 已落地（PR #12 · commit 7e0facef）
 - ✅ `package.json` 加 `"deprecated"` 字段（npm 警告但不阻塞）
 - ⏳ 17 个孤儿模块处置方案（arch 主导 · TASK-20260810-22D94472）
 
 ### 6.3 影响
 
-- ❌ 新功能不在 src/ 开发（除非获得 C 级拍板）
+- ❌ 新功能不在 archive/legacy-src/ 开发（除非获得 C 级拍板）
 - ✅ 新功能只能在 apps/* 子应用或 portal-shell 工程开发
-- ⚠️ src/ 仅承担本地开发调试 + qiankun shell 参考 + 历史兼容 fallback
+- ⚠️ archive/legacy-src/ 仅承担本地开发调试 + qiankun shell 参考 + 历史兼容 fallback
 
-详见 [`src/DEPRECATED.md`](src/DEPRECATED.md)。
+详见 [`archive/legacy-src/DEPRECATED.md`](archive/legacy-src/DEPRECATED.md)。
 
 ---
 
@@ -218,11 +226,9 @@ apps/mkt-app/src/
 
 | 文档 | 内容 | 来源 |
 |:---|:---|:---|
-| [`memory/changelog/2026-08-10-arch-branch-evaluation.md`](memory/changelog/) | arch 4 幽灵分支评估 | arch |
-| [`memory/changelog/2026-08-10-arch-tech-stack-optimization.md`](memory/changelog/) | Arco + X6 优化方案 | arch |
-| [`docs/BRANCH_NAMING.md`](docs/BRANCH_NAMING.md) | 分支命名规约（v1.0）| doc + PM |
-| [`docs/BRANCH_CLEANUP.md`](docs/BRANCH_CLEANUP.md) | 分支清理 SOP（v1.0）| doc + PM |
-| [`src/DEPRECATED.md`](src/DEPRECATED.md) | 主应用冻结声明 | PM + doc |
+| [`docs/governance/BRANCH_NAMING.md`](docs/governance/BRANCH_NAMING.md) | 分支命名规约（v1.0）| doc + PM |
+| [`docs/governance/BRANCH_CLEANUP.md`](docs/governance/BRANCH_CLEANUP.md) | 分支清理 SOP（v1.0）| doc + PM |
+| [`archive/legacy-src/DEPRECATED.md`](archive/legacy-src/DEPRECATED.md) | 主应用冻结声明 | PM + doc |
 
 ### 7.2 PR 落地清单（WBS L1-L3 14 个 done 任务）
 
@@ -232,7 +238,7 @@ apps/mkt-app/src/
 | #14 | TASK-7C06C747 | Husky v9 commit-msg + pre-commit |
 | #15 | TASK-B298F6C5 | PR/Issue 模板 + CODEOWNERS |
 | #16 | TASK-42BA89C9 | CI 触发分支扩展 |
-| chore commit 7e0facef | TASK-EFBCDE05 | src/DEPRECATED.md |
+| chore commit 7e0facef | TASK-EFBCDE05 | archive/legacy-src/DEPRECATED.md |
 
 ### 7.3 排期
 

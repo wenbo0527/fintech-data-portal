@@ -13,6 +13,9 @@ node_modules/
 .pnp.js
 .yarn-integrity
 
+# Lock files (项目使用 pnpm，npm lock 文件冗余)
+package-lock.json
+
 # Build outputs
 dist/
 dist-ssr/

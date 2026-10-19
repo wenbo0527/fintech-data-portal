@@ -1,3 +1,9 @@
+# Archived apps (ARCHIVED 2026-09-09, merged into data-community-app)
+apps/asset-app/
+apps/dfd-app/
+apps/admin-app/
+apps/dmt-app/
+
 # Dependencies
 node_modules/
 

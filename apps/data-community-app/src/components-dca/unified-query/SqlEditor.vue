@@ -23,10 +23,13 @@
  * 在此基础上注册 SQL 补全:
  *   FROM / JOIN 后 → 表名;表名. 或 SELECT 后 → 该表字段(Mock 元数据)。
  */
-import { computed, onMounted, ref, shallowRef } from 'vue'
+import { computed, onMounted, ref, shallowRef, watch } from 'vue'
 import loader from '@monaco-editor/loader'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import { collectTableNames, getTableColumns } from '@/mock/unified-query/database'
+import { auditSqlSync } from '@/mock/unified-query/copilot'
+import type { CopilotMetaContext } from '@/mock/unified-query/metadata-context'
+import type { CopilotIssue } from '@/mock/unified-query/types'
 
 const props = withDefaults(
   defineProps<{
@@ -35,8 +38,10 @@ const props = withDefaults(
     readonly?: boolean
     /** 当前数据源,用于在补全项里区分 Doris / Hive 表 */
     datasource?: 'doris' | 'hive'
+    /** Copilot 元数据上下文,提供后字段补全将优先使用 context 中的字段元数据 */
+    context?: CopilotMetaContext | null
   }>(),
-  { height: '260px', readonly: false, datasource: 'doris' }
+  { height: '260px', readonly: false, datasource: 'doris', context: null }
 )
 
 const emit = defineEmits<{
@@ -45,6 +50,8 @@ const emit = defineEmits<{
   run: []
   /** F05 分段执行:选区变化时回传选中文本,父组件据此启用「运行选中段」 */
   selectionChange: [text: string]
+  /** 合规审计结果(SqlEditor 输入变化时触发) */
+  audit: [issues: CopilotIssue[]]
 }>()
 
 const editorRef = shallowRef<InstanceType<typeof MonacoEditor> | null>(null)
@@ -70,6 +77,15 @@ function tableBefore(text: string): string | null {
   const matches = [...text.matchAll(/\b(?:from|join)\s+([`"']?)(\w+)\1/gi)]
   const last = matches[matches.length - 1]
   return last ? last[2] : null
+}
+
+/** 取表字段:context 存在时优先用 context,否则回落到 database.ts */
+function tableFields(name: string) {
+  if (props.context) {
+    const tbl = props.context.tables.find(t => t.name === name)
+    if (tbl) return tbl.fields.map(f => ({ name: f.name, type: f.type, comment: f.description }))
+  }
+  return getTableColumns(name)
 }
 
 let registered = false
@@ -111,7 +127,7 @@ onMounted(async () => {
       let suggestions: any[] = []
       const aliasMatch = textUntilPosition.match(/(\w+)\.\s*$/)
       if (aliasMatch && TABLES.includes(aliasMatch[1])) {
-        suggestions = getTableColumns(aliasMatch[1]).map(c => ({
+        suggestions = tableFields(aliasMatch[1]).map(c => ({
           label: c.name,
           kind: 5,
           detail: `字段 · ${c.type}`,
@@ -123,15 +139,15 @@ onMounted(async () => {
         suggestions = TABLES.map(t => ({
           label: t,
           kind: 6,
-          detail: `表 · ${getTableColumns(t).length} 个字段`,
-          documentation: getTableColumns(t).map(c => `${c.name} ${c.comment}`).join('\n'),
+          detail: `表 · ${tableFields(t).length} 个字段`,
+          documentation: tableFields(t).map(c => `${c.name} ${c.comment}`).join('\n'),
           insertText: t,
           range
         }))
       } else {
         const tbl = tableBefore(textUntilPosition)
         const cols = tbl
-          ? getTableColumns(tbl).map(c => ({
+          ? tableFields(tbl).map(c => ({
               label: c.name,
               kind: 5,
               detail: `字段 · ${c.type}`,
@@ -154,6 +170,21 @@ onMounted(async () => {
   })
 })
 
+/* ── 同步审计:editor 内容变化即重算 audit ── */
+function runAudit(sql: string) {
+  if (!props.context) return emit('audit', [])
+  emit('audit', auditSqlSync(sql, props.context))
+}
+
+watch(
+  () => props.modelValue,
+  v => runAudit(v ?? '')
+)
+watch(
+  () => props.context,
+  () => runAudit(props.modelValue ?? '')
+)
+
 defineExpose({
   focus: () => editorRef.value?.focus(),
   getValue: () => editorRef.value?.getValue() ?? props.modelValue,
@@ -164,7 +195,12 @@ defineExpose({
     const sel = editor.getSelection()
     return sel && !sel.isEmpty() ? editor.getModel()?.getValueInRange(sel) ?? '' : ''
   },
-  insertText: (text: string) => editorRef.value?.insertText(text)
+  insertText: (text: string) => editorRef.value?.insertText(text),
+  /** 主动触发一次合规审计,返回当前 SQL 的 Issue 数组 */
+  getIssueAudit: (): CopilotIssue[] => {
+    if (!props.context) return []
+    return auditSqlSync(editorRef.value?.getValue() ?? props.modelValue, props.context)
+  }
 })
 </script>
 

@@ -86,111 +86,134 @@
         </div>
       </div>
 
-      <!-- ═══ 右:SQL 编辑执行(F02-F09 / F11) ═══ -->
+      <!-- ═══ 右:SQL 编辑执行(F02-F09 / F11) + Copilot ═══ -->
       <div class="uq-main">
-        <!-- Tab 区(F02) -->
-        <a-tabs
-          class="uq-tabs"
-          type="rounded"
-          size="small"
-          :active-key="editor.activeKey"
-          editable
-          auto-switch
-          @change="(k: string) => editor.setActive(k)"
-          @delete="(k: string) => editor.closeTab(k)"
-          @add="onCreateTab('doris')"
-        >
-          <a-tab-pane v-for="tab in editor.tabs" :key="tab.key">
-            <template #title>
-              <span class="uq-tab-title">
-                <DataSourceBadge :datasource="tab.datasource" />
-                {{ tab.title }}
-                <span v-if="tab.dirty" class="uq-tab-dirty">•</span>
-              </span>
-            </template>
-          </a-tab-pane>
-        </a-tabs>
-
-        <!-- 操作栏(F04 / F05 / F06 / F07 / F11 + 创建任务 + 共享 + 历史) -->
-        <div class="uq-toolbar">
-          <a-select
-            v-model="datasource"
+        <div class="uq-main__editor">
+          <!-- Tab 区(F02) -->
+          <a-tabs
+            class="uq-tabs"
+            type="rounded"
             size="small"
-            class="uq-toolbar__ds"
-            :disabled="running"
-            @change="onDatasourceChange"
+            :active-key="editor.activeKey"
+            editable
+            auto-switch
+            @change="(k: string) => editor.setActive(k)"
+            @delete="(k: string) => editor.closeTab(k)"
+            @add="onCreateTab('doris')"
           >
-            <a-option value="doris">Doris 数据源</a-option>
-            <a-option value="hive">Hive 数据源</a-option>
-          </a-select>
-          <a-button type="primary" size="small" :loading="running" @click="runSql()">
-            <template #icon><icon-play-arrow /></template>
-            运行
-          </a-button>
-          <a-button size="small" :disabled="running || !selection" @click="runSql(selection)">
-            <template #icon><icon-select-all /></template>
-            运行选中段
-          </a-button>
-          <a-button status="danger" size="small" :disabled="!running" @click="abort">
-            <template #icon><icon-pause /></template>
-            终止
-          </a-button>
-          <a-button size="small" @click="openSaveModal">
-            <template #icon><icon-save /></template>
-            保存脚本
-          </a-button>
-          <a-button size="small" @click="format">
-            <template #icon><icon-brackets /></template>
-            格式化
-          </a-button>
-          <a-button
-            v-if="canShare"
-            size="small"
-            status="warning"
-            @click="openShareModal"
-          >
-            <template #icon><icon-share-internal /></template>
-            共享
-          </a-button>
-          <a-button size="small" @click="historyVisible = true">
-            <template #icon><icon-history /></template>
-            历史记录
-          </a-button>
-          <a-button size="small" status="success" @click="openTaskModal">
-            <template #icon><icon-schedule /></template>
-            创建任务
-          </a-button>
-          <div class="uq-toolbar__spacer" />
-          <StatusTag :status="status" />
-          <span v-if="lastTip" class="uq-toolbar__tip">{{ lastTip }}</span>
-        </div>
-
-        <SqlEditor
-          ref="editorRef"
-          v-model="sql"
-          :datasource="datasource"
-          height="calc(40vh)"
-          @change="editor.patch(activeKey, { dirty: true })"
-          @run="runSql()"
-          @selection-change="(t: string) => (selection = t)"
-        />
-
-        <!-- 结果 / 日志 -->
-        <a-card class="uq-panel" :body-style="{ padding: '0' }">
-          <a-tabs v-model:active-key="panel" size="small" class="uq-panel__tabs">
-            <template #extra>
-              <span class="uq-panel__meta">
-                {{ datasource === 'doris' ? 'Doris · internal.ADM' : 'Hive · Inceptor' }}
-              </span>
-            </template>
-            <a-tab-pane key="result" title="结果">
-              <ResultTable :result="result" :loading="running" :status="status" :datasource="datasource" />
-            </a-tab-pane>
-            <a-tab-pane key="log" title="日志">
-              <LogViewer :logs="logs" />
+            <a-tab-pane v-for="tab in editor.tabs" :key="tab.key">
+              <template #title>
+                <span class="uq-tab-title">
+                  <DataSourceBadge :datasource="tab.datasource" />
+                  {{ tab.title }}
+                  <span v-if="tab.dirty" class="uq-tab-dirty">•</span>
+                </span>
+              </template>
             </a-tab-pane>
           </a-tabs>
-        </a-card>
+
+          <!-- 操作栏(F04 / F05 / F06 / F07 / F11 + 创建任务 + 共享 + 历史) -->
+          <div class="uq-toolbar">
+            <a-select
+              v-model="datasource"
+              size="small"
+              class="uq-toolbar__ds"
+              :disabled="running"
+              @change="onDatasourceChange"
+            >
+              <a-option value="doris">Doris 数据源</a-option>
+              <a-option value="hive">Hive 数据源</a-option>
+            </a-select>
+            <a-button type="primary" size="small" :loading="running" @click="runSql()">
+              <template #icon><icon-play-arrow /></template>
+              运行
+            </a-button>
+            <a-button size="small" :disabled="running || !selection" @click="runSql(selection)">
+              <template #icon><icon-select-all /></template>
+              运行选中段
+            </a-button>
+            <a-button status="danger" size="small" :disabled="!running" @click="abort">
+              <template #icon><icon-pause /></template>
+              终止
+            </a-button>
+            <a-button size="small" @click="openSaveModal">
+              <template #icon><icon-save /></template>
+              保存脚本
+            </a-button>
+            <a-button size="small" @click="format">
+              <template #icon><icon-brackets /></template>
+              格式化
+            </a-button>
+            <a-button
+              v-if="canShare"
+              size="small"
+              status="warning"
+              @click="openShareModal"
+            >
+              <template #icon><icon-share-internal /></template>
+              共享
+            </a-button>
+            <a-button size="small" @click="historyVisible = true">
+              <template #icon><icon-history /></template>
+              历史记录
+            </a-button>
+            <a-button size="small" status="success" @click="openTaskModal">
+              <template #icon><icon-schedule /></template>
+              创建任务
+            </a-button>
+            <div class="uq-toolbar__spacer" />
+            <a-button
+              size="small"
+              :status="copilotVisible ? 'success' : 'outline'"
+              @click="copilotVisible = !copilotVisible"
+            >
+              <template #icon><icon-robot /></template>
+              AI 助手
+            </a-button>
+            <StatusTag :status="status" />
+            <span v-if="lastTip" class="uq-toolbar__tip">{{ lastTip }}</span>
+          </div>
+
+          <SqlEditor
+            ref="editorRef"
+            v-model="sql"
+            :datasource="datasource"
+            :context="metaContext"
+            height="calc(40vh)"
+            @change="editor.patch(activeKey, { dirty: true })"
+            @run="runSql()"
+            @selection-change="(t: string) => (selection = t)"
+            @audit="(issues) => (auditIssues = issues)"
+          />
+
+          <!-- 结果 / 日志 -->
+          <a-card class="uq-panel" :body-style="{ padding: '0' }">
+            <a-tabs v-model:active-key="panel" size="small" class="uq-panel__tabs">
+              <template #extra>
+                <span class="uq-panel__meta">
+                  {{ datasource === 'doris' ? 'Doris · internal.ADM' : 'Hive · Inceptor' }}
+                </span>
+              </template>
+              <a-tab-pane key="result" title="结果">
+                <ResultTable :result="result" :loading="running" :status="status" :datasource="datasource" />
+              </a-tab-pane>
+              <a-tab-pane key="log" title="日志">
+                <LogViewer :logs="logs" />
+              </a-tab-pane>
+            </a-tabs>
+          </a-card>
+        </div>
+
+        <!-- ═══ Copilot 侧栏(P1) ═══ -->
+        <div v-if="copilotVisible && metaContext" class="uq-main__copilot">
+          <CopilotPanel
+            :context="metaContext"
+            :selected-table="selectedTable"
+            :live-issues="auditIssues"
+            :insert-fn="insertSql"
+            :replace-fn="replaceSql"
+          />
+        </div>
       </div>
     </div>
 
@@ -365,14 +388,16 @@ import ResultTable from '@/components-dca/unified-query/ResultTable.vue'
 import LogViewer from '@/components-dca/unified-query/LogViewer.vue'
 import StatusTag from '@/components-dca/unified-query/StatusTag.vue'
 import DataSourceBadge from '@/components-dca/unified-query/DataSourceBadge.vue'
+import CopilotPanel from '@/components-dca/unified-query/CopilotPanel.vue'
 import { useUqEditorStore } from '@/stores-dca/unified-query/editor'
 import { useUqScriptStore } from '@/stores-dca/unified-query/script'
 import { useUqTaskStore } from '@/stores-dca/unified-query/task'
 import { checkSelectStar, createQueryJob, formatSQL, splitStatements } from '@/mock/unified-query/executor'
 import { DATABASE_TREE, getTableColumns } from '@/mock/unified-query/database'
 import { COLLEAGUES, SCHEDULE_PRESETS } from '@/mock/unified-query/tasks'
+import { buildMetadataContext, loadSemanticContractTerms, mergeWordsFromContract, type CopilotMetaContext } from '@/mock/unified-query/metadata-context'
 import type { QueryJob } from '@/mock/unified-query/executor'
-import type { DataSourceKey, DbTreeNode, ExecStatus, LogEntry, QueryHistory, QueryResult, ScriptRecord, TableColumn } from '@/mock/unified-query/types'
+import type { CopilotIssue, DataSourceKey, DbTreeNode, ExecStatus, LogEntry, QueryHistory, QueryResult, ScriptRecord, TableColumn } from '@/mock/unified-query/types'
 
 const router = useRouter()
 const route = useRoute()
@@ -406,10 +431,19 @@ const sidebarTab = ref<'scripts' | 'database'>('scripts')
 /* ── 脚本目录树 ────────────────────── */
 const keyword = ref('')
 
-onMounted(() => {
+onMounted(async () => {
   editor.ensureTab()
   const kw = route.query.keyword
   if (typeof kw === 'string' && kw) keyword.value = kw
+  // 构建 Copilot 元数据上下文(全量已上线表)
+  let ctx = buildMetadataContext()
+  // 软接入:跨子应用语义契约术语(vite alias 未配置时静默跳过)
+  const contractTerms = await loadSemanticContractTerms()
+  if (contractTerms.length) {
+    ctx = mergeWordsFromContract(ctx, contractTerms)
+  }
+  metaContext.value = ctx
+  ;(window as any).__uqCurrentSql = editor.activeTab?.sql ?? ''
 })
 
 /** F14:关键字过滤树,命中脚本保留其所在目录 */
@@ -443,6 +477,27 @@ function onTreeSelect(keys: (string | number)[]) {
 /* ── 数据库导航树(F01) ────────────────────── */
 const dbTreeData = computed(() => DATABASE_TREE as unknown as any[])
 const selectedTable = ref<{ tableName: string; comment: string } | null>(null)
+
+/* ── Copilot 元数据上下文 ────────────────────── */
+const metaContext = ref<CopilotMetaContext | null>(null)
+const copilotVisible = ref(true)
+const auditIssues = ref<CopilotIssue[]>([])
+// 把当前 SQL 暴露给 CopilotPanel(通过 explain/optimize/audit 读取)
+;(window as any).__uqCurrentSql = ''
+
+function insertSql(text: string) {
+  editorRef.value?.insertText(text)
+}
+function replaceSql(text: string) {
+  editor.patch(activeKey.value, { sql: text, dirty: true })
+  ;(window as any).__uqCurrentSql = text
+}
+
+/** Tab 切换后重新跑一次实时合规审计 */
+function refreshAudit() {
+  // SqlEditor 内部 watch 已经会 emit,但跨组件不同步时主动调一次
+  auditIssues.value = editorRef.value?.getIssueAudit?.() ?? []
+}
 const metaColumns = [
   { title: '字段名', dataIndex: 'name', width: 140 },
   { title: '类型', dataIndex: 'type', width: 120 },
@@ -490,7 +545,19 @@ watch(activeKey, () => {
   logs.value = []
   selection.value = ''
   lastTip.value = ''
+  ;(window as any).__uqCurrentSql = editor.activeTab?.sql ?? ''
+  refreshAudit()
 })
+
+/* ── SQL 变化同步给 Copilot ── */
+watch(
+  () => editor.activeTab?.sql,
+  v => {
+    if (typeof v === 'string') {
+      ;(window as any).__uqCurrentSql = v
+    }
+  }
+)
 
 function onCreateTab(value: string | number | Record<string, any> | undefined) {
   const ds = (value === 'hive' ? 'hive' : 'doris') as DataSourceKey
@@ -805,10 +872,28 @@ function doCreateTask() {
 .uq-main {
   flex: 1;
   min-width: 0;
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.uq-main__editor {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--color-border-2);
   border-radius: 6px;
   background: var(--color-bg-2);
   overflow: hidden;
+}
+
+.uq-main__copilot {
+  flex: none;
+  width: 380px;
+  display: flex;
+  flex-direction: column;
+  min-height: 600px;
 }
 
 .uq-tabs {

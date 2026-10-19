@@ -264,6 +264,55 @@ export interface ExportTask {
   data?: { columns: ResultColumn[]; rows: Record<string, string | number>[] }
 }
 
+/** ─────────── Copilot 相关类型(P1) ─────────── */
+
+/** Copilot 动作 */
+export type CopilotAction = 'nl2sql' | 'explain' | 'optimize' | 'audit'
+
+/** 合规提示级别 */
+export type IssueLevel = 'info' | 'warn' | 'error'
+
+/** 单条合规提示 */
+export interface CopilotIssue {
+  level: IssueLevel
+  category: 'sensitivity' | 'compliance' | 'naming' | 'performance' | 'api' | 'unknown'
+  message: string
+  /** 涉及的字段或表 */
+  field?: string
+  table?: string
+  /** 推荐的标准编号或 API 名称 */
+  suggestion?: string
+}
+
+/** NL→SQL 候选 */
+export interface Nl2sqlCandidate {
+  sql: string
+  /** 涉及到的表 */
+  tables: string[]
+  /** 涉及到的字段 */
+  fields: string[]
+  /** 涉及到的数据标准编号 */
+  standards: string[]
+  /** 风险提示 */
+  warnings: string[]
+}
+
+/** Copilot 单轮对话 */
+export interface CopilotMessage {
+  id: string
+  role: 'user' | 'assistant'
+  action?: CopilotAction
+  /** 用户原文或助手标题 */
+  text: string
+  /** 助手产出 */
+  payload?:
+    | { kind: 'candidates'; candidates: Nl2sqlCandidate[] }
+    | { kind: 'explain'; summary: string; bullets: string[] }
+    | { kind: 'optimize'; suggestions: string[]; rewrite?: string }
+    | { kind: 'audit'; issues: CopilotIssue[] }
+  ts: string
+}
+
 /** SQL 执行历史记录(F21) */
 export interface QueryHistory {
   id: string

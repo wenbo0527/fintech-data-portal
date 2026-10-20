@@ -1,15 +1,19 @@
 <template>
   <PageContainer size="wide" class="uq-task-page">
-    <PageHeader title="任务调度" sub-title="基于脚本的定时执行任务,概览看板 + 任务列表 + 状态监控">
+    <PageHeader title="数据任务服务" sub-title="同步 + 调度任务统一入口、同一份实例列表;调度任务脚本复用统一查询平台">
       <template #extra>
         <a-space size="mini">
-          <a-button type="primary" @click="openCreateConfig">
+          <a-button type="primary" @click="openTypeChoose">
             <template #icon><icon-plus /></template>
-            新建定时任务
+            新建任务
           </a-button>
-          <a-button @click="router.push({ name: 'unified-query-sql' })">
-            <template #icon><icon-thunderbolt /></template>
-            去新建查询
+          <a-button @click="router.push({ name: 'unified-query-tasks-instances' })">
+            <template #icon><icon-list /></template>
+            执行实例
+          </a-button>
+          <a-button @click="router.push({ name: 'service-sync' })">
+            <template #icon><icon-storage /></template>
+            同步任务快查
           </a-button>
         </a-space>
       </template>
@@ -50,6 +54,11 @@
     <a-card class="uq-task-list" title="任务列表" style="margin-top: 16px">
       <template #extra>
         <a-space size="mini">
+          <a-radio-group v-model="taskTypeFilter" size="small" type="button">
+            <a-radio value="all">全部</a-radio>
+            <a-radio value="schedule">调度</a-radio>
+            <a-radio value="sync">同步</a-radio>
+          </a-radio-group>
           <a-input-search
             v-model="store.keyword"
             size="small"
@@ -67,13 +76,50 @@
         </a-space>
       </template>
 
+      <!-- 同步任务表 -->
       <a-table
+        v-if="taskTypeFilter !== 'schedule'"
+        :columns="syncColumns"
+        :data="syncRows"
+        :pagination="{ pageSize: 10, showTotal: true, size: 'small' }"
+        row-key="id"
+        size="medium"
+        stripe
+      >
+        <template #taskName="{ record }">
+          <a-link @click="goSyncRecords(record)">
+            {{ record.taskName }}
+          </a-link>
+        </template>
+        <template #direction="{ record }">
+          <a-tag size="small" color="arcoblue">{{ record.direction }}</a-tag>
+        </template>
+        <template #status="{ record }">
+          <a-tag size="small" :color="syncStatusColor(record.status)">{{ record.statusText }}</a-tag>
+        </template>
+        <template #operations="{ record }">
+          <a-space size="mini">
+            <a-link @click="goSyncCreate(record)">重跑</a-link>
+            <a-link @click="goSyncRecords(record)">实例</a-link>
+          </a-space>
+        </template>
+        <template #empty>
+          <a-empty description="暂无同步任务">
+            <a-button type="primary" @click="router.push({ name: 'service-sync-create' })">立即新建</a-button>
+          </a-empty>
+        </template>
+      </a-table>
+
+      <!-- 调度任务表(原有) -->
+      <a-table
+        v-if="taskTypeFilter !== 'sync'"
         :columns="columns"
         :data="store.filtered"
         :pagination="{ pageSize: 10, showTotal: true, size: 'small' }"
         row-key="id"
         size="medium"
         stripe
+        :style="taskTypeFilter === 'all' ? 'margin-top: 16px' : ''"
       >
         <template #name="{ record }">
           <div class="uq-task-name">
@@ -228,6 +274,36 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- B1: 新建任务 · 类型选择 -->
+    <a-modal
+      v-model:visible="typeChooseVisible"
+      title="选择任务类型"
+      :width="520"
+      :footer="false"
+      unmount-on-close
+    >
+      <div class="uq-type-grid">
+        <div class="uq-type-card" @click="pickSync">
+          <div class="uq-type-card__icon uq-type-card__icon--sync">
+            <icon-swap />
+          </div>
+          <div class="uq-type-card__title">同步任务</div>
+          <div class="uq-type-card__desc">
+            Doris ↔ Hive 双向自助同步,同名表自动建表,提交即执行一次
+          </div>
+        </div>
+        <div class="uq-type-card" @click="pickSchedule">
+          <div class="uq-type-card__icon uq-type-card__icon--schedule">
+            <icon-clock-circle />
+          </div>
+          <div class="uq-type-card__title">调度任务</div>
+          <div class="uq-type-card__desc">
+            基于统一查询脚本的定时/手动执行,支持重试、依赖、超时告警
+          </div>
+        </div>
+      </div>
+    </a-modal>
   </PageContainer>
 </template>
 
@@ -247,15 +323,78 @@ import StatusTag from '@/components-dca/unified-query/StatusTag.vue'
 import DataSourceBadge from '@/components-dca/unified-query/DataSourceBadge.vue'
 import DetailDrawer from '@/components-dca/unified-query/DetailDrawer.vue'
 import { useUqTaskStore } from '@/stores-dca/unified-query/task'
+import { useSyncTaskStore } from '@/stores-dca/management/sync-task'
 import { useUqScriptStore } from '@/stores-dca/unified-query/script'
 import { SCHEDULE_PRESETS, TASK_TREND_7D } from '@/mock/unified-query/tasks'
 import type { TaskRecord, NotifyConfig } from '@/mock/unified-query/types'
 
 const router = useRouter()
 const store = useUqTaskStore()
+const syncStore = useSyncTaskStore()
 const scriptStore = useUqScriptStore()
 const trend = TASK_TREND_7D
 const schedulePresets = SCHEDULE_PRESETS
+
+/* ─── 一期合并:任务类型筛选(R02 同步/调度) ─── */
+type TaskTypeFilter = 'all' | 'schedule' | 'sync'
+const taskTypeFilter = ref<TaskTypeFilter>('all')
+
+const syncRows = computed(() => {
+  return syncStore.records.map(r => ({
+    id: r.id,
+    taskName: `同步·${r.sourceTable}`,
+    direction: r.direction === 'doris-to-hive' ? 'Doris → Hive' : 'Hive → Doris',
+    status: r.status,
+    statusText:
+      r.status === 'success' ? '成功'
+      : r.status === 'failed' ? '失败'
+      : r.status === 'timeout' ? '超时'
+      : r.status === 'running' ? '执行中' : '待执行',
+    creator: r.creator,
+    lastRun: r.startedAt,
+    raw: r
+  }))
+})
+
+const syncColumns = [
+  { title: '任务名', dataIndex: 'taskName', slotName: 'taskName', width: 280 },
+  { title: '同步方向', dataIndex: 'direction', slotName: 'direction', width: 130 },
+  { title: '状态', dataIndex: 'status', slotName: 'status', width: 100 },
+  { title: '发起人', dataIndex: 'creator', width: 100 },
+  { title: '最近执行', dataIndex: 'lastRun', width: 170 },
+  { title: '操作', dataIndex: 'operations', slotName: 'operations', width: 160 }
+]
+
+function syncStatusColor(s: string) {
+  switch (s) {
+    case 'success': return 'green'
+    case 'failed': return 'red'
+    case 'timeout': return 'orange'
+    case 'running': return 'arcoblue'
+    default: return 'gray'
+  }
+}
+
+function goSyncRecords(row: { raw: { id: string } }) {
+  router.push({ name: 'service-sync-records' })
+}
+function goSyncCreate(row: { raw: { sourceTable: string } }) {
+  router.push({ name: 'service-sync-create' })
+}
+
+/* ─── 新建任务 类型选择 modal(B1) ─── */
+const typeChooseVisible = ref(false)
+function openTypeChoose() {
+  typeChooseVisible.value = true
+}
+function pickSync() {
+  typeChooseVisible.value = false
+  router.push({ name: 'service-sync-create' })
+}
+function pickSchedule() {
+  typeChooseVisible.value = false
+  openCreateConfig()
+}
 
 const columns = [
   { title: '任务名', dataIndex: 'name', slotName: 'name', width: 200 },
@@ -542,5 +681,51 @@ function viewScript(record: TaskRecord) {
   margin-left: 12px;
   font-size: 13px;
   color: var(--color-text-2);
+}
+
+/* 一期合并:B1 类型选择 */
+.uq-type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.uq-type-card {
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+  padding: 20px 16px;
+  cursor: pointer;
+  transition: 0.18s ease;
+  &:hover {
+    border-color: rgb(var(--primary-6));
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+  }
+  &__icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    &--sync {
+      background: rgb(var(--primary-1));
+      color: rgb(var(--primary-6));
+    }
+    &--schedule {
+      background: rgb(var(--success-1));
+      color: rgb(var(--success-6));
+    }
+  }
+  &__title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  &__desc {
+    font-size: 12px;
+    color: var(--color-text-3);
+    line-height: 1.5;
+  }
 }
 </style>

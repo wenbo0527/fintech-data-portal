@@ -766,7 +766,14 @@ const routes: RouteRecordRaw[] = [
         path: 'exploration/unified-query/tasks',
         name: 'unified-query-tasks',
         component: () => import('../pages/unified-query/task-scheduler.vue'),
-        meta: { title: '任务调度' }
+        meta: { title: '数据任务服务' }
+      },
+      // 一期合并:统一执行实例列表(同步 + 调度,D1)
+      {
+        path: 'exploration/unified-query/tasks/instances',
+        name: 'unified-query-tasks-instances',
+        component: () => import('../pages/unified-query/task-instances.vue'),
+        meta: { title: '执行实例' }
       },
       {
         path: 'exploration/unified-query/task/create',

@@ -369,7 +369,7 @@ const explorationMenus = [
   { key: 'exploration/customer360', title: '客户 360' },
   { key: 'exploration-group-unified-query', title: '统一查询', children: [
     { key: 'exploration/unified-query/sql', title: '统一查询' },
-    { key: 'exploration/unified-query/tasks', title: '任务调度' },
+    { key: 'exploration/unified-query/tasks', title: '数据任务服务' },
     { key: 'exploration/unified-query/exports', title: '导出任务' },
   ]},
   { key: 'exploration/workflows', title: '分析工作流' },
@@ -676,6 +676,7 @@ const NAME_BY_PATH: Record<string, string> = {
   'exploration/indicator-dashboard': 'exploration-indicator-dashboard',
   'exploration/unified-query/sql': 'unified-query-sql',
   'exploration/unified-query/tasks': 'unified-query-tasks',
+  'exploration/unified-query/tasks/instances': 'unified-query-tasks-instances',
   'exploration/unified-query/exports': 'unified-query-exports',
   'exploration/metrics-center': 'metrics-center',
   'exploration/metrics-center/create': 'metrics-center-create',

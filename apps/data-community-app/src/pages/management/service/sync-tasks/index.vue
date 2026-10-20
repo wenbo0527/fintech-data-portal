@@ -1,14 +1,22 @@
 <template>
   <PageContainer size="wide" class="sync-home">
     <PageHeader
-      title="数据同步任务"
-      sub-title="Doris ↔ Hive 双向自助同步 · 一期手动单次执行 · 全员可见 · 人人可查"
+      title="我的同步任务"
+      sub-title="数据任务服务(一期) · Doris ↔ Hive 同步任务的快速入口;主入口已合并到数据任务服务"
     >
       <template #extra>
         <a-space>
           <a-button @click="router.push({ name: 'service' })">
             <template #icon><icon-left /></template>
             返回服务
+          </a-button>
+          <a-button @click="router.push({ name: 'unified-query-tasks' })">
+            <template #icon><icon-thunderbolt /></template>
+            数据任务服务
+          </a-button>
+          <a-button @click="router.push({ name: 'unified-query-tasks-instances' })">
+            <template #icon><icon-list /></template>
+            统一执行实例
           </a-button>
           <a-button type="primary" @click="goCreate">
             <template #icon><icon-plus /></template>
@@ -17,6 +25,17 @@
         </a-space>
       </template>
     </PageHeader>
+
+    <!-- 一期合并提示(导向统一入口) -->
+    <a-alert
+      type="info"
+      :show-icon="true"
+      class="sync-home__merge"
+    >
+      <template #icon><icon-info-circle /></template>
+      数据同步任务已合并到「数据任务服务」统一入口,同步 + 调度的执行实例也合并为同一份视图。
+      顶部按钮可跳到新入口查询。
+    </a-alert>
 
     <!-- 顶部能力说明卡(简单公告) -->
     <a-alert type="info" :show-icon="true" class="sync-home__intro">
@@ -199,6 +218,9 @@ const latestSuccessDirection = computed(() => {
 
 <style lang="scss" scoped>
 .sync-home {
+  &__merge {
+    margin: 0 24px 16px;
+  }
   &__intro {
     margin: 0 24px 16px;
     &-title {

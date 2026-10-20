@@ -709,7 +709,16 @@ function goToProfile() {
 }
 
 // 不再 watch route.path,避免 arco menu 内部 watch 触发的 reactive 循环
-// 页面切换时菜单状态由 page onMounted 自行管理
+// 但需要在 router.afterEach 里手动同步菜单状态,否则从页面内 push 到兄弟路由时
+// (例如 tasks → tasks/instances)顶部「数据探索」高亮和左侧子菜单展开都会丢失
+router.afterEach((to) => {
+  // route.path 不带前导 /,updateMenuState 已按此约定处理
+  updateMenuState(to.path)
+})
+// 首次进入时也需要同步(刷新页面 / 直接打开子路由 URL)
+onMounted(() => {
+  updateMenuState(route.path)
+})
 </script>
 
 <style scoped>

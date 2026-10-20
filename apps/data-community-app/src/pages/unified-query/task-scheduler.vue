@@ -21,7 +21,7 @@
 
     <!-- 概览看板(F22) -->
     <a-row :gutter="16">
-      <a-col v-for="card in cards" :key="card.key" :span="4">
+      <a-col v-for="card in cards" :key="card.key" :span="6">
         <a-card class="uq-stat" :class="`uq-stat--${card.tone}`" :bordered="false" hoverable>
           <a-statistic
             :title="card.title"
@@ -34,18 +34,6 @@
             </template>
           </a-statistic>
           <div class="uq-stat__hint">{{ card.hint }}</div>
-        </a-card>
-      </a-col>
-      <a-col :span="4">
-        <a-card class="uq-stat uq-stat--trend" :bordered="false">
-          <div class="uq-stat__title">近 7 日执行</div>
-          <div class="uq-trend">
-            <div v-for="d in trend" :key="d.date" class="uq-trend__col" :title="`${d.date} 成功${d.success} / 失败${d.failed}`">
-              <span class="uq-trend__bar is-failed" :style="{ height: `${d.failed * 10}px` }" />
-              <span class="uq-trend__bar is-success" :style="{ height: `${d.success * 6}px` }" />
-              <i>{{ d.date }}</i>
-            </div>
-          </div>
         </a-card>
       </a-col>
     </a-row>
@@ -345,13 +333,11 @@ function pickSchedule() {
   openCreateConfig()
 }
 
-/** F22: 概览看板(一期合并:同步 + 调度合并,看板统一为任务级) */
+/** F22: 概览看板 4 张卡(总任务 / 成功 / 失败 / 运行中) */
 const cards = computed(() => {
   const s = instanceStore.taskStats
   return [
     { key: 'total', title: '总任务', value: s.total, unit: '个', tone: 'default', color: 'rgb(var(--primary-6))', hint: '同步 + 调度合计' },
-    { key: 'schedule', title: '调度任务', value: s.schedule, unit: '个', tone: 'info', color: 'rgb(var(--success-6))', hint: '基于统一查询脚本的定时任务' },
-    { key: 'sync', title: '同步任务', value: s.sync, unit: '个', tone: 'cyan', color: 'rgb(var(--link-6))', hint: 'Doris ↔ Hive 双向同步' },
     { key: 'success', title: '成功', value: s.success, unit: '个', tone: 'success', color: 'rgb(var(--success-6))', hint: '最近一次执行成功' },
     { key: 'failed', title: '失败 / 超时', value: s.failed, unit: '个', tone: 'danger', color: 'rgb(var(--danger-6))', hint: '需排查或重跑' },
     { key: 'running', title: '运行中', value: s.running, unit: '个', tone: 'info', color: 'rgb(var(--link-6))', hint: '正在执行中' }

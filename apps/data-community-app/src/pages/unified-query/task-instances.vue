@@ -21,25 +21,33 @@
     <!-- 当前任务上下文(从 task-scheduler 行点击带过来的) -->
     <a-alert
       v-if="taskContext"
-      type="info"
+      :type="taskContext.taskType === 'sync' ? 'warning' : 'info'"
       show-icon
       closable
       class="uq-instances__context"
     >
-      当前按任务筛选:<b>{{ taskContext.taskName }}</b>
-      <a-tag :color="taskContext.taskType === 'sync' ? 'arcoblue' : 'green'" size="small" style="margin-left: 6px">
-        {{ taskContext.taskType === 'sync' ? '同步' : '调度' }}
-      </a-tag>
-      <a-button size="mini" type="text" style="margin-left: 8px" @click="clearTaskContext">
-        显示全部实例
-      </a-button>
+      <template v-if="taskContext.taskType === 'sync'">
+        「<b>{{ taskContext.taskName }}</b>」是<b>同步任务</b>,无独立「执行实例」概念,下方展示的是该任务下所有同步<b>执行记录</b>(每次执行即一条)。
+        <a-button size="mini" type="text" style="margin-left: 8px" @click="clearTaskContext">
+          查看全部记录
+        </a-button>
+      </template>
+      <template v-else>
+        当前按调度任务筛选:<b>{{ taskContext.taskName }}</b>
+        <a-button size="mini" type="text" style="margin-left: 8px" @click="clearTaskContext">
+          显示全部实例
+        </a-button>
+      </template>
     </a-alert>
 
     <!-- 概览统计(D1) -->
     <a-row :gutter="16" class="uq-instances__stats">
       <a-col :span="6">
         <a-card :bordered="false">
-          <a-statistic title="总实例" :value="store.stats.total" />
+          <a-statistic
+            :title="statsTitle.total"
+            :value="store.stats.total"
+          />
           <div class="uq-instances__stat-sub">{{ store.filtered.length }} 条经筛选</div>
         </a-card>
       </a-col>
@@ -151,47 +159,6 @@
           </a-tag>
         </template>
         <template #cost="{ record }">{{ formatCost(record.costMs) }}</template>
-        <template #extra="{ record }">
-          <a-button
-            type="text"
-            size="mini"
-            @click="toggleExpand(record)"
-          >
-            {{ expanded.includes(record.id) ? '收起' : '展开' }}
-          </a-button>
-        </template>
-        <template #expanded-row="{ record }">
-          <div class="uq-instances__extra">
-            <a-row v-if="record.taskType === 'sync'">
-              <a-col :span="8">
-                <span class="uq-instances__extra-label">源端:</span>
-                <code class="uq-instances__code">{{ record.extra?.sourceTable }}</code>
-              </a-col>
-              <a-col :span="8">
-                <span class="uq-instances__extra-label">目标端:</span>
-                <code class="uq-instances__code">{{ record.extra?.targetTable }}</code>
-              </a-col>
-              <a-col :span="8">
-                <span class="uq-instances__extra-label">方向:</span>
-                {{ record.extra?.direction }}
-              </a-col>
-              <a-col :span="8" style="margin-top: 8px">
-                <span class="uq-instances__extra-label">搬迁行数:</span>
-                {{ (record.extra?.rowsCopied ?? 0).toLocaleString() }}
-              </a-col>
-            </a-row>
-            <a-row v-else>
-              <a-col :span="8">
-                <span class="uq-instances__extra-label">耗时:</span>
-                {{ record.extra?.durationLabel ?? '—' }}
-              </a-col>
-              <a-col :span="8">
-                <span class="uq-instances__extra-label">执行行数:</span>
-                {{ (record.extra?.rowCount ?? 0).toLocaleString() }}
-              </a-col>
-            </a-row>
-          </div>
-        </template>
         <template #operations="{ record }">
           <a-space size="mini">
             <a-link @click="openDetail(record)">详情</a-link>
@@ -258,7 +225,6 @@
  * 实现需求文档:
  *   R25 唯一实例列表 - 同步 + 调度合并为同一份
  *   R26 公共列:实例ID / 任务名 / 任务类型 / 触发方式 / 开始 / 结束 / 耗时 / 状态 / 发起人 / 失败原因
- *   R27 类型专属信息放入「扩展信息」(可展开表格行查看)
  *   R28 触发方式统一语义:手动 / 定时 / 依赖上游 / 外部调用
  *   E12 时间范围筛选 - 默认近 30 天
  */
@@ -311,9 +277,28 @@ const taskContext = computed(() => {
 /** 顶部 subtitle —— 若在查特定任务,展示对应 taskName */
 const subTitle = computed(() => {
   if (taskContext.value) {
-    return `当前任务「${taskContext.value.taskName}」的执行实例列表 · 数据任务服务`
+    if (taskContext.value.taskType === 'sync') {
+      return `同步任务「${taskContext.value.taskName}」的同步执行记录列表 · 每次执行即一条记录`
+    }
+    return `调度任务「${taskContext.value.taskName}」的执行实例列表 · 数据任务服务`
   }
-  return '数据任务服务 · 同步与调度执行记录合并为同一份列表，按开始时间倒序'
+  return '数据任务服务 · 调度任务为「执行实例」,同步任务为「执行记录」(每次执行即一条),合并展示'
+})
+
+/**
+ * 概览卡标题:跟当前上下文区分语义
+ * - 没有 taskContext:总记录数(混合)
+ * - 有 sync 上下文:总记录数(同步)
+ * - 有 schedule 上下文:总实例数(调度)
+ */
+const statsTitle = computed(() => {
+  if (taskContext.value?.taskType === 'sync') {
+    return { total: '同步记录总数', success: '同步成功', failed: '同步失败/超时', running: '同步执行中' }
+  }
+  if (taskContext.value?.taskType === 'schedule') {
+    return { total: '执行实例总数', success: '执行成功', failed: '执行失败', running: '执行中' }
+  }
+  return { total: '总记录(实例+同步)', success: '成功', failed: '失败/终止', running: '执行中' }
 })
 
 function applyQuery() {
@@ -336,8 +321,13 @@ function clearTaskContext() {
 onMounted(applyQuery)
 watch(() => route.query.taskId, applyQuery)
 
-const columns = [
-  { title: '实例 ID', dataIndex: 'id', slotName: 'id', width: 180 },
+/**
+ * 表头列定义:
+ * - 同步任务上下文时,「实例 ID」列改名为「同步编号」
+ * - 否则保持原 R26 公共列
+ */
+const columns = computed(() => [
+  { title: idColumnTitle.value, dataIndex: 'id', slotName: 'id', width: 180 },
   { title: '任务名', dataIndex: 'taskName', width: 220 },
   { title: '任务类型', dataIndex: 'taskType', slotName: 'taskType', width: 90 },
   { title: '触发方式', dataIndex: 'trigger', slotName: 'trigger', width: 110 },
@@ -345,9 +335,13 @@ const columns = [
   { title: '耗时', dataIndex: 'cost', slotName: 'cost', width: 100 },
   { title: '状态', dataIndex: 'status', slotName: 'status', width: 100 },
   { title: '发起人', dataIndex: 'creator', width: 100 },
-  { title: '扩展', dataIndex: 'extra', slotName: 'extra', width: 80 },
   { title: '操作', dataIndex: 'operations', slotName: 'operations', width: 100, fixed: 'right' }
-]
+])
+
+/** 同步上下文时,首列用「同步编号」,否则「实例 ID」 */
+const idColumnTitle = computed(() =>
+  taskContext.value?.taskType === 'sync' ? '同步编号' : '实例 ID'
+)
 
 function statusMeta(s: TaskInstanceStatus) {
   return INSTANCE_STATUS_META[s]
@@ -363,15 +357,6 @@ function formatCost(ms: number): string {
   return `${Math.floor(s / 60)}m${Math.round(s % 60)}s`
 }
 
-/** 展开行(E14 / R27) */
-const expanded = ref<string[]>([])
-function toggleExpand(r: TaskInstance) {
-  if (expanded.value.includes(r.id)) {
-    expanded.value = expanded.value.filter(id => id !== r.id)
-  } else {
-    expanded.value = [...expanded.value, r.id]
-  }
-}
 function rowClass() {
   return ''
 }
@@ -406,25 +391,6 @@ function openDetail(r: TaskInstance) {
   }
   &__list {
     margin: 0 24px 24px;
-  }
-  &__code {
-    font-family: 'Menlo', monospace;
-    background: var(--color-fill-2);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 12px;
-    color: #165dff;
-  }
-  &__extra {
-    padding: 8px 16px;
-    background: var(--color-fill-1);
-    border-radius: 4px;
-    margin: 4px 16px;
-    font-size: 13px;
-    &-label {
-      color: var(--color-text-3);
-      margin-right: 4px;
-    }
   }
   &__detail-alert {
     margin-bottom: 16px;

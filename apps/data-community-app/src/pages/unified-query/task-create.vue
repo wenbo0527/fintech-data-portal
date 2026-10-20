@@ -1,8 +1,10 @@
 <template>
   <PageContainer size="wide" :with-bg="false" class="uq-task-create">
     <PageHeader
-      title="创建定时任务"
-      sub-title="脚本目录 · SQL 编辑校验 · 依赖解析 · 调度配置 · DQC 质量校验"
+      :title="isEdit ? '编辑定时任务' : '创建定时任务'"
+      :sub-title="isEdit
+        ? `正在编辑「${editingTaskName}」· 脚本目录 · SQL 校验 · 依赖解析 · 调度配置 · DQC 质量校验`
+        : '脚本目录 · SQL 编辑校验 · 依赖解析 · 调度配置 · DQC 质量校验'"
       show-back
       @back="router.back()"
     />
@@ -498,7 +500,7 @@
             <a-button @click="router.back()">取消</a-button>
             <a-button type="primary" status="success" :loading="submitting" @click="handleSubmit">
               <template #icon><icon-check /></template>
-              创建定时任务
+              {{ isEdit ? '保存修改' : '创建定时任务' }}
             </a-button>
           </a-space>
         </div>
@@ -518,8 +520,8 @@
  * 4. 调度下次运行时间预览
  * 5. 资源组 + 优先级分配
  */
-import { computed, reactive, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import PageContainer from '@/components-dca/common/PageContainer.vue'
 import PageHeader from '@/components-dca/common/PageHeader.vue'
@@ -556,8 +558,107 @@ import type {
 import type { SqlTypeValidation, SyntaxCheckResult } from '@/mock/unified-query/sql-parser'
 
 const router = useRouter()
+const route = useRoute()
 const taskStore = useUqTaskStore()
 const scriptStore = useUqScriptStore()
+
+/**
+ * 编辑模式判定:route.query.taskId 有值则进入编辑模式
+ * 编辑模式与创建模式共用同一份 form + 折叠面板,只是初始值来源不同
+ */
+const editingTaskId = computed<string | null>(() => {
+  const v = route.query.taskId
+  return typeof v === 'string' && v ? v : null
+})
+const isEdit = computed(() => editingTaskId.value !== null)
+const editingTaskName = ref('')
+
+/** 把 scheduleConfig 各分支的 time 字段同步给 time-picker 桥接 ref */
+function bindScheduleConfigToForm(sc: typeof form.scheduleConfig) {
+  dailyTimeModel.value = sc.dailyTime || '02:00'
+  weeklyTimeModel.value = sc.weeklyTime || '07:00'
+  monthlyTimeModel.value = sc.monthlyTime || '08:00'
+}
+
+/** 编辑模式:从 store 反向回填 form */
+function loadEditingTask() {
+  if (!editingTaskId.value) return
+  const t = taskStore.getById(editingTaskId.value)
+  if (!t) {
+    Message.error('未找到对应任务,可能已被删除')
+    router.replace({ name: 'unified-query-tasks' })
+    return
+  }
+  editingTaskName.value = t.name
+  form.name = t.name
+  form.datasource = t.datasource
+  form.scriptName = t.scriptName
+  form.sql = t.sql ?? ''
+  form.resourceGroup = t.resourceGroup ?? 'rg-default'
+  form.priority = t.priority ?? 'medium'
+  // 通知 / 高级(深拷贝)
+  form.notify = {
+    notifyOnSuccess: t.notify.notifyOnSuccess,
+    notifyOnFailed: t.notify.notifyOnFailed,
+    successChannel: t.notify.successChannel,
+    failedChannel: t.notify.failedChannel,
+    timeoutMinutes: t.notify.timeoutMinutes,
+    maxConsecutiveFailures: t.notify.maxConsecutiveFailures
+  }
+  form.advanced = { ...t.advanced }
+  // 调度详细(可能为空:旧数据没有 scheduleConfig 字段)
+  if (t.scheduleConfig) {
+    form.scheduleConfig = { ...t.scheduleConfig }
+    bindScheduleConfigToForm(t.scheduleConfig)
+  }
+  // 依赖
+  dependencies.value = t.dependencies ? [...t.dependencies] : []
+  autoParsed.value = dependencies.value.length > 0
+  // DQC
+  form.dqc = t.dqc ? { ...t.dqc, rules: [...t.dqc.rules] } : { enabled: false, rules: [] }
+}
+
+/** 创建模式:form 用默认初始值即可 */
+function resetToCreateDefaults() {
+  editingTaskName.value = ''
+  form.name = ''
+  form.scriptName = ''
+  form.sql = ''
+  form.resourceGroup = 'rg-default'
+  form.priority = 'medium'
+  form.datasource = 'doris'
+  form.scheduleConfig = {
+    type: 'daily',
+    dailyTime: '02:00',
+    weeklyDay: 1,
+    weeklyTime: '07:00',
+    monthlyDay: 1,
+    monthlyTime: '08:00'
+  } as typeof form.scheduleConfig
+  form.notify = {
+    notifyOnSuccess: false,
+    notifyOnFailed: true,
+    successChannel: 'dingtalk',
+    failedChannel: 'dingtalk',
+    timeoutMinutes: 0,
+    maxConsecutiveFailures: 3
+  }
+  form.advanced = { retryCount: 3, retryInterval: 5, skipBacklog: false }
+  form.dqc = { enabled: false, rules: [] }
+  dependencies.value = []
+  autoParsed.value = false
+  bindScheduleConfigToForm(form.scheduleConfig)
+}
+
+onMounted(() => {
+  if (isEdit.value) loadEditingTask()
+  else resetToCreateDefaults()
+})
+// query 变化时重新判定(在同路由内点别的「配置」)
+watch(() => route.query.taskId, () => {
+  if (isEdit.value) loadEditingTask()
+  else resetToCreateDefaults()
+})
 
 /* ── 左侧侧边栏(与脚本页打通) ── */
 const sidebarTab = ref<'scripts' | 'database'>('scripts')
@@ -890,6 +991,26 @@ function handleSubmit() {
 
   const scheduleStr = buildScheduleDisplay(form.scheduleConfig)
   const cron = buildCron(form.scheduleConfig)
+
+  if (isEdit.value && editingTaskId.value) {
+    taskStore.updateConfig(editingTaskId.value, {
+      name: form.name,
+      schedule: scheduleStr,
+      cronExpression: cron,
+      notify: { ...form.notify },
+      advanced: { ...form.advanced },
+      scheduleConfig: { ...form.scheduleConfig },
+      dependencies: [...dependencies.value],
+      dqc: form.dqc.enabled ? { ...form.dqc } : undefined,
+      sql: form.sql,
+      resourceGroup: form.resourceGroup,
+      priority: form.priority
+    })
+    submitting.value = false
+    Message.success('任务配置已更新')
+    router.push({ name: 'unified-query-tasks' })
+    return
+  }
 
   taskStore.createTask({
     name: form.name,

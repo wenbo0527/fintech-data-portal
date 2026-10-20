@@ -7,14 +7,6 @@
             <template #icon><icon-plus /></template>
             新建任务
           </a-button>
-          <a-button @click="router.push({ name: 'unified-query-tasks-instances' })">
-            <template #icon><icon-list /></template>
-            执行实例
-          </a-button>
-          <a-button @click="router.push({ name: 'service-sync' })">
-            <template #icon><icon-storage /></template>
-            同步任务快查
-          </a-button>
         </a-space>
       </template>
     </PageHeader>
@@ -68,14 +60,16 @@
       >
         <template #name="{ record }">
           <div class="uq-task-name">
-            <a-link @click="openTaskInstances(record)">
+            <!-- 调度任务:点击进入实例列表 -->
+            <a-link v-if="record.taskType === 'schedule'" @click="openTaskInstances(record)">
+              {{ record.taskName }}
+            </a-link>
+            <!-- 同步任务:点击进入同步详情(无实例概念) -->
+            <a-link v-else @click="openSyncDetail(record)">
               {{ record.taskName }}
             </a-link>
             <span v-if="record.taskType === 'schedule' && record.scriptName" class="uq-task-name__sub">
               关联脚本:{{ record.scriptName }}
-            </span>
-            <span v-if="record.taskType === 'sync'" class="uq-task-name__sub">
-              {{ record.sourceTable }} → {{ record.targetTable }}
             </span>
           </div>
         </template>
@@ -101,7 +95,10 @@
         </template>
         <template #operations="{ record }">
           <a-space size="mini">
-            <a-link @click="openTaskInstances(record)">实例</a-link>
+            <!-- 调度任务:每次执行产出一条实例,可查看实例列表 -->
+            <a-link v-if="record.taskType === 'schedule'" @click="openTaskInstances(record)">实例</a-link>
+            <!-- 同步任务:每次执行即一条记录本身,无独立实例,直接看记录详情 -->
+            <a-link v-if="record.taskType === 'sync'" @click="openSyncDetail(record)">详情</a-link>
             <a-link v-if="record.taskType === 'schedule'" @click="editSchedule(record)">配置</a-link>
             <a-link v-if="record.taskType === 'sync' && record.status === 'failed'" status="danger" @click="retrySync(record)">重跑</a-link>
           </a-space>
@@ -112,111 +109,78 @@
     <!-- 任务详情抽屉(F24 + F34 + F35) -->
     <DetailDrawer v-model:visible="drawerVisible" :task-id="drawerTaskId" />
 
-    <!-- 定时配置弹窗(F25-F29) -->
-    <a-modal
-      :visible="configVisible"
-      :title="configMode === 'create' ? '新建定时任务' : '编辑任务配置'"
+    <!-- 同步任务详情 drawer(P0 重构:展示 SyncTask 配置 + 历次 SyncRun) -->
+    <a-drawer
+      v-model:visible="syncDetailVisible"
+      :title="syncDetailRecord ? `同步任务 · ${syncDetailRecord.id}` : '同步任务详情'"
       :width="640"
-      :mask-closable="false"
-      @cancel="configVisible = false"
-      @ok="submitConfig"
+      unmount-on-close
     >
-      <a-form :model="configForm" layout="vertical">
-        <!-- F25: 关联脚本 -->
-        <a-form-item label="任务名称" field="name" required>
-          <a-input v-model="configForm.name" placeholder="请输入任务名称" />
-        </a-form-item>
-        <a-form-item label="关联脚本" field="scriptId" required>
-          <a-select
-            v-model="configForm.scriptId"
-            placeholder="请选择关联脚本"
-            allow-clear
-            @change="onScriptChange"
+      <template v-if="syncDetailRecord">
+        <a-alert
+          v-if="syncDetailRecord.taskStatus === 'failed'"
+          type="error"
+          show-icon
+          style="margin-bottom: 16px"
+        >
+          最近一次执行失败,源数据未受影响
+        </a-alert>
+        <a-descriptions :column="2" bordered size="small" title="任务配置">
+          <a-descriptions-item label="任务编号">{{ syncDetailRecord.id }}</a-descriptions-item>
+          <a-descriptions-item label="任务名">{{ syncDetailRecord.name }}</a-descriptions-item>
+          <a-descriptions-item label="任务状态">
+            <a-tag size="small" :color="syncTaskStatusColor(syncDetailRecord.taskStatus)">
+              {{ syncTaskStatusText(syncDetailRecord.taskStatus) }}
+            </a-tag>
+          </a-descriptions-item>
+          <a-descriptions-item label="方向">
+            <a-tag :color="syncDetailRecord.direction === 'doris-to-hive' ? 'arcoblue' : 'cyan'" size="small">
+              {{ syncDetailRecord.direction === 'doris-to-hive' ? 'Doris → Hive' : 'Hive → Doris' }}
+            </a-tag>
+          </a-descriptions-item>
+          <a-descriptions-item label="触发方式">
+            <a-tag size="small" :color="syncDetailRecord.trigger === 'schedule' ? 'purple' : 'arcoblue'">
+              {{ syncDetailRecord.trigger === 'schedule' ? `定时 · ${syncDetailRecord.schedule || '—'}` : '手动' }}
+            </a-tag>
+          </a-descriptions-item>
+          <a-descriptions-item label="发起人">{{ syncDetailRecord.creator }}</a-descriptions-item>
+          <a-descriptions-item label="源端" :span="2">
+            <code>{{ syncDetailRecord.sourceDatasource }}.{{ syncDetailRecord.sourceDatabase }}</code>
+          </a-descriptions-item>
+          <a-descriptions-item label="目标端" :span="2">
+            <code>{{ syncDetailRecord.targetDatasource }}.{{ syncDetailRecord.targetDatabase }}</code>
+            <a-tag v-if="syncDetailRecord.targetSnapshot.tmp" color="orange" size="small" style="margin-left: 4px">tmp</a-tag>
+          </a-descriptions-item>
+        </a-descriptions>
+
+        <div style="margin-top: 16px">
+          <div class="block-title">执行历史({{ syncDetailRuns.length }} 次)</div>
+          <a-table
+            :columns="syncRunColumns"
+            :data="syncDetailRuns"
+            :pagination="false"
+            row-key="id"
+            size="small"
           >
-            <a-optgroup label="共享脚本">
-              <a-option
-                v-for="s in sharedScripts"
-                :key="s.id"
-                :value="s.id"
-                :label="s.name"
-              />
-            </a-optgroup>
-            <a-optgroup label="我的脚本">
-              <a-option
-                v-for="s in myScripts"
-                :key="s.id"
-                :value="s.id"
-                :label="s.name"
-              />
-            </a-optgroup>
-          </a-select>
-        </a-form-item>
-        <a-form-item label="数据源">
-          <DataSourceBadge v-if="selectedScript" :datasource="selectedScript.datasource" mode="full" />
-          <span v-else class="uq-form-hint">选择脚本后自动带出</span>
-        </a-form-item>
-
-        <!-- F26: 频率联动 + Cron 展示 -->
-        <a-form-item label="调度频率" field="schedule" required>
-          <a-select v-model="configForm.schedule" placeholder="请选择调度频率" @change="onScheduleChange">
-            <a-option v-for="p in schedulePresets" :key="p" :value="p" :label="p" />
-          </a-select>
-        </a-form-item>
-        <a-form-item label="Cron 表达式">
-          <a-input v-model="configForm.cronExpression" placeholder="Cron 表达式">
-            <template #append>
-              <a-tooltip content="由调度频率自动生成,也可手动修改">
-                <icon-info-circle />
-              </a-tooltip>
+            <template #trigger="{ record: r }">
+              <a-tag size="small" :color="r.trigger === 'schedule' ? 'purple' : 'arcoblue'">
+                {{ r.trigger === 'schedule' ? '定时' : '手动' }}
+              </a-tag>
             </template>
-          </a-input>
-        </a-form-item>
-
-        <!-- F27: 通知告警配置 -->
-        <a-divider orientation="left">通知告警</a-divider>
-        <a-form-item label="执行成功时通知">
-          <a-switch v-model="configForm.notify.notifyOnSuccess" />
-          <template v-if="configForm.notify.notifyOnSuccess">
-            <span class="uq-form-label">通知通道:</span>
-            <a-select v-model="configForm.notify.successChannel" size="small" style="width: 120px">
-              <a-option value="dingtalk" label="钉钉" />
-              <a-option value="feishu" label="飞书" />
-              <a-option value="email" label="邮件" />
-            </a-select>
-          </template>
-        </a-form-item>
-        <a-form-item label="执行失败时通知">
-          <a-switch v-model="configForm.notify.notifyOnFailed" />
-          <template v-if="configForm.notify.notifyOnFailed">
-            <span class="uq-form-label">通知通道:</span>
-            <a-select v-model="configForm.notify.failedChannel" size="small" style="width: 120px">
-              <a-option value="dingtalk" label="钉钉" />
-              <a-option value="feishu" label="飞书" />
-              <a-option value="email" label="邮件" />
-            </a-select>
-          </template>
-        </a-form-item>
-        <a-form-item label="超时通知阈值(分钟)">
-          <a-input-number v-model="configForm.notify.timeoutMinutes" :min="0" :max="120" placeholder="0 表示不启用" />
-        </a-form-item>
-        <a-form-item label="连续失败升级阈值(次)">
-          <a-input-number v-model="configForm.notify.maxConsecutiveFailures" :min="0" :max="10" placeholder="0 表示不启用" />
-        </a-form-item>
-
-        <!-- F28: 高级设置 -->
-        <a-divider orientation="left">高级设置</a-divider>
-        <a-form-item label="重试次数">
-          <a-input-number v-model="configForm.advanced.retryCount" :min="0" :max="10" />
-        </a-form-item>
-        <a-form-item label="重试间隔(分钟)">
-          <a-input-number v-model="configForm.advanced.retryInterval" :min="1" :max="60" />
-        </a-form-item>
-        <a-form-item label="跳过堆积任务">
-          <a-switch v-model="configForm.advanced.skipBacklog" />
-          <span class="uq-form-hint">错过执行时间后不补跑</span>
-        </a-form-item>
-      </a-form>
-    </a-modal>
+            <template #status="{ record: r }">
+              <a-tag size="small" :color="r.status === 'success' ? 'green' : r.status === 'failed' ? 'red' : r.status === 'running' ? 'arcoblue' : 'gray'">
+                {{ syncStatusText(r.status) }}
+              </a-tag>
+            </template>
+            <template #cost="{ record: r }">{{ formatCost(r.costMs) }}</template>
+            <template #startedAt="{ record: r }">
+              <div>{{ r.startedAt }}</div>
+              <div v-if="r.errorMessage" style="font-size: 12px; color: rgb(var(--danger-6))">{{ r.errorMessage }}</div>
+            </template>
+          </a-table>
+        </div>
+      </template>
+    </a-drawer>
 
     <!-- B1: 新建任务 · 类型选择 -->
     <a-modal
@@ -257,29 +221,25 @@
  *
  * 概览指标由任务列表实时派生,列表状态变化看板同步(§7.1 状态一致性)。
  */
-import { computed, reactive, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import PageContainer from '@/components-dca/common/PageContainer.vue'
 import PageHeader from '@/components-dca/common/PageHeader.vue'
-import StatusTag from '@/components-dca/unified-query/StatusTag.vue'
-import DataSourceBadge from '@/components-dca/unified-query/DataSourceBadge.vue'
 import DetailDrawer from '@/components-dca/unified-query/DetailDrawer.vue'
 import { useUqTaskStore } from '@/stores-dca/unified-query/task'
 import { useSyncTaskStore } from '@/stores-dca/management/sync-task'
-import { useUqScriptStore } from '@/stores-dca/unified-query/script'
 import { useTaskInstanceStore } from '@/stores-dca/unified-query/task-instance'
-import { SCHEDULE_PRESETS, TASK_TREND_7D } from '@/mock/unified-query/tasks'
-import type { TaskRecord, NotifyConfig } from '@/mock/unified-query/types'
+import { TASK_TREND_7D } from '@/mock/unified-query/tasks'
+import type { TaskRecord } from '@/mock/unified-query/types'
 import type { TaskSummary } from '@/stores-dca/unified-query/task-instance'
+import type { SyncRecord, SyncRunStatus, SyncTaskStatus } from '@/mock/service/sync-tasks-types'
 
 const router = useRouter()
 const store = useUqTaskStore()
 const syncStore = useSyncTaskStore()
-const scriptStore = useUqScriptStore()
 const instanceStore = useTaskInstanceStore()
 const trend = TASK_TREND_7D
-const schedulePresets = SCHEDULE_PRESETS
 
 /* ─── 一期合并:任务类型筛选(R02 同步/调度) ─── */
 type TaskTypeFilter = 'all' | 'schedule' | 'sync'
@@ -305,11 +265,10 @@ function openTaskInstances(row: TaskSummary) {
   })
 }
 
-/** 调度任务:跳到原定时配置 modal */
+/** 调度任务:跳到 task-create 页面(带 taskId query 走编辑模式) */
 function editSchedule(row: TaskSummary) {
   if (row.taskType !== 'schedule') return
-  const t = store.getById(row.taskId)
-  if (t) editConfig(t)
+  router.push({ name: 'unified-query-task-create', query: { taskId: row.taskId } })
 }
 
 /** 同步失败任务:重跑 */
@@ -317,6 +276,82 @@ function retrySync(row: TaskSummary) {
   if (row.taskType !== 'sync') return
   const r = syncStore.retry(row.taskId)
   if (r) Message.success(`任务「${r.id}」已重新加入执行队列`)
+}
+
+/* ─── 同步任务详情 drawer(同步无独立实例,记录本身就是执行) ─── */
+const syncDetailVisible = ref(false)
+const syncDetailRecord = ref<SyncRecord | null>(null)
+
+/**
+ * 打开同步任务详情 drawer
+ * P0:SyncTask(任务配置) + SyncRun(执行记录)分层,通过 SyncRecord 视图兼容展示
+ */
+function openSyncDetail(row: TaskSummary) {
+  if (row.taskType !== 'sync') return
+  const r = syncStore.getById(row.taskId)
+  if (!r) {
+    Message.warning('未找到该同步任务')
+    return
+  }
+  syncDetailRecord.value = r
+  syncDetailVisible.value = true
+}
+
+/** 当前 drawer 任务的历次 SyncRun */
+const syncDetailRuns = computed(() => {
+  const t = syncDetailRecord.value
+  return t ? syncStore.getRunsByTaskId(t.id) : []
+})
+
+/** 同步任务级状态文案 */
+function syncTaskStatusText(s: SyncTaskStatus): string {
+  return ({
+    enabled: '启用',
+    disabled: '停用',
+    running: '运行中',
+    success: '成功',
+    failed: '失败'
+  } as Record<SyncTaskStatus, string>)[s] ?? s
+}
+
+/** 同步任务级状态颜色 */
+function syncTaskStatusColor(s: SyncTaskStatus): string {
+  return ({
+    enabled: 'green',
+    disabled: 'gray',
+    running: 'arcoblue',
+    success: 'green',
+    failed: 'red'
+  } as Record<SyncTaskStatus, string>)[s] ?? 'gray'
+}
+
+/** 同步 run 历史表格列 */
+const syncRunColumns = [
+  { title: '运行编号', dataIndex: 'id', width: 200 },
+  { title: '触发', dataIndex: 'trigger', slotName: 'trigger', width: 90 },
+  { title: '状态', dataIndex: 'status', slotName: 'status', width: 100 },
+  { title: '耗时', dataIndex: 'cost', slotName: 'cost', width: 100 },
+  { title: '开始时间', dataIndex: 'startedAt', slotName: 'startedAt' }
+]
+
+/** 同步状态 → 文案 */
+function syncStatusText(s: SyncRunStatus): string {
+  return {
+    pending: '待执行',
+    running: '执行中',
+    success: '成功',
+    failed: '失败',
+    timeout: '超时'
+  }[s] || s
+}
+
+/** 复用耗时格式化(同步任务使用 ms) */
+function formatCost(ms: number): string {
+  if (!ms) return '—'
+  if (ms < 1000) return `${ms} ms`
+  const s = ms / 1000
+  if (s < 60) return `${s.toFixed(1)} s`
+  return `${Math.floor(s / 60)}m${Math.round(s % 60)}s`
 }
 
 /* ─── 新建任务 类型选择 modal(B1) ─── */
@@ -330,7 +365,7 @@ function pickSync() {
 }
 function pickSchedule() {
   typeChooseVisible.value = false
-  openCreateConfig()
+  router.push({ name: 'unified-query-task-create' })
 }
 
 /** F22: 概览看板 4 张卡(总任务 / 成功 / 失败 / 运行中) */
@@ -351,134 +386,6 @@ const drawerTaskId = ref<string | null>(null)
 function openDrawer(record: TaskRecord) {
   drawerTaskId.value = record.id
   drawerVisible.value = true
-}
-
-/* ── F25-F29: 定时配置弹窗 ── */
-const configVisible = ref(false)
-const configMode = ref<'create' | 'edit'>('create')
-const editingTaskId = ref<string | null>(null)
-
-const sharedScripts = computed(() => scriptStore.byScope('shared'))
-const myScripts = computed(() => scriptStore.byScope('mine'))
-const selectedScript = computed(() =>
-  configForm.scriptId ? scriptStore.getById(configForm.scriptId) : null
-)
-
-const configForm = reactive({
-  name: '',
-  scriptId: '',
-  schedule: '每天 02:00',
-  cronExpression: '0 0 2 * * ?',
-  notify: {
-    notifyOnSuccess: false,
-    notifyOnFailed: true,
-    successChannel: 'dingtalk',
-    failedChannel: 'dingtalk',
-    timeoutMinutes: 0,
-    maxConsecutiveFailures: 3
-  } as NotifyConfig,
-  advanced: {
-    retryCount: 3,
-    retryInterval: 5,
-    skipBacklog: false
-  }
-})
-
-/** F26: 频率 → Cron 联动 */
-function cronFromSchedule(schedule: string): string {
-  const map: Record<string, string> = {
-    '每小时': '0 0 * * * ?',
-    '每天 02:00': '0 0 2 * * ?',
-    '每天 06:00': '0 0 6 * * ?',
-    '每周一 07:00': '0 0 7 ? * MON',
-    '每月 1 日 08:00': '0 0 8 1 * ?'
-  }
-  return map[schedule] ?? '0 0 2 * * ?'
-}
-
-function onScheduleChange(val: string) {
-  configForm.cronExpression = cronFromSchedule(val)
-}
-
-function onScriptChange() {
-  // 选择脚本后自动带出数据源信息(selectedScript computed 已处理)
-}
-
-function resetForm() {
-  configForm.name = ''
-  configForm.scriptId = ''
-  configForm.schedule = '每天 02:00'
-  configForm.cronExpression = '0 0 2 * * ?'
-  configForm.notify = {
-    notifyOnSuccess: false,
-    notifyOnFailed: true,
-    successChannel: 'dingtalk',
-    failedChannel: 'dingtalk',
-    timeoutMinutes: 0,
-    maxConsecutiveFailures: 3
-  }
-  configForm.advanced = {
-    retryCount: 3,
-    retryInterval: 5,
-    skipBacklog: false
-  }
-}
-
-function openCreateConfig() {
-  router.push({ name: 'unified-query-task-create' })
-}
-
-function editConfig(record: TaskRecord) {
-  configMode.value = 'edit'
-  editingTaskId.value = record.id
-  configForm.name = record.name
-  const script = scriptStore.list.find(s => s.name === record.scriptName)
-  configForm.scriptId = script?.id ?? ''
-  configForm.schedule = record.schedule
-  configForm.cronExpression = record.cronExpression
-  configForm.notify = { ...record.notify }
-  configForm.advanced = { ...record.advanced }
-  configVisible.value = true
-}
-
-/** F29: 提交定时配置(新建或编辑) */
-function submitConfig() {
-  if (!configForm.name.trim()) {
-    Message.warning('请填写任务名称')
-    return
-  }
-  if (!configForm.scriptId) {
-    Message.warning('请选择关联脚本')
-    return
-  }
-  const script = scriptStore.getById(configForm.scriptId)
-  if (!script) {
-    Message.error('关联脚本不存在')
-    return
-  }
-
-  if (configMode.value === 'edit' && editingTaskId.value) {
-    store.updateConfig(editingTaskId.value, {
-      name: configForm.name,
-      schedule: configForm.schedule,
-      cronExpression: configForm.cronExpression,
-      notify: { ...configForm.notify },
-      advanced: { ...configForm.advanced }
-    })
-    Message.success('任务配置已更新')
-  } else {
-    store.createTask({
-      name: configForm.name,
-      datasource: script.datasource,
-      scriptName: script.name,
-      schedule: configForm.schedule,
-      cronExpression: configForm.cronExpression,
-      notify: { ...configForm.notify },
-      advanced: { ...configForm.advanced }
-    })
-    Message.success('定时任务创建成功')
-  }
-  configVisible.value = false
 }
 
 /* ── F30-F33: 任务操作按钮 ── */
@@ -596,17 +503,6 @@ function viewScript(record: TaskRecord) {
     font-size: 12px;
     color: var(--color-text-3);
   }
-}
-
-.uq-form-hint {
-  font-size: 12px;
-  color: var(--color-text-3);
-}
-
-.uq-form-label {
-  margin-left: 12px;
-  font-size: 13px;
-  color: var(--color-text-2);
 }
 
 .uq-task-name__sub {

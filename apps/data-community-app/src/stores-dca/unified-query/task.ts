@@ -211,8 +211,26 @@ export const useUqTaskStore = defineStore('uqTask', () => {
     })
   }
 
-  /** F25:更新任务配置 */
-  function updateConfig(id: string, patch: Partial<Pick<TaskRecord, 'name' | 'schedule' | 'cronExpression' | 'notify' | 'advanced'>>) {
+  /** F25:更新任务配置(支持所有可编辑字段,与 task-create 页面保持一致) */
+  function updateConfig(
+    id: string,
+    patch: Partial<
+      Pick<
+        TaskRecord,
+        | 'name'
+        | 'schedule'
+        | 'cronExpression'
+        | 'notify'
+        | 'advanced'
+        | 'scheduleConfig'
+        | 'dependencies'
+        | 'dqc'
+        | 'sql'
+        | 'resourceGroup'
+        | 'priority'
+      >
+    > & { datasource?: DataSourceKey; scriptName?: string }
+  ) {
     const t = getById(id)
     if (t) Object.assign(t, patch)
   }

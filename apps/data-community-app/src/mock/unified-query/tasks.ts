@@ -141,7 +141,15 @@ export const SEED_TASK_HISTORY: TaskExecHistory[] = [
   { id: 'H008', taskId: 'T2003', runAt: '2026-09-03 07:00:12', status: 'failed', duration: '0.6s', rowCount: 0, errorMsg: '表 dws_risk_summary 不存在或无权限' },
   { id: 'H009', taskId: 'T2008', runAt: '2026-09-03 04:00:02', status: 'failed', duration: '0.5s', rowCount: 0, errorMsg: 'Hive 会话超时' },
   { id: 'H010', taskId: 'T2008', runAt: '2026-09-02 04:00:08', status: 'success', duration: '2.1s', rowCount: 85 },
-  { id: 'H011', taskId: 'T2008', runAt: '2026-09-01 04:00:15', status: 'success', duration: '2.3s', rowCount: 90 }
+  { id: 'H011', taskId: 'T2008', runAt: '2026-09-01 04:00:15', status: 'success', duration: '2.3s', rowCount: 90 },
+  // T2006 还款率日报(每天 06:00)· 近 7 天执行历史
+  { id: 'H012', taskId: 'T2006', runAt: '2026-09-03 06:00:09', status: 'success', duration: '1.4s', rowCount: 218 },
+  { id: 'H013', taskId: 'T2006', runAt: '2026-09-02 06:00:11', status: 'success', duration: '1.3s', rowCount: 210 },
+  { id: 'H014', taskId: 'T2006', runAt: '2026-09-01 06:00:08', status: 'failed', duration: '0.6s', rowCount: 0, errorMsg: 'Doris 副本写入失败,主键冲突' },
+  { id: 'H015', taskId: 'T2006', runAt: '2026-08-31 06:00:14', status: 'success', duration: '1.5s', rowCount: 222 },
+  { id: 'H016', taskId: 'T2006', runAt: '2026-08-30 06:00:10', status: 'success', duration: '1.4s', rowCount: 215 },
+  { id: 'H017', taskId: 'T2006', runAt: '2026-08-29 06:00:12', status: 'success', duration: '1.3s', rowCount: 209 },
+  { id: 'H018', taskId: 'T2006', runAt: '2026-08-28 06:00:15', status: 'success', duration: '1.5s', rowCount: 224 }
 ]
 
 /** 同事列表 Mock(F18 共享弹窗) */

@@ -79,6 +79,114 @@ const DEFAULT_FILTER: TaskInstanceFilter = {
   days: 30
 }
 
+const DEFAULT_TASK_FILTER = {
+  keyword: '',
+  type: 'all' as 'all' | 'sync' | 'schedule',
+  /** 任务级状态(对齐需求 R05 启用/停用/归档,本期暂存为启用/停用/失败/运行中/执行中) */
+  status: 'all' as string
+}
+
+/** 任务列表筛选 */
+export interface TaskListFilter {
+  keyword: string
+  type: 'all' | 'sync' | 'schedule'
+  status: string
+}
+
+/**
+ * 任务列表里的一行(单表合并:同步 + 调度)
+ * 整合方案:同一条记录同时携带两类需要的字段,
+ *   - 通用列:taskId / taskName / type / status / creator / lastRunAt
+ *   - 类型专属(列内容条件渲染):schedule/sourceTable
+ */
+export interface TaskSummary {
+  /** 任务 ID(与其所属 store 的 id 一致) */
+  taskId: string
+  taskName: string
+  taskType: 'sync' | 'schedule'
+  /** 派生自 TaskStatus/SyncStatus */
+  status: string
+  statusText: string
+  statusColor: string
+  creator: string
+  /** 统一展示「最近执行」 */
+  lastRunAt: string
+  /** 调度任务专属 */
+  schedule?: string
+  nextRun?: string
+  scriptName?: string
+  /** 同步任务专属 */
+  direction?: string
+  sourceTable?: string
+  targetTable?: string
+  // 拓展字段:调度任务的 schedule 字段、cron 表达式
+  cronExpression?: string
+}
+
+function buildSummaryFromSync(r: {
+  id: string
+  sourceTable: string
+  sourceDatabase: string
+  targetDatabase: string
+  direction: string
+  status: string
+  creator: string
+  startedAt: string
+}): TaskSummary {
+  const map: Record<string, { text: string; color: string }> = {
+    success: { text: '成功', color: 'green' },
+    failed: { text: '失败', color: 'red' },
+    timeout: { text: '超时', color: 'orange' },
+    running: { text: '执行中', color: 'arcoblue' },
+    pending: { text: '待执行', color: 'gray' }
+  }
+  return {
+    taskId: r.id,
+    taskName: `同步·${r.sourceTable}`,
+    taskType: 'sync',
+    status: r.status,
+    statusText: map[r.status]?.text ?? r.status,
+    statusColor: map[r.status]?.color ?? 'gray',
+    creator: r.creator,
+    lastRunAt: r.startedAt,
+    direction: r.direction === 'doris-to-hive' ? 'Doris → Hive' : 'Hive → Doris',
+    sourceTable: `${r.sourceDatabase}.${r.sourceTable}`,
+    targetTable: r.targetDatabase
+  }
+}
+
+function buildSummaryFromSchedule(t: {
+  id: string
+  name: string
+  status: string
+  schedule: string
+  cronExpression: string
+  lastRun: string | null
+  nextRun: string | null
+  scriptName: string
+}, creator: string): TaskSummary {
+  const map: Record<string, { text: string; color: string }> = {
+    success: { text: '成功', color: 'green' },
+    failed: { text: '失败', color: 'red' },
+    running: { text: '运行中', color: 'arcoblue' },
+    disabled: { text: '已停用', color: 'gray' }
+  }
+  return {
+    taskId: t.id,
+    taskName: t.name,
+    taskType: 'schedule',
+    status: t.status,
+    statusText: map[t.status]?.text ?? t.status,
+    statusColor: map[t.status]?.color ?? 'gray',
+    creator,
+    lastRunAt: t.lastRun || '—',
+    schedule: t.schedule,
+    cronExpression: t.cronExpression,
+    nextRun: t.nextRun || '—',
+    scriptName: t.scriptName
+  }
+}
+
 /** 状态文本+R27 颜色配置 */
 export const INSTANCE_STATUS_META: Record<TaskInstanceStatus, { text: string; color: string }> = {
   queued: { text: '排队', color: 'gray' },
@@ -212,15 +320,100 @@ export const useTaskInstanceStore = defineStore('taskInstance', () => {
     }
   })
 
+  /** 按 taskId 进一步筛选实例(用于「按任务过滤」场景,如 task-scheduler 行点击) */
+  function filterByTask(taskId: string) {
+    filter.value.type = 'all'
+    filter.value.status = 'all'
+    filter.value.trigger = 'all'
+    filter.value.keyword = taskId
+  }
+
   function resetFilter() {
     filter.value = { ...DEFAULT_FILTER }
   }
 
+  /* ─────────── ② 任务汇总列表(单表方案) ─────────── */
+
+  /** 任务级别筛选 */
+  const taskFilter = ref<TaskListFilter>({ ...DEFAULT_TASK_FILTER })
+
+  /** 单表任务列表:同步 + 调度合并为同一份 rows */
+  const tasks = computed<TaskSummary[]>(() => {
+    const syncStore = useSyncTaskStore()
+    const uqStore = useUqTaskStore()
+    const list: TaskSummary[] = []
+
+    for (const r of syncStore.records) {
+      list.push(
+        buildSummaryFromSync({
+          id: r.id,
+          sourceTable: r.sourceTable,
+          sourceDatabase: r.sourceDatabase,
+          targetDatabase: r.targetDatabase,
+          direction: r.direction,
+          status: r.status,
+          creator: r.creator,
+          startedAt: r.startedAt
+        })
+      )
+    }
+    for (const t of uqStore.list) {
+      list.push(buildSummaryFromSchedule(t, '王运营'))
+    }
+    return list
+  })
+
+  /** 经任务级别筛选后的列表 */
+  const filteredTasks = computed(() => {
+    const f = taskFilter.value
+    const kw = f.keyword.trim().toLowerCase()
+    return tasks.value
+      .filter(t => {
+        if (f.type !== 'all' && t.taskType !== f.type) return false
+        if (f.status !== 'all' && t.status !== f.status) return false
+        if (kw) {
+          const hay = [t.taskId, t.taskName, t.creator, t.sourceTable ?? '', t.targetTable ?? '', t.scriptName ?? '']
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+          if (!hay.includes(kw)) return false
+        }
+        return true
+      })
+      // 默认按最近执行倒序(R06)
+      .sort((a, b) => (a.lastRunAt < b.lastRunAt ? 1 : a.lastRunAt > b.lastRunAt ? -1 : 0))
+  })
+
+  /** 任务级别 stats */
+  const taskStats = computed(() => {
+    const list = tasks.value
+    return {
+      total: list.length,
+      schedule: list.filter(t => t.taskType === 'schedule').length,
+      sync: list.filter(t => t.taskType === 'sync').length,
+      success: list.filter(t => t.status === 'success').length,
+      failed: list.filter(t => t.status === 'failed' || t.status === 'timeout').length,
+      running: list.filter(t => t.status === 'running').length
+    }
+  })
+
+  function resetTaskFilter() {
+    taskFilter.value = { ...DEFAULT_TASK_FILTER }
+  }
+
   return {
+    // 实例查询
     filter,
     all,
     filtered,
     stats,
-    resetFilter
+    resetFilter,
+    filterByTask,
+    // 任务查询(单表合并)
+    taskFilter,
+    tasks,
+    filteredTasks,
+    taskStats,
+    resetTaskFilter
   }
 })

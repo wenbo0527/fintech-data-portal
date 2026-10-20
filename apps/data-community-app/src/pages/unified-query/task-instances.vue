@@ -2,7 +2,7 @@
   <PageContainer size="wide" class="uq-instances">
     <PageHeader
       title="执行实例"
-      sub-title="数据任务服务 · 同步与调度执行记录合并为同一份列表，按开始时间倒序"
+      :sub-title="subTitle"
     >
       <template #extra>
         <a-space>
@@ -17,6 +17,23 @@
         </a-space>
       </template>
     </PageHeader>
+
+    <!-- 当前任务上下文(从 task-scheduler 行点击带过来的) -->
+    <a-alert
+      v-if="taskContext"
+      type="info"
+      show-icon
+      closable
+      class="uq-instances__context"
+    >
+      当前按任务筛选:<b>{{ taskContext.taskName }}</b>
+      <a-tag :color="taskContext.taskType === 'sync' ? 'arcoblue' : 'green'" size="small" style="margin-left: 6px">
+        {{ taskContext.taskType === 'sync' ? '同步' : '调度' }}
+      </a-tag>
+      <a-button size="mini" type="text" style="margin-left: 8px" @click="clearTaskContext">
+        显示全部实例
+      </a-button>
+    </a-alert>
 
     <!-- 概览统计(D1) -->
     <a-row :gutter="16" class="uq-instances__stats">
@@ -245,8 +262,8 @@
  *   R28 触发方式统一语义:手动 / 定时 / 依赖上游 / 外部调用
  *   E12 时间范围筛选 - 默认近 30 天
  */
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import PageContainer from '@/components-dca/common/PageContainer.vue'
 import PageHeader from '@/components-dca/common/PageHeader.vue'
 import {
@@ -254,6 +271,8 @@ import {
   INSTANCE_TRIGGER_META,
   useTaskInstanceStore
 } from '@/stores-dca/unified-query/task-instance'
+import { useSyncTaskStore } from '@/stores-dca/management/sync-task'
+import { useUqTaskStore } from '@/stores-dca/unified-query/task'
 import type {
   TaskInstance,
   TaskInstanceStatus,
@@ -261,7 +280,61 @@ import type {
 } from '@/stores-dca/unified-query/task-instance'
 
 const router = useRouter()
+const route = useRoute()
 const store = useTaskInstanceStore()
+const syncStore = useSyncTaskStore()
+const uqStore = useUqTaskStore()
+
+/* ─── 从 query.taskId 解析任务上下文 ─── */
+const currentTaskId = ref<string>('')
+const currentTaskType = ref<'sync' | 'schedule' | null>(null)
+
+const taskContext = computed(() => {
+  if (!currentTaskId.value) return null
+  if (currentTaskType.value === 'sync') {
+    const r = syncStore.records.find(x => x.id === currentTaskId.value)
+    if (!r) return null
+    return {
+      taskId: r.id,
+      taskName: `同步·${r.sourceTable}`,
+      taskType: 'sync' as const
+    }
+  }
+  if (currentTaskType.value === 'schedule') {
+    const t = uqStore.list.find(x => x.id === currentTaskId.value)
+    if (!t) return null
+    return { taskId: t.id, taskName: t.name, taskType: 'schedule' as const }
+  }
+  return null
+})
+
+/** 顶部 subtitle —— 若在查特定任务,展示对应 taskName */
+const subTitle = computed(() => {
+  if (taskContext.value) {
+    return `当前任务「${taskContext.value.taskName}」的执行实例列表 · 数据任务服务`
+  }
+  return '数据任务服务 · 同步与调度执行记录合并为同一份列表，按开始时间倒序'
+})
+
+function applyQuery() {
+  const tid = (route.query.taskId as string) || ''
+  const typ = (route.query.type as 'sync' | 'schedule') || ''
+  currentTaskId.value = tid
+  currentTaskType.value = typ || null
+  if (tid) {
+    store.filterByTask(tid)
+  }
+}
+
+function clearTaskContext() {
+  currentTaskId.value = ''
+  currentTaskType.value = null
+  router.replace({ name: route.name as string })
+  store.resetFilter()
+}
+
+onMounted(applyQuery)
+watch(() => route.query.taskId, applyQuery)
 
 const columns = [
   { title: '实例 ID', dataIndex: 'id', slotName: 'id', width: 180 },
@@ -314,6 +387,9 @@ function openDetail(r: TaskInstance) {
 
 <style lang="scss" scoped>
 .uq-instances {
+  &__context {
+    margin: 0 24px 16px;
+  }
   &__stats {
     margin: 0 24px 16px;
     :deep(.arco-card-body) {

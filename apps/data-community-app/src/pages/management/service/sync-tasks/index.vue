@@ -6,10 +6,6 @@
     >
       <template #extra>
         <a-space>
-          <a-button @click="router.push({ name: 'service' })">
-            <template #icon><icon-left /></template>
-            返回服务
-          </a-button>
           <a-button @click="router.push({ name: 'unified-query-tasks' })">
             <template #icon><icon-thunderbolt /></template>
             数据任务服务
@@ -18,7 +14,7 @@
             <template #icon><icon-list /></template>
             统一执行实例
           </a-button>
-          <a-button type="primary" @click="goCreate">
+          <a-button type="primary" @click="router.push({ name: 'service-sync-create' })">
             <template #icon><icon-plus /></template>
             新建同步任务
           </a-button>

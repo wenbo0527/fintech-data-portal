@@ -50,117 +50,72 @@
       </a-col>
     </a-row>
 
-    <!-- 任务列表(F23 / F36) -->
+    <!-- 任务列表(F23 / F36 · 单表合并 同步 + 调度,R02/R26) -->
     <a-card class="uq-task-list" title="任务列表" style="margin-top: 16px">
       <template #extra>
         <a-space size="mini">
-          <a-radio-group v-model="taskTypeFilter" size="small" type="button">
+          <a-radio-group v-model="instanceStore.taskFilter.type" size="small" type="button">
             <a-radio value="all">全部</a-radio>
             <a-radio value="schedule">调度</a-radio>
             <a-radio value="sync">同步</a-radio>
           </a-radio-group>
           <a-input-search
-            v-model="store.keyword"
+            v-model="instanceStore.taskFilter.keyword"
             size="small"
-            placeholder="搜索任务 / 脚本名"
+            placeholder="搜索任务 / 脚本 / 表名"
             allow-clear
-            style="width: 200px"
+            style="width: 220px"
           />
-          <a-radio-group v-model="store.statusFilter" size="small" type="button">
-            <a-radio value="all">全部</a-radio>
-            <a-radio value="success">成功</a-radio>
-            <a-radio value="failed">失败</a-radio>
-            <a-radio value="running">运行中</a-radio>
-            <a-radio value="disabled">已停用</a-radio>
-          </a-radio-group>
         </a-space>
       </template>
 
-      <!-- 同步任务表 -->
       <a-table
-        v-if="taskTypeFilter !== 'schedule'"
-        :columns="syncColumns"
-        :data="syncRows"
+        :columns="mergedColumns"
+        :data="instanceStore.filteredTasks"
         :pagination="{ pageSize: 10, showTotal: true, size: 'small' }"
-        row-key="id"
+        row-key="taskId"
         size="medium"
         stripe
-      >
-        <template #taskName="{ record }">
-          <a-link @click="goSyncRecords(record)">
-            {{ record.taskName }}
-          </a-link>
-        </template>
-        <template #direction="{ record }">
-          <a-tag size="small" color="arcoblue">{{ record.direction }}</a-tag>
-        </template>
-        <template #status="{ record }">
-          <a-tag size="small" :color="syncStatusColor(record.status)">{{ record.statusText }}</a-tag>
-        </template>
-        <template #operations="{ record }">
-          <a-space size="mini">
-            <a-link @click="goSyncCreate(record)">重跑</a-link>
-            <a-link @click="goSyncRecords(record)">实例</a-link>
-          </a-space>
-        </template>
-        <template #empty>
-          <a-empty description="暂无同步任务">
-            <a-button type="primary" @click="router.push({ name: 'service-sync-create' })">立即新建</a-button>
-          </a-empty>
-        </template>
-      </a-table>
-
-      <!-- 调度任务表(原有) -->
-      <a-table
-        v-if="taskTypeFilter !== 'sync'"
-        :columns="columns"
-        :data="store.filtered"
-        :pagination="{ pageSize: 10, showTotal: true, size: 'small' }"
-        row-key="id"
-        size="medium"
-        stripe
-        :style="taskTypeFilter === 'all' ? 'margin-top: 16px' : ''"
+        :scroll="{ x: 1200 }"
       >
         <template #name="{ record }">
           <div class="uq-task-name">
-            <a-link @click="openDrawer(record)">{{ record.name }}</a-link>
-            <span>关联脚本:{{ record.scriptName }}</span>
+            <a-link @click="openTaskInstances(record)">
+              {{ record.taskName }}
+            </a-link>
+            <span v-if="record.taskType === 'schedule' && record.scriptName" class="uq-task-name__sub">
+              关联脚本:{{ record.scriptName }}
+            </span>
+            <span v-if="record.taskType === 'sync'" class="uq-task-name__sub">
+              {{ record.sourceTable }} → {{ record.targetTable }}
+            </span>
           </div>
         </template>
-        <template #datasource="{ record }">
-          <DataSourceBadge :datasource="record.datasource" mode="full" />
+        <template #taskType="{ record }">
+          <a-tag size="small" :color="record.taskType === 'sync' ? 'arcoblue' : 'green'">
+            {{ record.taskType === 'sync' ? '同步' : '调度' }}
+          </a-tag>
+        </template>
+        <!-- 同步任务专属:同步方向 -->
+        <template #detail="{ record }">
+          <span v-if="record.taskType === 'sync'">
+            <a-tag size="small" color="arcoblue">{{ record.direction }}</a-tag>
+          </span>
+          <span v-else class="text-gray">{{ record.schedule || '—' }}</span>
+        </template>
+        <!-- 调度任务专属:下次执行;同步任务此处展示上一次同步的目标表 -->
+        <template #secondary="{ record }">
+          <span v-if="record.taskType === 'schedule'">{{ record.nextRun || '—' }}</span>
+          <code v-else class="uq-task-code">{{ record.targetTable }}</code>
         </template>
         <template #status="{ record }">
-          <StatusTag :status="record.status" />
+          <a-tag size="small" :color="record.statusColor">{{ record.statusText }}</a-tag>
         </template>
-        <template #lastRun="{ record }">{{ record.lastRun || '—' }}</template>
-        <template #nextRun="{ record }">{{ record.nextRun || '—' }}</template>
         <template #operations="{ record }">
           <a-space size="mini">
-            <a-link @click="editConfig(record)">配置</a-link>
-            <!-- F30: 停用(success/failed → disabled) -->
-            <a-link
-              v-if="record.status === 'success' || record.status === 'failed'"
-              @click="handleDisable(record)"
-            >停用</a-link>
-            <!-- F33: 启用(disabled → success) -->
-            <a-link
-              v-if="record.status === 'disabled'"
-              @click="handleEnable(record)"
-            >启用</a-link>
-            <!-- F32: 停止(running → success) -->
-            <a-link
-              v-if="record.status === 'running'"
-              status="danger"
-              @click="handleStop(record)"
-            >停止</a-link>
-            <!-- F31: 重跑(非 running 状态) -->
-            <a-link
-              v-if="record.status !== 'running'"
-              :disabled="rerunningIds.has(record.id)"
-              @click="handleRerun(record)"
-            >{{ rerunningIds.has(record.id) ? '重跑中...' : '重跑' }}</a-link>
-            <a-link @click="viewScript(record)">查看脚本</a-link>
+            <a-link @click="openTaskInstances(record)">实例</a-link>
+            <a-link v-if="record.taskType === 'schedule'" @click="editSchedule(record)">配置</a-link>
+            <a-link v-if="record.taskType === 'sync' && record.status === 'failed'" status="danger" @click="retrySync(record)">重跑</a-link>
           </a-space>
         </template>
       </a-table>
@@ -325,61 +280,55 @@ import DetailDrawer from '@/components-dca/unified-query/DetailDrawer.vue'
 import { useUqTaskStore } from '@/stores-dca/unified-query/task'
 import { useSyncTaskStore } from '@/stores-dca/management/sync-task'
 import { useUqScriptStore } from '@/stores-dca/unified-query/script'
+import { useTaskInstanceStore } from '@/stores-dca/unified-query/task-instance'
 import { SCHEDULE_PRESETS, TASK_TREND_7D } from '@/mock/unified-query/tasks'
 import type { TaskRecord, NotifyConfig } from '@/mock/unified-query/types'
+import type { TaskSummary } from '@/stores-dca/unified-query/task-instance'
 
 const router = useRouter()
 const store = useUqTaskStore()
 const syncStore = useSyncTaskStore()
 const scriptStore = useUqScriptStore()
+const instanceStore = useTaskInstanceStore()
 const trend = TASK_TREND_7D
 const schedulePresets = SCHEDULE_PRESETS
 
 /* ─── 一期合并:任务类型筛选(R02 同步/调度) ─── */
 type TaskTypeFilter = 'all' | 'schedule' | 'sync'
-const taskTypeFilter = ref<TaskTypeFilter>('all')
+// 已迁至 instanceStore.taskFilter.type,这里保留一个本地只读镜像用于旧代码片段
 
-const syncRows = computed(() => {
-  return syncStore.records.map(r => ({
-    id: r.id,
-    taskName: `同步·${r.sourceTable}`,
-    direction: r.direction === 'doris-to-hive' ? 'Doris → Hive' : 'Hive → Doris',
-    status: r.status,
-    statusText:
-      r.status === 'success' ? '成功'
-      : r.status === 'failed' ? '失败'
-      : r.status === 'timeout' ? '超时'
-      : r.status === 'running' ? '执行中' : '待执行',
-    creator: r.creator,
-    lastRun: r.startedAt,
-    raw: r
-  }))
-})
-
-const syncColumns = [
-  { title: '任务名', dataIndex: 'taskName', slotName: 'taskName', width: 280 },
-  { title: '同步方向', dataIndex: 'direction', slotName: 'direction', width: 130 },
+/** 单表方案:合并列定义 */
+const mergedColumns = [
+  { title: '任务名', dataIndex: 'taskName', slotName: 'name', width: 280 },
+  { title: '类型', dataIndex: 'taskType', slotName: 'taskType', width: 90 },
+  { title: '详情', dataIndex: 'detail', slotName: 'detail', width: 200 },
+  { title: '目标 / 下次', dataIndex: 'secondary', slotName: 'secondary', width: 200 },
   { title: '状态', dataIndex: 'status', slotName: 'status', width: 100 },
   { title: '发起人', dataIndex: 'creator', width: 100 },
-  { title: '最近执行', dataIndex: 'lastRun', width: 170 },
-  { title: '操作', dataIndex: 'operations', slotName: 'operations', width: 160 }
+  { title: '最近执行', dataIndex: 'lastRunAt', width: 170 },
+  { title: '操作', dataIndex: 'operations', slotName: 'operations', width: 200, fixed: 'right' }
 ]
 
-function syncStatusColor(s: string) {
-  switch (s) {
-    case 'success': return 'green'
-    case 'failed': return 'red'
-    case 'timeout': return 'orange'
-    case 'running': return 'arcoblue'
-    default: return 'gray'
-  }
+/** 行点击 → 跳到执行实例页(带 taskId query) */
+function openTaskInstances(row: TaskSummary) {
+  router.push({
+    name: 'unified-query-tasks-instances',
+    query: { taskId: row.taskId, type: row.taskType }
+  })
 }
 
-function goSyncRecords(row: { raw: { id: string } }) {
-  router.push({ name: 'service-sync-records' })
+/** 调度任务:跳到原定时配置 modal */
+function editSchedule(row: TaskSummary) {
+  if (row.taskType !== 'schedule') return
+  const t = store.getById(row.taskId)
+  if (t) editConfig(t)
 }
-function goSyncCreate(row: { raw: { sourceTable: string } }) {
-  router.push({ name: 'service-sync-create' })
+
+/** 同步失败任务:重跑 */
+function retrySync(row: TaskSummary) {
+  if (row.taskType !== 'sync') return
+  const r = syncStore.retry(row.taskId)
+  if (r) Message.success(`任务「${r.id}」已重新加入执行队列`)
 }
 
 /* ─── 新建任务 类型选择 modal(B1) ─── */
@@ -396,25 +345,16 @@ function pickSchedule() {
   openCreateConfig()
 }
 
-const columns = [
-  { title: '任务名', dataIndex: 'name', slotName: 'name', width: 200 },
-  { title: '类型', dataIndex: 'datasource', slotName: 'datasource', width: 90 },
-  { title: '状态', dataIndex: 'status', slotName: 'status', width: 100 },
-  { title: '调度频率', dataIndex: 'schedule', width: 130 },
-  { title: '上次执行', dataIndex: 'lastRun', slotName: 'lastRun', width: 170 },
-  { title: '下次执行', dataIndex: 'nextRun', slotName: 'nextRun', width: 170 },
-  { title: '操作', dataIndex: 'operations', slotName: 'operations', width: 240 }
-]
-
-/** F22: 概览看板 5 张卡(总任务 / 成功 / 失败 / 运行中 / 成功率) */
+/** F22: 概览看板(一期合并:同步 + 调度合并,看板统一为任务级) */
 const cards = computed(() => {
-  const s = store.stats
+  const s = instanceStore.taskStats
   return [
-    { key: 'total', title: '总任务', value: s.total, unit: '个', tone: 'default', color: 'rgb(var(--primary-6))', hint: '已配置定时调度的查询脚本' },
-    { key: 'success', title: '执行成功', value: s.success, unit: '个', tone: 'success', color: 'rgb(var(--success-6))', hint: '最近一次执行返回结果' },
-    { key: 'failed', title: '执行失败', value: s.failed, unit: '个', tone: 'danger', color: 'rgb(var(--danger-6))', hint: '需人工排查或重跑' },
-    { key: 'running', title: '运行中', value: s.running, unit: '个', tone: 'info', color: 'rgb(var(--link-6))', hint: '正在按调度周期写入结果表' },
-    { key: 'rate', title: '成功率', value: s.successRate, unit: '%', tone: 'success', color: 'rgb(var(--success-6))', hint: '成功任务 / 总任务' }
+    { key: 'total', title: '总任务', value: s.total, unit: '个', tone: 'default', color: 'rgb(var(--primary-6))', hint: '同步 + 调度合计' },
+    { key: 'schedule', title: '调度任务', value: s.schedule, unit: '个', tone: 'info', color: 'rgb(var(--success-6))', hint: '基于统一查询脚本的定时任务' },
+    { key: 'sync', title: '同步任务', value: s.sync, unit: '个', tone: 'cyan', color: 'rgb(var(--link-6))', hint: 'Doris ↔ Hive 双向同步' },
+    { key: 'success', title: '成功', value: s.success, unit: '个', tone: 'success', color: 'rgb(var(--success-6))', hint: '最近一次执行成功' },
+    { key: 'failed', title: '失败 / 超时', value: s.failed, unit: '个', tone: 'danger', color: 'rgb(var(--danger-6))', hint: '需排查或重跑' },
+    { key: 'running', title: '运行中', value: s.running, unit: '个', tone: 'info', color: 'rgb(var(--link-6))', hint: '正在执行中' }
   ]
 })
 
@@ -681,6 +621,21 @@ function viewScript(record: TaskRecord) {
   margin-left: 12px;
   font-size: 13px;
   color: var(--color-text-2);
+}
+
+.uq-task-name__sub {
+  display: block;
+  font-size: 12px;
+  color: var(--color-text-3);
+  margin-top: 2px;
+}
+.uq-task-code {
+  font-family: 'Menlo', monospace;
+  background: var(--color-fill-2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #165dff;
 }
 
 /* 一期合并:B1 类型选择 */

@@ -10,6 +10,10 @@
             <template #icon><icon-left /></template>
             返回服务
           </a-button>
+          <a-button @click="router.push({ name: 'unified-query-tasks-instances' })">
+            <template #icon><icon-list /></template>
+            统一执行实例
+          </a-button>
           <a-button type="primary" @click="goCreate">
             <template #icon><icon-plus /></template>
             新建同步任务

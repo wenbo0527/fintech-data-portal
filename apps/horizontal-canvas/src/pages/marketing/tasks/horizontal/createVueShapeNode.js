@@ -5,11 +5,11 @@ import { buildDisplayLines } from './nodeDisplayLines.js'
 
 /**
  * 节点视图规格工厂（横版 Vue Shape）
- * 入参：{ id, x, y, label, data, portsOptions, outCount }
+ * 入参：{ id, x, y, label, data }
  * 返回：X6 Node 规格（含 shape/ports/data/size/zIndex）
- * 边界：不做持久化；起始节点仅出端口；结束节点无出端口；复制节点自动偏移避免被菜单遮挡。
+ * 边界：不做持久化；起始节点仅出端口 out-0；结束节点无出端口；复制节点自动偏移避免被菜单遮挡。
  */
-export function createVueShapeNode({ id, x, y, label, data = {}, portsOptions = {}, outCount: outCountParam = null }) {
+export function createVueShapeNode({ id, x, y, label, data = {} }) {
   const nodeType = data?.nodeType || data?.type
   const cfg = data?.config || {}
   const rowsRaw = buildDisplayLines(nodeType, cfg)

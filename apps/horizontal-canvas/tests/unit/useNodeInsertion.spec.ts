@@ -18,7 +18,7 @@ function makeGraph(overrides = {}) {
 }
 
 function makeCreateVueShapeNode() {
-  return vi.fn((spec) => ({ id: spec.id, x: spec.x, y: spec.y, label: spec.label, outCount: spec.outCount, data: spec.data }))
+  return vi.fn((spec) => ({ id: spec.id, x: spec.x, y: spec.y, label: spec.label, data: spec.data }))
 }
 
 describe('computeSelectorFromAnchor', () => {
@@ -67,25 +67,26 @@ describe('insertNodeFromSelector', () => {
     const spec = c.mock.calls[0][0]
     expect(spec.x).toBe(50)
     expect(spec.y).toBe(60)
-    expect(spec.outCount).toBe(1)
+    // 出端口数量与 id 由 createVueShapeNode 按节点类型/配置行推导，调用方不再显式传 outCount
+    expect(spec.outCount).toBeUndefined()
     expect(spec.data.type).toBe('sms')
     expect(spec.data.isConfigured).toBe(false)
     expect(g.addNode).toHaveBeenCalledOnce()
     expect(node).toBeTruthy()
   })
 
-  it('audience-split 归一为 crowd-split；四出节点 outCount=4', () => {
+  it('audience-split 归一为 crowd-split；不再显式传 outCount', () => {
     const c = makeCreateVueShapeNode()
     insertNodeFromSelector(makeGraph(), 'audience-split', { x: 0, y: 0 }, null, () => 'crowd', c)
     const spec = c.mock.calls[0][0]
-    expect(spec.outCount).toBe(4)
+    expect(spec.outCount).toBeUndefined()
     expect(spec.data.type).toBe('crowd-split')
   })
 
-  it('ab-test 也输出 4 个端口', () => {
+  it('ab-test 同样不再显式传 outCount', () => {
     const c = makeCreateVueShapeNode()
     insertNodeFromSelector(makeGraph(), 'ab-test', { x: 0, y: 0 }, null, () => 'ab', c)
-    expect(c.mock.calls[0][0].outCount).toBe(4)
+    expect(c.mock.calls[0][0].outCount).toBeUndefined()
   })
 
   it('带 pendingInsertionEdge：拆旧边 + 加两段新边', () => {

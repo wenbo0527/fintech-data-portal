@@ -19,7 +19,7 @@ export function computeSelectorCenter(containerRect: { left: number; top: number
 }
 
 export interface CreateVueShapeNode {
-  (spec: { id: string; x: number; y: number; label: string; outCount: number; data: Record<string, unknown> }): X6Cell
+  (spec: { id: string; x: number; y: number; label: string; data: Record<string, unknown> }): X6Cell
 }
 
 export function insertNodeFromSelector(
@@ -33,11 +33,9 @@ export function insertNodeFromSelector(
   if (!graph || !nodeType || !pendingPoint) return null
   if (nodeType === 'audience-split') nodeType = 'crowd-split'
   const label = (getNodeLabel && getNodeLabel(nodeType)) || nodeType
-  const fourOutTypes = ['audience-split', 'crowd-split', 'event-split', 'ab-test']
-  const outCount = fourOutTypes.includes(nodeType) ? 4 : 1
   const newNodeId = `${nodeType}-${Date.now()}`
   const node = graph.addNode?.(createVueShapeNode({
-    id: newNodeId, x: pendingPoint.x, y: pendingPoint.y, label, outCount,
+    id: newNodeId, x: pendingPoint.x, y: pendingPoint.y, label,
     data: { type: nodeType, nodeType, isConfigured: false }
   })) || null
   if (pendingInsertionEdge) {

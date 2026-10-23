@@ -117,14 +117,15 @@ export function ensureStartNode(graph: GraphLike): void {
   const hasStart = nodes.some((n: X6Cell) => { const d = n.getData?.() || {}; return d?.type === 'start' || d?.nodeType === 'start' || String(n.id).includes('start') })
   if (hasStart) return
   const startNodeId = 'start-node'
+  // 开始节点的端口由 createVueShapeNode 按 nodeType==='start' 统一推导：仅有 out-0，无 in 端口
+  const buildSpec = (y: number) => createVueShapeNode({ id: startNodeId, x: 60, y, label: '开始', data: { type: 'start', nodeType: 'start', isConfigured: true } })
   try {
     const rect = graph?.container?.getBoundingClientRect?.() || { width: 800, height: 600 }
-    const draft = createVueShapeNode({ id: startNodeId, x: 60, y: 0, label: '开始', outCount: 1, data: { type: 'start', nodeType: 'start', isConfigured: true }, portsOptions: { includeIn: false, outIds: ['out'] } })
+    const draft = buildSpec(0)
     const y = Math.max(20, Math.round(((rect.height || 600) - (draft?.height || 120)) / 2))
-    const spec = { ...draft, y }
-    graph.addNode?.(spec)
+    graph.addNode?.({ ...draft, y })
   } catch {
-    graph.addNode?.(createVueShapeNode({ id: startNodeId, x: 60, y: 160, label: '开始', outCount: 1, data: { type: 'start', nodeType: 'start', isConfigured: true }, portsOptions: { includeIn: false, outIds: ['out'] } }))
+    graph.addNode?.(buildSpec(160))
   }
 }
 /*

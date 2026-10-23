@@ -87,15 +87,13 @@ export function useCanvasMenus(deps) {
     }
     if (!nodeType) return
     const label = (typeof getNodeLabel === 'function' && getNodeLabel(nodeType)) || nodeType
-    const fourOutTypes = ['crowd-split', 'event-split', 'ab-test']
-    const outCount = fourOutTypes.includes(nodeType) ? 4 : 1
     const newNodeId = `${nodeType}-copy-${Date.now()}`
+    // 出端口数量与 id 统一由 createVueShapeNode 按节点类型/配置行推导
     graph.addNode(createVueShapeNode({
       id: newNodeId,
       x: pos.x + 40,
       y: pos.y + 40,
       label,
-      outCount,
       data: { ...data, nodeName: `${data?.nodeName || label}_副本` }
     }))
     try { onTrack && onTrack('node_action_copy', { nodeType }) } catch {}

@@ -24,7 +24,7 @@
       </div>
       <div class="header-item">
         <span class="label">状态</span>
-        <a-tag :color="taskStatus === 'published' ? 'green' : taskStatus === 'running' ? 'green' : 'blue'">{{ taskStatus === 'published' || taskStatus === 'running' ? '已发布' : '草稿' }}</a-tag>
+        <a-tag :color="taskStatus === 'published' ? 'green' : taskStatus === 'running' ? 'green' : 'blue'">{{ taskStatus === 'published' ? '已发布' : taskStatus === 'running' ? '运行中' : '草稿' }}</a-tag>
         <a-tag v-if="approvalStatus" :color="approvalStatus === 'pending_approval' ? 'orange' : approvalStatus === 'approved' ? 'green' : 'red'">
           {{ approvalStatus === 'pending_approval' ? '待审批' : approvalStatus === 'approved' ? '已审批' : '已驳回' }}
         </a-tag>
@@ -45,14 +45,6 @@
       </a-space>
     </div>
   </div>
-
-  <a-modal v-model:visible="publishModalVisible" title="发布说明" ok-text="确认发布" cancel-text="取消" @ok="confirmPublish">
-    <a-form layout="vertical">
-      <a-form-item label="画布说明">
-        <a-textarea v-model="publishDescription" placeholder="请输入发布说明" :max-length="300" allow-clear />
-      </a-form-item>
-    </a-form>
-  </a-modal>
 
   <a-modal v-model:visible="validationVisible" title="发布校验未通过" ok-text="我知道了" :cancel-button-props="{ style: 'display:none' }" :hide-cancel="true">
     <div class="validation-list">
@@ -93,7 +85,7 @@
       >
         <CanvasToolbar
           ref="toolbarRef"
-          :show-debug-panel="false"
+          :show-debug-panel="showDebugPanel"
           @zoom-in="handleZoomIn"
           @zoom-out="handleZoomOut"
           @reset-zoom="handleResetZoom"
@@ -104,6 +96,7 @@
           @add-node="handleAddNode"
           @toggle-history-panel="showHistoryPanel = !showHistoryPanel"
           @toggle-statistics-panel="onToggleStatisticsPanel"
+          @toggle-debug-panel="toggleDebugPanel"
           @undo="handleUndo"
           @redo="handleRedo"
           :show-zoom="true"
@@ -122,7 +115,7 @@
           :show-history-panel="showHistoryPanel"
           :show-statistics-panel="showStatisticsPanel"
           :show-export="false"
-          :show-debug="false"
+          :show-debug="true"
           :scale-display-text="scaleDisplayText"
         />
       </div>
@@ -217,6 +210,7 @@
       <CanvasStatisticsPanel
         :canvas-id="editingTaskId || 'default-canvas'"
         :graph="graph"
+        :focus-node-id="statsFocusNodeId"
         @close="closeStatisticsPanel"
         @node-select="handleNodeSelect"
         @path-highlight="handlePathHighlight"
@@ -726,7 +720,15 @@ onMounted(() => nextTick(() => updateToolbarPosition()))
 // 移除未使用的画布重置函数
 
 // 调试面板控制
-// 移除未使用的调试面板切换函数
+/**
+ * 切换调试面板显示状态（工具栏「调试」按钮）
+ * 面板宽度依赖停靠区域（debugDockBounds），打开时需重新计算，否则在 iframe 等窄容器下宽度为 0
+ */
+const toggleDebugPanel = () => {
+  showDebugPanel.value = !showDebugPanel.value
+  try { localStorage.setItem('horizontal:debug:visible', showDebugPanel.value ? '1' : '0') } catch {}
+  if (showDebugPanel.value) nextTick(() => updateDebugDockBounds())
+}
 const closeDebugPanel = () => {
   showDebugPanel.value = false
   try { localStorage.setItem('horizontal:debug:visible', '0') } catch {}
@@ -759,7 +761,10 @@ onMounted(async () => {
       }
     }
   } catch {}
-  
+
+  // 调试面板初次显示时计算停靠区域宽度（iframe 等窄容器下需要）
+  nextTick(() => updateDebugDockBounds())
+
   // 初始化横版专用快速布局由 LayoutService 管理
   
   // 注册Vue组件到vue-shape系统
@@ -1033,6 +1038,9 @@ onMounted(async () => {
   // 提供graph实例给子组件使用
   provideGraphInstance(graph)
 
+  // 绑定节点点击事件（需在 graph 创建完成后）
+  bindNodeClickEvents()
+
   const {
     historyStack,
     jumpToHistoryState,
@@ -1209,6 +1217,9 @@ onMounted(async () => {
   // 面板开关时重新计算顶部偏移
   // DocRef: 架构文档「关键代码片段/统计面板停靠与尺寸更新」
   useCanvasState().setupPanelWatchers(showStatisticsPanel, statisticsPanelWidth, async () => { await nextTick(); updateStatisticsPanelTop() }, async () => { await nextTick(); updateDebugDockBounds() })
+
+  // 窗口尺寸变化时同步调试面板停靠区域（iframe 宿主缩放时需要）
+  useCanvasState().setupPanelResizeListeners(toolbarWrapperRef.value, contentRef.value, showStatisticsPanel, isViewMode.value, isPublished.value, statisticsPanelWidth, debugDockBounds, statisticsPanelTop)
 
   // 保留空声明以避免未定义警告（模板已使用内联表达式）
 
@@ -1572,7 +1583,6 @@ function insertTouchComboNodes(comboType) {
       x: outreachPoint.x,
       y: outreachPoint.y,
       label: getNodeLabel(outreachType) || outreachType,
-      outCount: 1,
       data: {
         type: outreachType,
         nodeType: outreachType,
@@ -1613,7 +1623,6 @@ function insertTouchComboNodes(comboType) {
       x: splitPoint.x,
       y: splitPoint.y,
       label: combo.split.customEventName || getNodeLabel(splitType) || '事件分流',
-      outCount: defaultBranches.length,
       data: {
         type: splitType,
         nodeType: splitType,
@@ -1757,38 +1766,51 @@ try {
   }
 } catch {}
 
-try {
-  if (graph) {
-    graph.on('node:click', ({ node }) => {
-      try {
-        if (!isViewMode.value) return
-        const data = node?.getData?.() || {}
-        const type = data?.type || data?.nodeType
-        if (!type) return
-        configDrawers.openConfigDrawer(type, node, { ...(data || {}), __readOnly: true })
-      } catch {}
-    })
-    graph.on('cell:click', ({ cell }) => {
-      try {
-        if (!isViewMode.value) return
-        if (!cell || !cell.isNode || !cell.isNode()) return
-        const data = cell?.getData?.() || {}
-        const type = data?.type || data?.nodeType
-        if (!type) return
-        configDrawers.openConfigDrawer(type, cell, { ...(data || {}), __readOnly: true })
-      } catch {}
-    })
-    graph.on('node:selected', ({ node }) => {
-      try {
-        if (!isViewMode.value) return
-        const data = node?.getData?.() || {}
-        const type = data?.type || data?.nodeType
-        if (!type) return
-        configDrawers.openConfigDrawer(type, node, { ...(data || {}), __readOnly: true })
-      } catch {}
-      })
+/**
+ * 判断点击是否命中节点右上角的「更多」菜单按钮
+ * 命中时不打开配置抽屉，避免与节点操作菜单（重命名/复制/删除）冲突
+ * @param {MouseEvent} e 鼠标事件
+ * @returns {boolean} 是否命中菜单按钮
+ */
+const isNodeMenuHot = (e) => {
+  const target = e?.target
+  if (!target || !target.closest) return false
+  return !!target.closest('[data-selector="header-menu"]')
+}
+/**
+ * 打开节点配置抽屉
+ * 查看模式（isViewMode）以只读方式打开，编辑模式以可编辑方式打开
+ * @param {Object} cell X6 节点实例
+ */
+const openNodeConfigDrawer = (cell) => {
+  try {
+    if (!cell || !cell.isNode || !cell.isNode()) return
+    const data = cell.getData?.() || {}
+    const type = data.type || data.nodeType
+    if (!type) return
+    configDrawers.openConfigDrawer(type, cell, { ...data, __readOnly: isViewMode.value })
+    log.info(`打开节点配置抽屉: type=${type} readOnly=${isViewMode.value}`)
+  } catch (e) {
+    log.warn('打开节点配置抽屉异常', e)
   }
-} catch {}
+}
+/**
+ * 绑定画布节点点击事件：点击节点打开对应类型的配置抽屉
+ * 注意：graph 在 onMounted 中才创建，必须在 graph 初始化完成后调用
+ */
+const bindNodeClickEvents = () => {
+  try {
+    if (!graph) return
+    graph.on('node:click', ({ e, node }) => {
+      try {
+        if (isNodeMenuHot(e)) return
+        // 统计模式：节点点击用于切换统计焦点（由 EventService 统一处理），此处不打开配置抽屉
+        if (showStatisticsPanel.value) return
+        openNodeConfigDrawer(node)
+      } catch {}
+    })
+  } catch {}
+}
 
 // 加载任务数据 - 提前声明为函数以避免TDZ
 async function loadTaskData() {

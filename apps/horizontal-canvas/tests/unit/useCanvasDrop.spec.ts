@@ -55,18 +55,20 @@ describe('useCanvasDrop', () => {
     expect(deps.createVueShapeNode).toHaveBeenCalledOnce()
     const spec = deps.createVueShapeNode.mock.calls[0][0]
     expect(spec.data.type).toBe('sms')
-    expect(spec.outCount).toBe(1)
+    // 出端口数量与 id 由 createVueShapeNode 按节点类型/配置行推导，调用方不再显式传 outCount
+    expect(spec.outCount).toBeUndefined()
     expect(deps.highlightNodes).toHaveBeenCalledOnce()
     expect(deps.tracker.track).toHaveBeenCalledWith('node_drop', expect.objectContaining({ props: expect.objectContaining({ nodeType: 'sms' }) }))
     expect(deps.tracker.trackFunnelStep).toHaveBeenCalledWith('canvas_creation', 'first_node_drop', expect.objectContaining({ nodeType: 'sms' }))
   })
 
-  it('crowd-split/outCount=4 + 不触发 funnel（仅 start 之外业务节点）', () => {
+  it('crowd-split 不显式传 outCount + 不触发 funnel（仅 start 之外业务节点）', () => {
     const deps = makeDeps()
     const drop = useCanvasDrop(deps)
     drop.onCanvasDrop(dragEvent('crowd-split'))
     const spec = deps.createVueShapeNode.mock.calls[0][0]
-    expect(spec.outCount).toBe(4)
+    expect(spec.outCount).toBeUndefined()
+    expect(spec.data.type).toBe('crowd-split')
     expect(deps.tracker.trackFunnelStep).toHaveBeenCalled()
   })
 

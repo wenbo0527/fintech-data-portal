@@ -32,6 +32,7 @@ export function migrateCanvasData(canvasData) {
       let branchId = e.branchId || null
       // 为 AB 实验边补齐 branchId（根据 sourcePort 中的 out-N）
       try {
+        // 'out' 为"未指定"哨兵值：不匹配 out-N 正则，branchId 留空由加载期按实际端口回填
         const sp = e.sourcePort || e.sourcePortId || 'out'
         if (srcNode && srcNode.type === 'ab-test' && !branchId) {
           const match = /^out-(\d+)$/.exec(sp)

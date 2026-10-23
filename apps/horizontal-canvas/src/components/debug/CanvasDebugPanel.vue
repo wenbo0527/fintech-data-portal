@@ -22,14 +22,38 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { IconClose } from '@arco-design/web-vue/es/icon'
+import { getRecentLogs, logVersion } from '@/utils/logger.js'
+import crowdSplitLogger from '@/components/utils/canvas/crowdSplitLogger.js'
 const props = defineProps({ visible: { type: Boolean, default: false }, graph: { type: Object, default: null }, dockBounds: { type: Object, default: null } })
+// 统计刷新版本号：监听图实例事件后自增，驱动 stats 重新计算
+const statsVersion = ref(0)
+/**
+ * 订阅图实例事件，节点/连线/缩放变化时触发统计刷新
+ * @param {Object} g X6 图实例
+ */
+const bindGraphEvents = (g) => {
+  if (!g || typeof g.on !== 'function') return
+  ;['node:added', 'node:removed', 'edge:added', 'edge:removed', 'scale'].forEach(evt => {
+    g.on(evt, () => { statsVersion.value++ })
+  })
+}
+// 图实例替换时重新订阅（父组件在 graph 创建后才会拿到真实实例）
+watch(() => props.graph, (g) => { if (g) bindGraphEvents(g) }, { immediate: true })
 const stats = computed(() => {
+  statsVersion.value
   const g = props.graph
   return { nodes: g?.getNodes?.().length || 0, edges: g?.getEdges?.().length || 0, zoom: (g?.zoom?.() || 1).toFixed(2) }
 })
-const logs = computed(() => [])
+// 调试输出：合并统一日志环形缓冲与节点日志器，读取各自版本号建立响应式依赖
+const logs = computed(() => {
+  logVersion.value
+  crowdSplitLogger.version.value
+  const globalLogs = getRecentLogs().map(item => item.message)
+  const nodeLogs = (crowdSplitLogger.logs || []).map(item => `[${item.level}] [${item.category}] ${item.message}`)
+  return globalLogs.concat(nodeLogs)
+})
 
 const inlineDockStyle = computed(() => {
   const b = props.dockBounds || {}

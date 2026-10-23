@@ -174,6 +174,15 @@ describe('useCanvasPersistence.submitApproval', () => {
     expect(deps.setApprovalStatus).toHaveBeenCalledWith('pending_approval')
     expect(deps.tracker.track).toHaveBeenCalledWith('submit_approval', expect.objectContaining({ props: expect.objectContaining({ by: 'u1' }) }))
   })
+
+  it('submitApproval 返回 false：提示失败且不设置审批状态', async () => {
+    const deps = makeDeps({ getEditingTaskId: () => '1001', getEditingTaskVersion: () => 1, TaskStorage: { ...makeDeps().TaskStorage, submitApproval: vi.fn(() => false) } })
+    const p = useCanvasPersistence(deps)
+    const ok = await p.submitApproval()
+    expect(ok).toBe(false)
+    expect(deps.Message.error).toHaveBeenCalledWith('提交审批失败：未找到待提交的任务或版本，请先保存草稿')
+    expect(deps.setApprovalStatus).not.toHaveBeenCalled()
+  })
 })
 /*
 用途：useCanvasPersistence 单元测试

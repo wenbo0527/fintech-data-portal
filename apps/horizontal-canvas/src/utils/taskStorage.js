@@ -1,5 +1,6 @@
 import { migrateCanvasData, MIGRATION_VERSION } from './migrateCanvasData.js'
 import { RuntimeStatsMock } from './runtimeStatsMock.js'
+import { submitApproval as submitApprovalSvc, approveVersions as approveVersionsSvc, withdrawApproval as withdrawApprovalSvc } from './approvalService.js'
 
 const KEY = 'horizontal_canvas_tasks'
 
@@ -86,6 +87,12 @@ export const TaskStorage = {
         const vEntry = { version: vNum, status: data.status || base.status || 'draft', approvalStatus: data.approvalStatus ?? merged.versions[vIdx]?.approvalStatus ?? null, approvalFlow: Array.isArray(data.approvalFlow) ? data.approvalFlow.slice() : (merged.versions[vIdx]?.approvalFlow || []), publishReady: data.publishReady ?? merged.versions[vIdx]?.publishReady ?? false, publishMessages: Array.isArray(data.publishMessages) ? data.publishMessages.slice() : (merged.versions[vIdx]?.publishMessages || []), lastValidatedAt: data.lastValidatedAt || new Date().toISOString(), canvasData: migrateIfNeeded(data.canvasData), updateTime: data.updateTime || new Date().toISOString(), publishTime: data.publishTime || null }
         if (vIdx >= 0) merged.versions[vIdx] = { ...merged.versions[vIdx], ...vEntry }
         else merged.versions.push(vEntry)
+      } else if (data.status != null) {
+        // 仅状态流转（运行中/停止等）不携带 canvasData：同步当前版本条目的 status，
+        // 否则画布页读版本 status 时会停留在 draft，统计入口不出现
+        const vNum = Number(data.version ?? base.version ?? 1)
+        const vIdx = merged.versions.findIndex(v => Number(v.version) === vNum)
+        if (vIdx >= 0) merged.versions[vIdx] = { ...merged.versions[vIdx], status: data.status }
       }
       list[idx] = merged
       localStorage.setItem(KEY, JSON.stringify(list))
@@ -105,6 +112,11 @@ export const TaskStorage = {
   createTask(task) { const t = { id: String(Date.now()), ...task }; this.saveTask(t); return t },
   getStorageStats() { const list = this.getAllTasks(); return { totalTasks: list.length } },
 
+  // 审批流转发到 approvalService（审批读写与 TaskStorage 同一份 localStorage 列表）
+  submitApproval(id, version, user, remark) { return submitApprovalSvc(id, version, user, remark) },
+  approveVersions(items, decision, user, remark) { return approveVersionsSvc(items, decision, user, remark) },
+  withdrawApproval(id, version, user, remark) { return withdrawApprovalSvc(id, version, user, remark) },
+
   // 版本读取
   getTaskVersions(id) {
     const t = this.getTaskById(id)
@@ -122,17 +134,52 @@ export const TaskStorage = {
   seedIfEmpty() {
     const list = this.getAllTasks()
     if (Array.isArray(list) && list.length) return
+    const now = new Date().toLocaleString('zh-CN')
+    // 统计模式种子数据：versions[].status 必须为 published/running，
+    // 否则画布页 isPublished 恒为 false，统计入口不出现
+    const statsCanvas = {
+      nodes: [
+        { id: 'start', type: 'start', x: 80, y: 220, label: '开始', isConfigured: true, config: { taskType: 'marketing', targetAudience: ['all'], products: ['sudai'] } },
+        { id: 'crowd', type: 'crowd-split', x: 260, y: 220, label: '人群分流', isConfigured: true, config: { nodeType: 'crowd-split', crowdLayers: [ { id: 'layer_1', order: 1, crowdId: 'c_black', crowdName: '黑名单' }, { id: 'layer_2', order: 2, crowdId: 'c_high', crowdName: '高响应客群' } ], unmatchBranch: { id: 'unmatch', name: '其他', isDefault: true, crowdId: '', crowdName: '其他', order: 3 } } },
+        { id: 'ab', type: 'ab-test', x: 460, y: 220, label: 'AB实验', isConfigured: true, config: { nodeType: 'ab-test', experimentName: '短信模板AB', description: '对比两种文案', branches: [ { id: 'branch_1', name: '文案A', label: '文案A', percentage: 50 }, { id: 'branch_2', name: '文案B', label: '文案B', percentage: 50 } ] } },
+        { id: 'sms', type: 'sms', x: 660, y: 220, label: '短信', isConfigured: true, config: { nodeType: 'sms', smsTemplate: 'marketing' } },
+        { id: 'end', type: 'end', x: 860, y: 220, label: '结束', isConfigured: true }
+      ],
+      connections: [
+        { source: 'start', target: 'crowd', sourcePort: 'out-0', targetPort: 'in' },
+        { source: 'crowd', target: 'ab', sourcePort: 'out-0', targetPort: 'in' },
+        { source: 'crowd', target: 'sms', sourcePort: 'out-1', targetPort: 'in' },
+        { source: 'crowd', target: 'sms', sourcePort: 'out-2', targetPort: 'in' },
+        { source: 'ab', target: 'sms', sourcePort: 'out-0', targetPort: 'in' },
+        { source: 'ab', target: 'sms', sourcePort: 'out-1', targetPort: 'in' },
+        { source: 'sms', target: 'end', sourcePort: 'out-0', targetPort: 'in' }
+      ]
+    }
     const mock = [
       {
         id: '1001', name: '消费贷促实名认证活动', type: '促实名', status: 'running', version: 2,
-        createdAt: new Date().toLocaleString('zh-CN'),
-        canvasData: { nodes: [ { id: 'start', type: 'start', x: 100, y: 100, label: '开始' }, { id: 'sms', type: 'sms', x: 280, y: 100, label: '短信' }, { id: 'end', type: 'end', x: 480, y: 100, label: '结束' } ], connections: [ { source: 'start', target: 'sms' }, { source: 'sms', target: 'end' } ] },
-        versions: [ { version: 1, createTime: new Date().toLocaleString('zh-CN'), isActive: false }, { version: 2, createTime: new Date().toLocaleString('zh-CN'), isActive: true } ]
+        createdAt: now, creator: 'current_user', description: '面向全量客户的人群分流与文案 AB 实验',
+        canvasData: statsCanvas,
+        versions: [
+          { version: 1, status: 'published', approvalStatus: 'approved', createTime: now, isActive: false, publishReady: true, publishMessages: [], canvasData: statsCanvas },
+          { version: 2, status: 'running', approvalStatus: 'approved', createTime: now, isActive: true, publishReady: true, publishMessages: [], canvasData: statsCanvas }
+        ]
       },
       {
-        id: '1002', name: '消费贷促授信额度提升', type: '促授信', status: 'draft', version: 1,
-        createdAt: new Date().toLocaleString('zh-CN'),
-        canvasData: { nodes: [ { id: 'start', type: 'start', x: 120, y: 140, label: '开始' }, { id: 'benefit', type: 'benefit', x: 320, y: 140, label: '权益' }, { id: 'end', type: 'end', x: 520, y: 140, label: '结束' } ], connections: [ { source: 'start', target: 'benefit' }, { source: 'benefit', target: 'end' } ] }
+        id: '1002', name: '消费贷促授信额度提升', type: '促授信', status: 'published', version: 1,
+        createdAt: now, creator: 'current_user', description: '授信额度提升策略（已发布，可查看统计）',
+        canvasData: statsCanvas,
+        versions: [
+          { version: 1, status: 'published', approvalStatus: 'approved', createTime: now, isActive: true, publishReady: true, publishMessages: [], canvasData: statsCanvas }
+        ]
+      },
+      {
+        id: '1003', name: '消费贷催收提醒活动', type: '促催收', status: 'draft', version: 1,
+        createdAt: now, creator: 'current_user', description: '草稿态任务（用于走审批流）',
+        canvasData: statsCanvas,
+        versions: [
+          { version: 1, status: 'draft', approvalStatus: null, createTime: now, isActive: false, publishReady: true, publishMessages: [], canvasData: statsCanvas }
+        ]
       }
     ]
     localStorage.setItem(KEY, JSON.stringify(mock))

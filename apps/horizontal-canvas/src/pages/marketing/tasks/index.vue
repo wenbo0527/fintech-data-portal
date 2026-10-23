@@ -82,6 +82,7 @@
           <template #actions="{ record }">
             <a-space>
               <a-button type="text" size="small" @click="editTask(record)" v-if="record.status === 'draft' || record.status === 'published'">编辑</a-button>
+              <a-button type="text" size="small" @click="publishTaskFromList(record)" v-if="record.status === 'approved'">发布</a-button>
               <a-button type="text" size="small" v-if="record.status === 'draft' && record.publishReady === true" @click="openSubmitApprovalModal(record)">提交审批</a-button>
               <a-tooltip v-else-if="record.status === 'draft'" content="发布校验未通过，请在画布保存并修复问题">
                 <a-button type="text" size="small" disabled>提交审批</a-button>
@@ -244,7 +245,8 @@ const pagination = reactive({
 
 // 初始化数据
 const initData = () => {
-  
+  // 首次进入时写入统计模式种子数据（仅 localStorage 为空时生效）
+  try { TaskStorage.seedIfEmpty?.() } catch {}
   // 从本地存储获取所有任务
   const storedTasks = TaskStorage.getAllTasks()
   
@@ -490,6 +492,19 @@ const editTask = (record) => {
 // 查看历史版本
 const viewVersion = (record, version) => {
   router.push(`/marketing/tasks/horizontal?mode=view&id=${record.id}&version=${version}`)
+}
+
+// 用途：发布已审批通过的任务
+// 入参：record 任务记录
+// 返回：无
+// 边界：需存在 id/version 字段；发布需在画布内做校验，故跳转到编辑态由画布执行
+// 副作用：路由跳转到编辑模式（画布顶部出现「发布」按钮）
+const publishTaskFromList = (record) => {
+  try {
+    router.push(`/marketing/tasks/horizontal?mode=edit&id=${record.id}&version=${record.version}`)
+  } catch {
+    Message.error('跳转失败，请重试')
+  }
 }
 
 // 手工推送任务（mock：仅状态切换，需写回 localStorage 以保证刷新后生效）

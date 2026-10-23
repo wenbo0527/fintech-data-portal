@@ -191,7 +191,11 @@ export function useCanvasPersistence(deps) {
         publishReady: true, publishMessages: [],
         lastValidatedAt: new Date().toISOString()
       })
-      TaskStorage.submitApproval(getEditingTaskId(), getEditingTaskVersion(), getCurrentUser?.(), getTaskDescription?.() || '')
+      const submitted = TaskStorage.submitApproval(getEditingTaskId(), getEditingTaskVersion(), getCurrentUser?.(), getTaskDescription?.() || '')
+      if (submitted === false) {
+        Message?.error?.('提交审批失败：未找到待提交的任务或版本，请先保存草稿')
+        return false
+      }
       setApprovalStatus?.('pending_approval')
       try { tracker.track('submit_approval', { taskId: getEditingTaskId?.(), version: getEditingTaskVersion?.(), props: { by: getCurrentUser?.() } }) } catch {}
       Message?.success?.('已提交审批')

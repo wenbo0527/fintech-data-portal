@@ -15,13 +15,30 @@
  * 边界：仅日志；不抛错、不阻塞；不持久化（持久化由 tracker 负责）。
  */
 
+import { ref } from 'vue'
+
 let _silent = false
 let _sink = console
 let _reporter = null
 
+// 调试面板日志缓冲：保留最近若干条输出，供底部调试面板展示
+const _buffer = []
+const MAX_BUFFER = 200
+// 响应式版本号：每次写入日志自增，UI 读取它建立依赖从而自动刷新
+export const logVersion = ref(0)
+
 export function setSilent(v) { _silent = !!v }
 export function setSink(s) { _sink = s || console }
 export function setReporter(fn) { _reporter = typeof fn === 'function' ? fn : null }
+
+/**
+ * 读取最近的日志输出
+ * @param {number} [limit=200] 最多返回条数
+ * @returns {Array<{level:string, message:string, ts:number}>} 日志列表（按时间正序）
+ */
+export function getRecentLogs(limit = MAX_BUFFER) {
+  return _buffer.slice(-limit)
+}
 
 function _isDev() {
   try { return (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.DEV) !== false }
@@ -33,6 +50,12 @@ function _out(level, message, args) {
   const sink = _sink || console
   try {
     const m = `[${level}] ${message}`
+    // 写入调试面板缓冲（与 sink 输出解耦，sink 异常不影响缓冲）
+    try {
+      _buffer.push({ level, message: m, ts: Date.now() })
+      if (_buffer.length > MAX_BUFFER) _buffer.splice(0, _buffer.length - MAX_BUFFER)
+      logVersion.value++
+    } catch {}
     if (level === 'error' && sink.error) sink.error(m, ...args)
     else if (level === 'warn' && sink.warn) sink.warn(m, ...args)
     else if (sink.log) sink.log(m, ...args)

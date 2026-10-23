@@ -69,8 +69,9 @@ export function loadCanvasData(graph: GraphLike, canvasData: CanvasData): boolea
           if (existing) graph.removeNode?.(nodeData.id)
         } catch {}
         const node = createVueShapeNode(nodeDataForGraph)
-        graph.addNode?.(node)
-        nodeMap.set(nodeData.id, node)
+        // 必须保存 addNode 返回的 X6 节点实例：后续端口回填依赖 getPorts()/getData()
+        const added = graph.addNode?.(node) || node
+        nodeMap.set(nodeData.id, added)
       } catch {}
     })
     const seenConnKeys = new Set<string>()
@@ -86,6 +87,7 @@ export function loadCanvasData(graph: GraphLike, canvasData: CanvasData): boolea
         const sourceNode = nodeMap.get(connectionData.source)
         const targetNode = nodeMap.get(connectionData.target)
         if (sourceNode && targetNode) {
+          // 端口 id 规范为 out-N / in；'out' 是"未指定"哨兵值，必然触发下方 out-N 回填
           let sourcePort = connectionData.sourcePort || connectionData.sourcePortId || 'out'
           const targetPort = connectionData.targetPort || connectionData.targetPortId || 'in'
           try {

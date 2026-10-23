@@ -12,8 +12,6 @@
  * 边界：仅处理 drop 事件；dragover 在模板上内联处理；选择器关闭由 index.vue 调 closeNodeSelector。
  */
 
-const FOUR_OUT_TYPES = ['crowd-split', 'event-split', 'ab-test']
-
 export function useCanvasDrop(deps) {
   const {
     getGraph, getIsViewMode,
@@ -56,12 +54,12 @@ export function useCanvasDrop(deps) {
       }
       // 普通节点
       const label = getNodeLabel?.(nodeType) || nodeType
-      const outCount = FOUR_OUT_TYPES.includes(nodeType) ? 4 : 1
       const newNodeId = `${nodeType}-${Date.now()}`
+      // 出端口数量与 id 统一由 createVueShapeNode 按节点类型/配置行推导
       const created = graph?.addNode?.(createVueShapeNode?.({
         id: newNodeId,
         x: local.x, y: local.y,
-        label, outCount,
+        label,
         data: { type: nodeType, nodeType, isConfigured: false }
       }))
       if (created) {

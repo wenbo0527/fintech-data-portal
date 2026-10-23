@@ -82,18 +82,10 @@
           </div>
         </a-tab-pane>
         <a-tab-pane key="detail" title="明细">
-          <a-table :data="nodeDailyRows" :pagination="false" size="small" :bordered="false">
-            <a-table-column title="日期" data-index="date" />
-            <a-table-column title="进入" data-index="enter" />
-            <a-table-column title="出" data-index="exit" />
-            <a-table-column v-for="bc in branchColumns" :key="bc.key" :title="bc.title" :data-index="bc.key" />
-          </a-table>
+          <a-table :columns="detailColumns" :data="nodeDailyRows" :pagination="false" size="small" :bordered="false" />
         </a-tab-pane>
         <a-tab-pane key="branches" title="分支">
-          <a-table :data="branchTable" :pagination="false" size="small" :bordered="false">
-            <a-table-column title="分支" data-index="label" />
-            <a-table-column title="出人数" data-index="exit" />
-          </a-table>
+          <a-table :columns="branchTableColumns" :data="branchTable" :pagination="false" size="small" :bordered="false" />
         </a-tab-pane>
       </a-tabs>
     </div>
@@ -272,6 +264,19 @@ const focusNode = computed(() => {
   return nodeStats.value.find(n => String(n.id) === fid) || null
 })
 
+// 分流/AB 节点自动定位到「分支」页签
+const isSplitNode = computed(() => {
+  const fid = String(props.focusNodeId || selectedNodeId.value || '')
+  const node = nodes.value.find(n => String(n.id) === fid)
+  if (!node) return false
+  try {
+    const d = node.getData?.() || {}
+    const t = d.type || d.nodeType
+    return t === 'crowd-split' || t === 'audience-split' || t === 'event-split' || t === 'ab-test'
+  } catch { return false }
+})
+watch(isSplitNode, v => { activeTab.value = v ? 'branches' : 'detail' })
+
 function seededRand(seed) {
   let x = Math.sin(seed) * 10000
   return x - Math.floor(x)
@@ -342,6 +347,16 @@ function getBranchesForNode(node) {
     if (t === 'ab-test' && Array.isArray(d.config?.branches)) {
       return d.config.branches.map((b, i) => ({ id: b.id || `branch_${i+1}`, label: b.label || b.name || `分支${i+1}`, percentage: typeof b.percentage === 'number' ? b.percentage : null }))
     }
+    // 分流节点：优先使用人群分层 + 未匹配分支名称（与节点展示保持一致）
+    if (t === 'crowd-split' || t === 'audience-split' || t === 'event-split') {
+      const layers = Array.isArray(d.config?.crowdLayers) ? d.config.crowdLayers : []
+      const unmatch = d.config?.unmatchBranch
+      const named = [
+        ...layers.map((l, i) => ({ id: l.id || `layer_${i + 1}`, label: l.crowdName || l.name || `分群${i + 1}`, percentage: typeof l.percentage === 'number' ? l.percentage : null })),
+        ...(unmatch ? [{ id: unmatch.id || 'unmatch', label: unmatch.crowdName || unmatch.name || '其他', percentage: typeof unmatch.percentage === 'number' ? unmatch.percentage : null }] : [])
+      ]
+      if (named.length) return named
+    }
     const outs = edges.value.filter(e => {
       try { const s = e.getSourceCellId?.() || e.source?.cell; return String(s) === String(node?.id) } catch { return false }
     })
@@ -377,6 +392,20 @@ const branchColumns = computed(() => {
   const branches = getBranchesForNode(node)
   return branches.map(b => ({ key: `branch_${String(b.id).replace(/[^\w]/g,'_')}`, title: b.label }))
 })
+
+// 明细表列定义（基础列 + 各分支列）
+const detailColumns = computed(() => [
+  { title: '日期', dataIndex: 'date' },
+  { title: '进入', dataIndex: 'enter' },
+  { title: '出', dataIndex: 'exit' },
+  ...branchColumns.value.map(bc => ({ title: bc.title, dataIndex: bc.key }))
+])
+
+// 分支表列定义
+const branchTableColumns = [
+  { title: '分支', dataIndex: 'label' },
+  { title: '出人数', dataIndex: 'exit' }
+]
 const nodeDailyRows = computed(() => {
   const fid = String(props.focusNodeId || selectedNodeId.value || '')
   if (!fid) return filteredDailyStats.value
@@ -429,11 +458,3 @@ const nodeDailyRows = computed(() => {
 .x-ticks { display: flex; justify-content: space-between; font-size: 11px; color: #6b7280 }
 .branch-section { margin-top: 10px }
 </style>
-const activeTab = ref('overview')
-const isSplitNode = computed(() => {
-  const fid = String(props.focusNodeId || selectedNodeId.value || '')
-  const node = nodes.value.find(n => String(n.id) === fid)
-  if (!node) return false
-  try { const d = node.getData?.() || {}; const t = d.type || d.nodeType; return t === 'crowd-split' || t === 'audience-split' || t === 'event-split' || t === 'ab-test' } catch { return false }
-})
-watch(isSplitNode, v => { activeTab.value = v ? 'branches' : 'detail' })

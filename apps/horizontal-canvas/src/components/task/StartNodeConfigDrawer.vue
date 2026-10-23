@@ -72,7 +72,7 @@
 import { computed } from 'vue'
 import BaseDrawer from './BaseDrawer.vue'
 import { useBaseDrawer } from '@/composables/useBaseDrawer'
-import { TASK_TYPES, FREQUENCY_OPTIONS, PRIORITY_OPTIONS, TARGET_AUDIENCE_OPTIONS, VALIDATION_LIMITS } from '@/constants/startNodeConfig'
+import { TASK_TYPES, FREQUENCY_OPTIONS, PRIORITY_OPTIONS, TARGET_AUDIENCE_OPTIONS, PRODUCT_OPTIONS, VALIDATION_LIMITS } from '@/constants/startNodeConfig'
 import type { StartNodeConfig } from '@/types/startNodeConfig'
 interface Props { visible: boolean; nodeData?: Partial<StartNodeConfig> & { isNewNode?: boolean; nodeId?: string; nodeType?: string; config?: Record<string, unknown> }; readOnly?: boolean }
 const props = withDefaults(defineProps<Props>(), { visible: false, nodeData: () => ({}), readOnly: false })

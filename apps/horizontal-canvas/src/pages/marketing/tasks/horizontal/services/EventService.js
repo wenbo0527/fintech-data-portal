@@ -114,6 +114,11 @@ export class EventService {
     graph.on('node:click', ({ e, node }) => {
       if (!readOnly && !this.isStatisticsMode() && isMenuHot(e, node)) { return }
       scheduleHideMenu(e)
+      // 统计模式：点击节点切换统计焦点，不打开配置抽屉
+      if (this.isStatisticsMode()) {
+        try { this.onNodeClickForStats(node) } catch {}
+        return
+      }
       const d = node.getData ? node.getData() : {}
       const t = d?.type || d?.nodeType
       if (t && typeof this.openConfigDrawer === 'function') this.openConfigDrawer(t, node, d)

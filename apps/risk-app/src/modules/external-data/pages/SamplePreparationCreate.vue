@@ -498,15 +498,8 @@ const closeValidation = () => {
 const goToCreateService = () => {
   validationVisible.value = false
   emit('success')
-  router.push({
-    name: 'RiskExternalDataService',
-    query: { 
-      action: 'create', 
-      serviceType: form.serviceType, 
-      externalProduct: form.externalProduct,
-      sourceTable: `${tableForm.database}.${tableForm.tableName}` 
-    }
-  })
+  // 服务申请入口统一收敛到「服务场景入口」
+  router.push({ name: 'RiskExternalDataServiceScene' })
 }
 
 defineExpose({

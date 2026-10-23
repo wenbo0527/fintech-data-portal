@@ -118,7 +118,7 @@
 
     <!-- 阶段2: 样本准备与映射 -->
     <div v-show="createStep === 1">
-      <a-form layout="vertical">
+      <a-form :model="sampleForm" layout="vertical">
         <!-- 样本来源选择 -->
         <a-card title="样本来源选择" :bordered="false" class="form-section">
           <a-form-item label="准备方式" field="sampleMethod" required>
@@ -244,7 +244,7 @@
         <template #extra>
            <a-space direction="vertical" style="width: 100%">
              <a-card title="执行配置" style="width: 100%; text-align: left" :bordered="false" class="form-section">
-               <a-form layout="vertical">
+               <a-form :model="approvalForm" layout="vertical">
                  <a-form-item label="执行时间窗口"><a-range-picker show-time style="width: 100%" /></a-form-item>
                  <a-form-item label="结果通知"><a-checkbox-group><a-checkbox value="email">邮件</a-checkbox><a-checkbox value="sms">短信</a-checkbox></a-checkbox-group></a-form-item>
                </a-form>

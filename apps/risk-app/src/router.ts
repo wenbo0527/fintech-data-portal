@@ -149,20 +149,9 @@ const routes: RouteRecordRaw[] = [
         props: true
       },
       {
+        // 旧「外数服务申请」页面已下线，服务申请入口统一收敛到「服务场景入口」
         path: '/variable-hub/external-data/service',
-        name: 'RiskExternalDataService',
-        component: () => import('./modules/external-data/pages/Service.vue'),
-        meta: { title: '外数数据服务' }
-      },
-      {
-        path: '/variable-hub/external-data/service-create',
-        name: 'RiskExternalDataServiceCreate',
-        redirect: { path: '/variable-hub/external-data/service', query: { mode: 'create' } }
-      },
-      {
-        path: '/variable-hub/external-data/service-mode/:mode',
-        name: 'RiskExternalDataServiceMode',
-        redirect: (to: any) => ({ path: '/variable-hub/external-data/service', query: { mode: to.params.mode } })
+        redirect: '/variable-hub/external-data/service-scene'
       },
       {
         path: '/variable-hub/external-data/service-scene',
@@ -206,6 +195,18 @@ const routes: RouteRecordRaw[] = [
         name: 'RiskExternalDataBacktrackPersist',
         component: () => import('./modules/external-data/pages/BacktrackPersist.vue'),
         meta: { title: '外数回溯落库申请' }
+      },
+      {
+        path: '/variable-hub/external-data/task-list',
+        name: 'RiskExternalDataTaskList',
+        component: () => import('./modules/external-data/pages/TaskList.vue'),
+        meta: { title: '服务任务列表' }
+      },
+      {
+        path: '/variable-hub/external-data/credit-agency',
+        name: 'RiskExternalDataCreditAgency',
+        component: () => import('./modules/external-data/pages/CreditAgency.vue'),
+        meta: { title: '征信机构管理' }
       },
 
       // ========== 预算管理 ==========

@@ -122,8 +122,8 @@ const handleSceneClick = (scene: any) => {
 }
 
 const handleSuccess = () => {
-  // 申请成功后跳转到服务列表页
-  router.push({ name: 'RiskExternalDataService' })
+  // 服务申请入口统一收敛到「服务场景入口」：申请已提交，关闭抽屉并停留在当前场景页
+  drawerVisible.value = false
 }
 
 const showDocs = (scene: any) => {

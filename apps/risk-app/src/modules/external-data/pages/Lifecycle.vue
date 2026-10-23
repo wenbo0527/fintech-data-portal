@@ -34,9 +34,9 @@
         </a-card>
       </a-grid-item>
       <a-grid-item>
-        <a-card hoverable class="nav-card" @click="goNav('/variable-hub/external-data/service')">
-          <div class="nav-title">服务管理</div>
-          <div class="nav-sub">配置与使用</div>
+        <a-card hoverable class="nav-card" @click="goNav('/variable-hub/external-data/service-scene')">
+          <div class="nav-title">服务场景</div>
+          <div class="nav-sub">场景与申请</div>
         </a-card>
       </a-grid-item>
     </a-grid>

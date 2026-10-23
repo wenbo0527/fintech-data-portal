@@ -584,7 +584,8 @@ const submitApplication = () => {
 const goBack = () => {
   successVisible.value = false
   computedResult.value = null
-  router.push({ name: 'RiskExternalDataService' })
+  // 服务申请入口统一收敛到「服务场景入口」
+  router.push({ name: 'RiskExternalDataServiceScene' })
 }
 </script>
 

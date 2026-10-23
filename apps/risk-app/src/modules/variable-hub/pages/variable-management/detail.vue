@@ -1343,9 +1343,8 @@ const isExternalSource = computed(() => variableData.value.sourceType === 'exter
 const externalRefs = computed(() => (variableData.value.sourceRefs || {}))
 const hasExternalArchive = computed(() => !!externalRefs.value.externalArchiveId)
 const hasExternalEvaluation = computed(() => !!externalRefs.value.externalEvaluationId)
-const hasExternalService = computed(() => !!externalRefs.value.externalServiceId)
 const hasExternalLifecycle = computed(() => !!externalRefs.value.externalLifecycleId)
-const hasAnyExternalRef = computed(() => hasExternalArchive.value || hasExternalEvaluation.value || hasExternalService.value || hasExternalLifecycle.value)
+const hasAnyExternalRef = computed(() => hasExternalArchive.value || hasExternalEvaluation.value || hasExternalLifecycle.value)
 
 const openRiskExternalArchive = () => {
   const id = externalRefs.value.externalArchiveId
@@ -1387,15 +1386,6 @@ const handleLinkExternalEvaluation = () => {
     window.open(buildRiskAppUrl(`/risk/external-data/evaluation/${newId}`), '_blank')
   }, 100)
   return Promise.resolve(newId)
-}
-
-const openRiskExternalService = () => {
-  const id = externalRefs.value.externalServiceId
-  if (id) {
-    window.open(buildRiskAppUrl(`/risk/external-data/service?id=${encodeURIComponent(String(id))}`), '_blank')
-    return
-  }
-  window.open(buildRiskAppUrl('/risk/external-data/service'), '_blank')
 }
 
 const openRiskExternalLifecycle = () => {

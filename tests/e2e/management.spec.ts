@@ -25,12 +25,10 @@ const PAGES = [
   { name: '用户管理', path: '/management/permission/user-management', expectedContent: ['用户'] },
   { name: '数据权限', path: '/management/permission/data-permission', expectedContent: ['权限'] },
   { name: '应用权限', path: '/management/permission/app-permission', expectedContent: ['权限'] },
-  // 数据标准 5 (5)
+  // 数据标准 3 (3)
   { name: '数据标准', path: '/management/data-standard/standards', expectedContent: ['标准'] },
   { name: '数据域', path: '/management/data-standard/domains', expectedContent: ['数据域'] },
   { name: '标准代码', path: '/management/data-standard/codes', expectedContent: ['代码'] },
-  { name: '标准单词', path: '/management/data-standard/words', expectedContent: ['单词'] },
-  { name: '标准稽核', path: '/management/data-standard/audit', expectedContent: ['稽核'] },
   // 元数据 2 (2)
   { name: '元数据查询', path: '/management/metadata/query', expectedContent: ['元数据'] },
   { name: '元数据建模', path: '/management/metadata/modeling', expectedContent: ['建模'] },

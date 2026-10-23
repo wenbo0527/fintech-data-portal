@@ -307,12 +307,6 @@ const pagesToTest = [
   },
   {
     group: '管理域 - 数据标准',
-    path: '/home/management/data-standard/words',
-    name: '标准单词管理',
-    loader: () => import('@/pages/management/data-standard/words/index.vue')
-  },
-  {
-    group: '管理域 - 数据标准',
     path: '/home/management/data-standard/codes',
     name: '标准代码管理',
     loader: () => import('@/pages/management/data-standard/codes/index.vue')
@@ -320,14 +314,8 @@ const pagesToTest = [
   {
     group: '管理域 - 数据标准',
     path: '/home/management/data-standard/domains',
-    name: '数据域管理',
+    name: '数据域',
     loader: () => import('@/pages/management/data-standard/domains/index.vue')
-  },
-  {
-    group: '管理域 - 数据标准',
-    path: '/home/management/data-standard/audit',
-    name: '标准稽核管理',
-    loader: () => import('@/pages/management/data-standard/audit/index.vue')
   },
   {
     group: '管理域 - 业务概念',

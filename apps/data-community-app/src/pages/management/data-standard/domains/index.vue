@@ -1,30 +1,33 @@
 <template>
   <!-- @prd: data-standard.domains -->
   <!--
-    2026-10-13 按评审结论重构：
-      1. 页面即详情(V2/V3 口径由用户裁定改为「列表即详情 + 行内展开」)，
-         删除新建/编辑/删除/查看入口 —— 维护统一走「全量导入」(U1-U4)。
-      2. 数据源从页内内联 mock 上收为 DomainStore，与数据标准页「域」字段同一编码口径，
-         因此 R03/R04 跳转与 R10 引用清单可以自动成立(不再硬编码)。
-      3. 搜索改为真实过滤(R09)，支持从数据标准页 ?keyword=AMT_18_2 直达定位。
-      4. 分页 total 取真实条数(V1)，补齐 R08 全部展示字段与域描述。
+    2026-10-23 按《需求文档:数据管理-数据标准(评审简化版)》重构:
+      R08  展示字段 —— 数据域代码 / 数据域名称 / 覆盖范围名称 / 建议主责部门(4 个字段全部平铺)
+      R09  搜索范围 —— 按数据域名称、数据域代码模糊匹配
+      R10  引用关系 —— 行内展开查看引用该数据域的标准清单(标准编号、标准名称(中文)),
+            由数据标准侧「所属数据域」字段自动关联生成,不随数据域上传变动;
+            展开区为独立区域,不参与列表排序与筛选;清单每条可跳转标准列表
+      R11/R12 全量上传:模板列与展示字段一致,唯一键为数据域代码;E2 数据域代码格式非法 → 拦截
+      V1 列表平铺 / V2 默认按最近更新时间倒序 + 代码与名称可排序 + 分页 / V3 只读
   -->
   <div class="domains-page">
-    <a-card class="general-card" title="标准域管理">
-      <a-row style="margin-bottom: 16px">
+    <a-card class="general-card" title="数据域">
+      <a-row style="margin-bottom: 12px">
         <a-col :span="12">
           <a-space>
-            <a-tag color="arcoblue">共 {{ allDomains.length }} 个标准域</a-tag>
+            <a-tag color="arcoblue">共 {{ allDomains.length }} 个数据域</a-tag>
             <a-tag v-if="tableData.length !== allDomains.length" color="orange">
               筛选后 {{ tableData.length }} 个
             </a-tag>
-            <a-button size="small" @click="clearSearch">重置筛选</a-button>
           </a-space>
         </a-col>
         <a-col :span="12" style="text-align: right">
           <a-space>
-            <!-- 权限约束:仅数据标准管理员(数据治理者)可下载模板与执行全量上传,其余角色只读 -->
-            <a-tooltip v-if="!canMaintain" content="当前角色无维护权限，仅数据标准管理员可下载模板并执行全量上传（可在右上角切换「数据治理者」角色）">
+            <!-- 权限约束:仅数据标准管理员(演示口径映射到「数据治理者」)可下载模板与执行全量上传,其余角色只读 -->
+            <a-tooltip
+              v-if="!canMaintain"
+              content="当前角色无维护权限,仅数据标准管理员可下载模板并执行全量上传(可在右上角切换「数据治理者」角色)"
+            >
               <a-button type="primary" disabled>
                 <template #icon><icon-import /></template>
                 全量导入
@@ -36,10 +39,14 @@
             </a-button>
             <a-input-search
               v-model="searchKey"
-              placeholder="搜索域编号 / 域中文名称"
+              placeholder="搜索数据域代码 / 数据域名称"
               style="width: 280px"
               allow-clear
+              size="large"
             />
+            <a-button size="large" @click="clearSearch">
+              <template #icon><icon-refresh /></template>
+            </a-button>
           </a-space>
         </a-col>
       </a-row>
@@ -49,96 +56,73 @@
         row-key="code"
         :pagination="pagination"
         :expandable="{ width: 44 }"
-        :scroll="{ x: 1760 }"
+        :row-class="rowClass"
+        :scroll="{ x: 900 }"
         stripe
         size="medium"
         @page-change="handlePageChange"
+        @expand="handleExpand"
       >
         <template #columns>
-          <a-table-column title="域" data-index="code" :width="150">
+          <a-table-column title="数据域代码" data-index="code" :width="200" sortable>
             <template #cell="{ record }">
               <span class="mono">{{ record.code }}</span>
             </template>
           </a-table-column>
-          <a-table-column title="域中文名称" data-index="name" :width="160" />
-          <a-table-column title="业务数据类型" data-index="businessDataType" :width="130" />
-          <a-table-column title="逻辑数据类型" data-index="logicalDataType" :width="130">
-            <template #cell="{ record }">
-              <a-tag color="cyan">{{ record.logicalDataType }}</a-tag>
-            </template>
-          </a-table-column>
-          <a-table-column title="长度" data-index="length" :width="80" align="center" />
-          <a-table-column title="精度" data-index="precision" :width="80" align="center" />
-          <a-table-column title="是否代码" data-index="isCode" :width="100" align="center">
-            <template #cell="{ record }">
-              <a-tag :color="record.isCode ? 'orangered' : 'gray'">
-                {{ record.isCode ? '是' : '否' }}
-              </a-tag>
-            </template>
-          </a-table-column>
-          <a-table-column title="标准代码编号" data-index="stdCodeNo" :width="160">
-            <template #cell="{ record }">
-              <a-link
-                v-if="record.isCode && record.stdCodeNo && codeExists(record.stdCodeNo)"
-                @click="openCode(record.stdCodeNo)"
-              >
-                {{ record.stdCodeNo }}
-              </a-link>
-              <a-tooltip
-                v-else-if="record.isCode && record.stdCodeNo && record.stdCodeNo !== '-'"
-                content="关联标准代码不存在，暂不可跳转（R04）"
-              >
-                <span class="link-disabled">{{ record.stdCodeNo }}</span>
-              </a-tooltip>
-              <span v-else>-</span>
-            </template>
-          </a-table-column>
-          <a-table-column title="标准代码中文名称" data-index="stdCodeName" :width="170" ellipsis tooltip />
-          <a-table-column title="域描述" data-index="description" :width="260" ellipsis tooltip />
-          <a-table-column title="引用标准数" data-index="refCount" :width="110" align="center">
-            <template #cell="{ record }">
-              <a-tag :color="refsOf(record.code).length ? 'arcoblue' : 'gray'">
-                {{ refsOf(record.code).length }}
-              </a-tag>
-            </template>
-          </a-table-column>
-          <a-table-column title="更新时间" data-index="updateTime" :width="180" />
+          <a-table-column title="数据域名称" data-index="name" :width="200" sortable />
+          <a-table-column title="覆盖范围名称" data-index="coverage" :width="320" ellipsis tooltip />
+          <a-table-column title="建议主责部门" data-index="ownerDept" :width="180" />
         </template>
 
-        <!-- R10:引用该域的标准清单，由数据标准侧「域」字段自动派生，不随标准域上传变动 -->
+        <!-- 页面状态速查:空结果 —— 空状态插画 + 调整筛选引导 -->
+        <template #empty>
+          <a-empty description="没有符合条件的数据域">
+            <a-button size="small" @click="clearSearch">重置搜索条件</a-button>
+          </a-empty>
+        </template>
+
+        <!-- R10:引用该数据域的标准清单,由数据标准侧「所属数据域」字段自动派生 -->
         <template #expand-row="{ record }">
           <div class="ref-panel">
-            <div class="ref-title">引用「{{ record.code }}」的数据标准（{{ refsOf(record.code).length }} 条）</div>
-            <a-table
-              v-if="refsOf(record.code).length"
-              :data="refsOf(record.code)"
-              :pagination="false"
-              size="mini"
-              :border="{ wrapper: true, cell: true }"
-              class="ref-table"
-            >
-              <template #columns>
-                <a-table-column title="标准编号" data-index="standardNo" :width="140" />
-                <a-table-column title="中文名称" data-index="cnName" :width="200" />
-                <a-table-column title="操作" :width="120">
-                  <template #cell="{ record: std }">
-                    <a-link @click="openStandard(std.standardNo)">查看标准</a-link>
-                  </template>
-                </a-table-column>
-              </template>
-            </a-table>
-            <a-empty v-else description="暂无数据标准引用该域" />
+            <div class="ref-title">
+              引用「{{ record.code }}」的数据标准
+              <span class="ref-tip">由数据标准「所属数据域」字段自动关联生成，仅在数据标准中维护</span>
+            </div>
+            <a-spin :loading="loadingRow === record.code" style="width: 100%">
+              <a-table
+                v-if="loadingRow !== record.code && refsOf(record.code).length"
+                :data="refsOf(record.code)"
+                :pagination="false"
+                size="mini"
+                :border="{ wrapper: true, cell: true }"
+                class="ref-table"
+              >
+                <template #columns>
+                  <a-table-column title="标准编号" data-index="standardNo" :width="140" />
+                  <a-table-column title="标准名称(中文)" data-index="cnName" :width="200" />
+                  <a-table-column title="操作" :width="120">
+                    <template #cell="{ record: std }">
+                      <a-link @click="openStandard(std.standardNo)">查看标准</a-link>
+                    </template>
+                  </a-table-column>
+                </template>
+              </a-table>
+              <a-empty
+                v-else-if="loadingRow !== record.code"
+                description="暂无标准引用"
+              />
+            </a-spin>
           </div>
         </template>
       </a-table>
     </a-card>
 
-    <!-- 批量导入弹窗(U1-U4 / E4 / E5) -->
+    <!-- 全量上传通道(U1-U4 / U-E1~U-E4 / E2) -->
     <DataStandardImportModal
       v-model:visible="importVisible"
-      title="全量导入标准域"
+      title="全量导入数据域"
       type="domains"
-      description="请下载标准域模板，填写完成后上传；模板列与展示字段一致，以「域」编号为唯一键（R11/R12）。"
+      description="请下载数据域模板,填写完成后上传;模板列与展示字段一致,以数据域代码为唯一键(R11/R12)。"
       @success="handleImportSuccess"
     />
   </div>
@@ -150,27 +134,33 @@ import { useRoute, useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { useRoleStore } from '@/stores-dca/role'
 import DataStandardImportModal from '../../../../components/modals/DataStandardImportModal.vue'
-import { DomainStore, StdCodeStore, type StandardDomain } from '@/mock-shared/standard-store'
+import { DomainStore, type StandardDomain } from '@/mock-shared/standard-store'
 
 const route = useRoute()
 const router = useRouter()
 const roleStore = useRoleStore()
 
-// 三-关键约束:权限-数据标准管理员(演示口径映射到「数据治理者」角色)才可下载模板与全量上传
+// 关键约束:权限-数据标准管理员(演示口径映射到「数据治理者」)才可下载模板与全量上传
 const canMaintain = computed(() => roleStore.currentRole === 'data_admin')
 
-// 支持数据标准页跳转带 ?keyword=AMT_18_2 直接定位（R03/R05 的到达态）
+// 支持数据标准页跳转带 ?keyword=AMT_DOMAIN 直接定位(R03/R05 的到达态)
 const searchKey = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
+// 定位高亮的目标数据域代码
+const focusCode = ref(typeof route.query.focus === 'string' ? route.query.focus : '')
 const importVisible = ref(false)
 const allDomains = ref<StandardDomain[]>([])
 const currentPage = ref(1)
+// 展开区的局部加载态(页面状态速查:点击展开后展示局部加载态)
+const loadingRow = ref('')
 
+/** 从 mock store 重新读取数据域清单 */
 function refresh() {
   allDomains.value = DomainStore.getDomains()
 }
 
 onMounted(refresh)
 
+// R09:数据域名称 / 数据域代码 模糊匹配;V2:默认按最近更新时间倒序
 const tableData = computed(() => {
   const k = searchKey.value.trim().toLowerCase()
   const list = !k
@@ -178,11 +168,10 @@ const tableData = computed(() => {
     : allDomains.value.filter(d =>
         [d.code, d.name].some(v => String(v || '').toLowerCase().includes(k))
       )
-  // V1:默认按最近更新时间倒序
   return [...list].sort((a, b) => (b.updateTime || '').localeCompare(a.updateTime || ''))
 })
 
-// 分页 total 直接跟随过滤结果（computed），筛选变化时回到第 1 页
+// 分页 total 直接跟随过滤结果,筛选变化时回到第 1 页
 const pagination = computed(() => ({
   current: currentPage.value,
   pageSize: 10,
@@ -195,34 +184,71 @@ watch(searchKey, () => {
   currentPage.value = 1
 })
 
+/**
+ * 行样式:定位目标行高亮(R03 到达态)。
+ *
+ * @param record 当前行数据
+ * @returns 行 class
+ */
+function rowClass(record: StandardDomain) {
+  return focusCode.value && record.code === focusCode.value ? 'focus-row' : ''
+}
+
+/**
+ * 展开行时触发局部加载态。
+ *
+ * @param rowKey 展开行 key
+ */
+function handleExpand(rowKey: string | number) {
+  loadingRow.value = String(rowKey)
+  window.setTimeout(() => {
+    loadingRow.value = ''
+  }, 280)
+}
+
+/**
+ * 分页切换。
+ *
+ * @param page 目标页码
+ */
 function handlePageChange(page: number) {
   currentPage.value = page
 }
 
+/**
+ * 查询引用该数据域的标准清单(R10)。
+ *
+ * @param code 数据域代码
+ * @returns 引用标准清单
+ */
 function refsOf(code: string) {
   return DomainStore.referencedStandards(code)
 }
-function codeExists(stdCodeNo: string) {
-  return StdCodeStore.exists(stdCodeNo)
-}
 
-// ===== R05:跨资产跳转在新标签页打开，保留当前浏览位置 =====
-function openCode(stdCodeNo: string) {
-  const { href } = router.resolve({ name: 'data-standard-codes', query: { keyword: stdCodeNo } })
-  window.open(href, '_blank')
-}
+// ===== R05:跨资产跳转在新标签页打开,保留当前浏览位置 =====
+/**
+ * 跳转数据标准列表并定位到目标标准。
+ *
+ * @param standardNo 标准编号
+ */
 function openStandard(standardNo: string) {
-  const { href } = router.resolve({ name: 'data-standard', query: { keyword: standardNo } })
+  const { href } = router.resolve({
+    name: 'data-standard',
+    query: { keyword: standardNo, focus: standardNo }
+  })
   window.open(href, '_blank')
 }
 
+/** 清空搜索条件 */
 function clearSearch() {
   searchKey.value = ''
+  focusCode.value = ''
 }
 
+/** 上传成功后刷新列表(U2 覆盖写入) */
 function handleImportSuccess() {
   refresh()
-  Message.success('标准域列表已按上传文件全量覆盖')
+  Message.success('数据域列表已按上传文件全量覆盖')
 }
 </script>
 
@@ -232,12 +258,6 @@ function handleImportSuccess() {
 
   .mono {
     font-family: 'Menlo', 'Consolas', monospace;
-  }
-
-  .link-disabled {
-    color: var(--color-text-4);
-    cursor: not-allowed;
-    border-bottom: 1px dashed var(--color-border-2);
   }
 
   .ref-panel {
@@ -250,9 +270,21 @@ function handleImportSuccess() {
       color: var(--color-text-1);
     }
 
+    .ref-tip {
+      margin-left: 8px;
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--color-text-3);
+    }
+
     .ref-table {
       max-width: 640px;
     }
+  }
+
+  /* R03:定位目标行高亮 */
+  :deep(.focus-row) {
+    background-color: rgb(var(--primary-6), 0.08);
   }
 }
 </style>

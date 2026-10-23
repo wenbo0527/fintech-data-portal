@@ -252,27 +252,15 @@ const PAGES = [
   },
   {
     group: '管理域 - 数据标准',
-    name: '标准单词管理',
-    path: '/home/management/data-standard/words',
-    expectedContent: ['单词']
-  },
-  {
-    group: '管理域 - 数据标准',
     name: '标准代码管理',
     path: '/home/management/data-standard/codes',
     expectedContent: ['代码']
   },
   {
     group: '管理域 - 数据标准',
-    name: '数据域管理',
+    name: '数据域',
     path: '/home/management/data-standard/domains',
     expectedContent: ['域']
-  },
-  {
-    group: '管理域 - 数据标准',
-    name: '标准稽核管理',
-    path: '/home/management/data-standard/audit',
-    expectedContent: ['稽核']
   },
   {
     group: '管理域 - 业务概念',

@@ -302,10 +302,8 @@ const managementMenus = [
   { key: 'management-group-governance', title: '数据治理', children: [
     { key: 'management/governance-sub-std', title: '数据标准', children: [
       { key: 'management/data-standard/standards', title: '数据标准' },
-      { key: 'management/data-standard/domains', title: '标准域管理' },
+      { key: 'management/data-standard/domains', title: '数据域' },
       { key: 'management/data-standard/codes', title: '标准代码' },
-      { key: 'management/data-standard/words', title: '标准单词' },
-      { key: 'management/data-standard/audit', title: '标准稽核' },
     ]},
     { key: 'management/governance-sub-classify', title: '数据分级分类', children: [
       { key: 'management/metadata/classify/sources', title: '分级分类·数据源' },
@@ -624,8 +622,6 @@ const NAME_BY_PATH: Record<string, string> = {
   'management/data-standard/standards': 'data-standard',
   'management/data-standard/domains': 'data-standard-domains',
   'management/data-standard/codes': 'data-standard-codes',
-  'management/data-standard/words': 'data-standard-words',
-  'management/data-standard/audit': 'data-standard-audit',
   'management/data-quality/tasks': 'quality-task-list',
   'management/data-quality/instances': 'quality-instance-list',
   'management/quality/dashboard': 'quality-dashboard',

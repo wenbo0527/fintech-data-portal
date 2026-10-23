@@ -323,7 +323,7 @@ const routes: RouteRecordRaw[] = [
         path: 'management/data-standard/domains',
         name: 'data-standard-domains',
         component: () => import('../pages/management/data-standard/domains/index.vue'),
-        meta: { title: '标准域管理' }
+        meta: { title: '数据域' }
       },
       {
         path: 'management/data-standard/codes',
@@ -332,16 +332,10 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '标准代码管理' }
       },
       {
-        path: 'management/data-standard/words',
-        name: 'data-standard-words',
-        component: () => import('../pages/management/data-standard/words/index.vue'),
-        meta: { title: '标准单词管理' }
-      },
-      {
-        path: 'management/data-standard/audit',
-        name: 'data-standard-audit',
-        component: () => import('../pages/management/data-standard/audit/index.vue'),
-        meta: { title: '标准稽核管理' }
+        path: 'management/data-standard/codes/:codeSetNo',
+        name: 'data-standard-code-detail',
+        component: () => import('../pages/management/data-standard/codes/detail.vue'),
+        meta: { title: '代码集详情' }
       },
       // ===== 数据质量管理 =====
       {

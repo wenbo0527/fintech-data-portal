@@ -61,8 +61,6 @@ const PAGES = [
   { group: 'G2-管理', name: '数据标准', path: '/management/data-standard/standards', expectedContent: ['标准'] },
   { group: 'G2-管理', name: '数据域', path: '/management/data-standard/domains', expectedContent: ['数据域'] },
   { group: 'G2-管理', name: '标准代码', path: '/management/data-standard/codes', expectedContent: ['代码'] },
-  { group: 'G2-管理', name: '标准单词', path: '/management/data-standard/words', expectedContent: ['单词'] },
-  { group: 'G2-管理', name: '标准稽核', path: '/management/data-standard/audit', expectedContent: ['稽核'] },
   { group: 'G2-管理', name: '元数据查询', path: '/management/metadata/query', expectedContent: ['元数据'] },
   { group: 'G2-管理', name: '元数据建模', path: '/management/metadata/modeling', expectedContent: ['建模'] },
   { group: 'G2-管理', name: '标签管理', path: '/management/asset-management/basic-management/tag-management', expectedContent: ['标签'] },

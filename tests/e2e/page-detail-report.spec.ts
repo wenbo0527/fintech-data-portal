@@ -58,8 +58,6 @@ const PAGES = [
   { group: '管理域', name: '数据标准', path: '/management/data-standard/standards', kw: ['标准'] },
   { group: '管理域', name: '数据域', path: '/management/data-standard/domains', kw: ['数据域'] },
   { group: '管理域', name: '标准代码', path: '/management/data-standard/codes', kw: ['代码'] },
-  { group: '管理域', name: '标准单词', path: '/management/data-standard/words', kw: ['单词'] },
-  { group: '管理域', name: '标准稽核', path: '/management/data-standard/audit', kw: ['稽核'] },
   { group: '管理域', name: '元数据查询', path: '/management/metadata/query', kw: ['元数据'] },
   { group: '管理域', name: '元数据建模', path: '/management/metadata/modeling', kw: ['建模'] },
   { group: '管理域', name: '业务域管理', path: '/management/business-domain', kw: ['业务'] },

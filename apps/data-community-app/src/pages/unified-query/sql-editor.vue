@@ -141,7 +141,7 @@
               保存脚本
             </a-button>
             <a-button size="small" @click="format">
-              <template #icon><icon-brackets /></template>
+              <template #icon><icon-code /></template>
               格式化
             </a-button>
             <a-button
@@ -164,7 +164,7 @@
             <div class="uq-toolbar__spacer" />
             <a-button
               size="small"
-              :status="copilotVisible ? 'success' : 'outline'"
+              :status="copilotVisible ? 'success' : 'normal'"
               @click="copilotVisible = !copilotVisible"
             >
               <template #icon><icon-robot /></template>
@@ -210,6 +210,7 @@
             :context="metaContext"
             :selected-table="selectedTable"
             :live-issues="auditIssues"
+            :current-sql="sql"
             :insert-fn="insertSql"
             :replace-fn="replaceSql"
           />
@@ -285,7 +286,7 @@
       :ok-button-loading="sharing"
       @ok="doShare"
     >
-      <a-form layout="vertical">
+      <a-form :model="shareFormModel" layout="vertical">
         <a-form-item label="脚本名称">
           <a-input :model-value="shareScriptName" disabled />
         </a-form-item>
@@ -378,7 +379,7 @@
  * 左侧 Tab 切换:脚本目录树(F13) / 数据库导航树(F01)。
  * 右侧:SQL 编辑器 + 结果/日志 + 工具栏(运行/保存/共享/历史/创建任务)。
  */
-import { computed, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { useRoute, useRouter } from 'vue-router'
 import PageContainer from '@/components-dca/common/PageContainer.vue'
@@ -443,7 +444,6 @@ onMounted(async () => {
     ctx = mergeWordsFromContract(ctx, contractTerms)
   }
   metaContext.value = ctx
-  ;(window as any).__uqCurrentSql = editor.activeTab?.sql ?? ''
 })
 
 /** F14:关键字过滤树,命中脚本保留其所在目录 */
@@ -482,15 +482,12 @@ const selectedTable = ref<{ tableName: string; comment: string } | null>(null)
 const metaContext = ref<CopilotMetaContext | null>(null)
 const copilotVisible = ref(true)
 const auditIssues = ref<CopilotIssue[]>([])
-// 把当前 SQL 暴露给 CopilotPanel(通过 explain/optimize/audit 读取)
-;(window as any).__uqCurrentSql = ''
 
 function insertSql(text: string) {
   editorRef.value?.insertText(text)
 }
 function replaceSql(text: string) {
   editor.patch(activeKey.value, { sql: text, dirty: true })
-  ;(window as any).__uqCurrentSql = text
 }
 
 /** Tab 切换后重新跑一次实时合规审计 */
@@ -545,19 +542,8 @@ watch(activeKey, () => {
   logs.value = []
   selection.value = ''
   lastTip.value = ''
-  ;(window as any).__uqCurrentSql = editor.activeTab?.sql ?? ''
   refreshAudit()
 })
-
-/* ── SQL 变化同步给 Copilot ── */
-watch(
-  () => editor.activeTab?.sql,
-  v => {
-    if (typeof v === 'string') {
-      ;(window as any).__uqCurrentSql = v
-    }
-  }
-)
 
 function onCreateTab(value: string | number | Record<string, any> | undefined) {
   const ds = (value === 'hive' ? 'hive' : 'doris') as DataSourceKey
@@ -705,6 +691,8 @@ const sharing = ref(false)
 const shareTargets = ref<string[]>([])
 const shareFolder = ref('shared/daily')
 const shareScriptId = ref<string | null>(null)
+// a-form 强制要求 model,这里用独立模型对象承接表单项(实际值仍由 shareTargets/shareFolder 维护)
+const shareFormModel = reactive({ name: '', targets: [] as string[], folder: 'shared/daily' })
 const colleagues = COLLEAGUES
 const canShare = computed(() => {
   const tab = editor.activeTab

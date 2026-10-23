@@ -3,7 +3,9 @@
     <!-- 上下文摘要 -->
     <div class="uq-copilot__summary">
       <a-space :size="6" wrap>
-        <a-tag color="arcoblue" size="small">已上线 {{ ctx.summary.tableCount }} 张表</a-tag>
+        <a-tag color="arcoblue" size="small">可查 {{ ctx.summary.tableCount }} 张表</a-tag>
+        <a-tag size="small">资产目录 {{ ctx.summary.catalogTableCount }}</a-tag>
+        <a-tag size="small">数据源树 {{ ctx.summary.editorTableCount }}</a-tag>
         <a-tag size="small">{{ ctx.summary.fieldCount }} 字段</a-tag>
         <a-tag color="green" size="small">{{ ctx.summary.standardCount }} 数据标准</a-tag>
         <a-tag color="purple" size="small">{{ ctx.summary.codeCount }} 码值</a-tag>
@@ -22,7 +24,13 @@
         <a-tag v-for="(s, i) in lastRoute.sources" :key="i" size="small">{{ sourceLabel(s) }}</a-tag>
         <a-tag v-for="(w, i) in lastRoute.matchedWords.slice(0, 2)" :key="`w-${i}`" size="small" color="green">命中:{{ w }}</a-tag>
         <a-tag v-if="lastRoute.matchedStandards.length" size="small" color="purple">命中 {{ lastRoute.matchedStandards.length }} 条标准</a-tag>
+        <a-tag v-if="lastRoute.tables.length" size="small" color="cyan">知识表 {{ lastRoute.tables.length }}</a-tag>
+        <a-tag size="small" color="gray" style="cursor: pointer" @click="promptVisible = !promptVisible">
+          {{ promptVisible ? '收起 System Prompt' : '查看 System Prompt' }}
+        </a-tag>
       </a-space>
+      <!-- 本轮实际下发给模型的 system prompt(接 LLM 时即为真实内容) -->
+      <pre v-if="promptVisible && lastRoute.systemPrompt" class="uq-copilot__prompt">{{ lastRoute.systemPrompt }}</pre>
     </div>
 
     <!-- 输入区 -->
@@ -159,7 +167,7 @@
  * 接收 CopilotMetaContext,提供四个动作(nl2sql/explain/optimize/audit),
  * 与左侧 SqlEditor 通过 props + emit 联动(插入/替换 SQL、显示实时合规提示)。
  */
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import type { CopilotMetaContext } from '@/mock/unified-query/metadata-context'
 import type { CopilotIssue, CopilotMessage, IssueLevel } from '@/mock/unified-query/types'
@@ -178,6 +186,8 @@ const props = defineProps<{
   selectedTable?: { tableName: string; comment: string } | null
   /** 实时合规 Issue(SqlEditor 推送) */
   liveIssues?: CopilotIssue[]
+  /** 编辑器当前 SQL(父组件响应式传入,explain/optimize/audit 直接消费) */
+  currentSql?: string
   /** 注入到编辑器的 SQL(父组件提供通道) */
   insertFn?: (sql: string) => void
   replaceFn?: (sql: string) => void
@@ -186,6 +196,8 @@ const props = defineProps<{
 const ctx = computed(() => props.context)
 const selectedTable = computed(() => props.selectedTable ?? null)
 const liveIssues = computed(() => props.liveIssues ?? [])
+/** 编辑器当前 SQL(响应式来源,替代旧的 window 全局变量) */
+const currentSql = computed(() => props.currentSql ?? '')
 
 const input = ref('')
 const messages = ref<CopilotMessage[]>([])
@@ -194,6 +206,8 @@ const chatRef = ref<HTMLElement | null>(null)
 
 /** 最近一次路由决策(展示「本轮用了哪些知识源」) */
 const lastRoute = ref<RouteSnapshot | null>(null)
+/** 是否展开本轮 system prompt */
+const promptVisible = ref(false)
 
 const SOURCE_LABEL: Record<string, string> = {
   table: '表',
@@ -227,6 +241,14 @@ function levelColor(l: IssueLevel) {
   return ({ info: 'gray', warn: 'orange', error: 'red' } as const)[l]
 }
 
+/**
+ * 执行一次 Copilot 动作。
+ *
+ * explain/optimize/audit 直接消费父组件传入的当前 SQL(响应式),
+ * 不再依赖 window 全局变量。
+ *
+ * @param action 动作类型
+ */
 async function runAction(action: 'nl2sql' | 'explain' | 'optimize' | 'audit') {
   if (loadingAction.value) return
   const prompt = input.value.trim()
@@ -241,10 +263,9 @@ async function runAction(action: 'nl2sql' | 'explain' | 'optimize' | 'audit') {
         ts: nowStr()
       }
       messages.value.push(userMsg)
-      const { candidates, warnings } = await nl2sql(prompt, ctx.value, {
+      const { candidates } = await nl2sql(prompt, ctx.value, {
         hintTable: selectedTable.value?.tableName
       })
-      const summary = warnings.length ? `${warnings[0]}` : '已生成候选 SQL'
       messages.value.push({
         id: newCopilotMessageId(),
         role: 'assistant',
@@ -254,14 +275,11 @@ async function runAction(action: 'nl2sql' | 'explain' | 'optimize' | 'audit') {
         ts: nowStr()
       })
       input.value = ''
-      void summary
     } else if (action === 'explain') {
-      const sql = ctx.value.selectedTableName ? '' : ''
-      void sql
+      const sqlText = currentSql.value
+      if (!sqlText.trim()) return Message.warning('当前编辑器没有 SQL,无法解释')
       const userMsg: CopilotMessage = { id: newCopilotMessageId(), role: 'user', text: '解释当前 SQL', ts: nowStr() }
       messages.value.push(userMsg)
-      // 通过父组件 prop 暴露的 currentSql 触发,见 sql-editor.vue 集成
-      const sqlText = (window as any).__uqCurrentSql ?? ''
       const result = await explainSql(sqlText, ctx.value)
       messages.value.push({
         id: newCopilotMessageId(),
@@ -272,9 +290,10 @@ async function runAction(action: 'nl2sql' | 'explain' | 'optimize' | 'audit') {
         ts: nowStr()
       })
     } else if (action === 'optimize') {
+      const sqlText = currentSql.value
+      if (!sqlText.trim()) return Message.warning('当前编辑器没有 SQL,无法优化')
       const userMsg: CopilotMessage = { id: newCopilotMessageId(), role: 'user', text: '优化当前 SQL', ts: nowStr() }
       messages.value.push(userMsg)
-      const sqlText = (window as any).__uqCurrentSql ?? ''
       const result = await optimizeSql(sqlText, ctx.value)
       messages.value.push({
         id: newCopilotMessageId(),
@@ -285,9 +304,10 @@ async function runAction(action: 'nl2sql' | 'explain' | 'optimize' | 'audit') {
         ts: nowStr()
       })
     } else if (action === 'audit') {
+      const sqlText = currentSql.value
+      if (!sqlText.trim()) return Message.warning('当前编辑器没有 SQL,无法检查')
       const userMsg: CopilotMessage = { id: newCopilotMessageId(), role: 'user', text: '合规检查', ts: nowStr() }
       messages.value.push(userMsg)
-      const sqlText = (window as any).__uqCurrentSql ?? ''
       const issues = await auditSql(sqlText, ctx.value)
       messages.value.push({
         id: newCopilotMessageId(),
@@ -318,14 +338,6 @@ function onReplace(sql: string) {
   props.replaceFn(sql)
   Message.success('已替换为推荐版本')
 }
-
-// 监控输入框提示变化
-watch(
-  () => props.context.summary.tableCount,
-  () => {
-    /* 留给后续打点用 */
-  }
-)
 </script>
 
 <style lang="scss" scoped>
@@ -372,6 +384,22 @@ watch(
   border-bottom: 1px solid var(--color-border-2);
   font-size: 12px;
   color: var(--color-text-3);
+}
+
+.uq-copilot__prompt {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  max-height: 180px;
+  overflow: auto;
+  background: var(--color-bg-2);
+  border: 1px solid var(--color-border-2);
+  border-radius: 4px;
+  font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-text-2);
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .uq-copilot__actions {

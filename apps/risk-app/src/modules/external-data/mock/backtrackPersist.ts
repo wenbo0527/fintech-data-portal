@@ -20,7 +20,7 @@ export type PersistStatus =
   | '文件已获取'
   | '文件就绪'
   | '预览已确认'
-  | '任务已匹配'
+  | '前置任务已匹配'
   | '临时库已落库'
   | 'Hive已落库'
 
@@ -30,16 +30,44 @@ export const PERSIST_STATUS_FLOW: PersistStatus[] = [
   '文件已获取',
   '文件就绪',
   '预览已确认',
-  '任务已匹配',
+  '前置任务已匹配',
   '临时库已落库',
   'Hive已落库',
 ]
 
-/** 异步任务状态机（3.2） */
-export type AsyncTaskStatus = '排队中' | '执行中' | '成功' | '失败' | '疑似卡死'
-
 /** 异步任务类型（R85） */
 export type AsyncTaskType = '解析落库' | '推进Hive' | '行数验证' | '一致性校验'
+
+/**
+ * 异步任务类型 → 落库状态机状态映射
+ * 后两态（临时库已落库 / Hive已落库）由批次任务推导，避免页面状态与任务列表出现两套事实源
+ */
+const TASK_TYPE_STATUS_MAP: Partial<Record<AsyncTaskType, PersistStatus>> = {
+  解析落库: '临时库已落库',
+  推进Hive: 'Hive已落库',
+}
+
+/**
+ * 按批次任务推导落库状态机状态
+ * 规则：取批次内已成功且能映射到状态的任务中，状态最靠后者；
+ * 推进Hive 成功即视为流程终点 Hive已落库；无相关成功任务时返回 null，交由页面基准状态兜底
+ * @param tasks 该 backid 关联的任务集合
+ */
+export function resolveStatusFromTasks(tasks: AsyncTask[]): PersistStatus | null {
+  let derived: PersistStatus | null = null
+  for (const t of tasks) {
+    if (t.status !== '成功') continue
+    const mapped = TASK_TYPE_STATUS_MAP[t.taskType]
+    if (!mapped) continue
+    if (!derived || PERSIST_STATUS_FLOW.indexOf(mapped) > PERSIST_STATUS_FLOW.indexOf(derived)) {
+      derived = mapped
+    }
+  }
+  return derived
+}
+
+/** 异步任务状态机（3.2） */
+export type AsyncTaskStatus = '排队中' | '执行中' | '成功' | '失败' | '疑似卡死'
 
 /**
  * 批次阶段（R51：backid 为批次标识，批次所处阶段由批次内任务推导）
@@ -67,7 +95,7 @@ const TASK_STAGE_MAP: Record<AsyncTaskType, Omit<BatchStage, 'taskType'>> = {
 /**
  * 推导批次所处阶段
  * 规则：存在未成功任务时定位到最早的未完成环节（流程串行，卡点即待办）；
- * 全部成功时定位到通知记录环节，便于查看批次最终产出
+ * 全部成功时定位到落库结果环节，便于查看批次最终产出
  * @param tasks 该 backid 关联的任务集合
  */
 export function resolveBatchStage(tasks: AsyncTask[]): BatchStage | null {
@@ -78,7 +106,7 @@ export function resolveBatchStage(tasks: AsyncTask[]): BatchStage | null {
     return { ...TASK_STAGE_MAP[target.taskType], taskType: target.taskType }
   }
   const last = tasks.reduce((max, t) => (t.createTime > max.createTime ? t : max))
-  return { stepIndex: 2, sectionKey: 'sec-3-5', sectionTitle: '3.5 通知记录', taskType: last.taskType }
+  return { stepIndex: 2, sectionKey: 'sec-3-4', sectionTitle: '3.4 落库结果（后台任务）', taskType: last.taskType }
 }
 
 /** 落库记录 - 计费要素（R54 最后一组，落库数据供外数费用计算模块使用） */
@@ -351,8 +379,9 @@ export const persistRecordsMock: PersistRecord[] = [
     billing: { billingSubject: '风控策略组', billingType: '按条数', billingRows: 96210, billingFieldCount: 10, unitPrice: 0.35, estimatedAmount: 33673.5, billingStatus: '未计费' },
   },
   {
+    // 朴道批次：推进 Hive 任务失败、一致性校验失败，仅落临时库成功，故状态为「临时库已落库」
     backid: 'BACK20260930003',
-    baseInfo: { operator: '陈昊（模型算法组）', operateTime: '2026-09-30 09:15:42', status: 'Hive已落库' },
+    baseInfo: { operator: '陈昊（模型算法组）', operateTime: '2026-09-30 09:15:42', status: '临时库已落库' },
     agencyInfo: { agencyId: 'AG-002', agencyCode: 'PD', agencyName: '朴道征信有限公司', agencyType: '个人征信', licenseNo: 'JC证-JXKP-2022-0037' },
     fileInfo: { fileName: 'PD_BACK_0929_2.csv', acquireMode: 'SFTP拉取', fileSize: 47915008, fileRows: 45320, encoding: 'UTF-8', delimiter: '逗号', encrypted: false, outboundTaskIds: ['OUT20260912'] },
     mappingInfo: { product: '朴道-历史逾期明细', interfaceId: 'PD2048', mappingVersion: 'v1.1', stdFieldCount: 6, nonStdFieldCount: 1, nonStdFields: ['ext_ovd_level'] },
@@ -559,7 +588,29 @@ export const asyncTasksMock: AsyncTask[] = [
     resumeContext: { ...RESUME_BASE_QT, resumeStep: 2 },
   },
   {
-    taskId: 'TASK20261021009', taskType: '行数验证', backid: 'BACK20261021002', agencyName: '上海数据集团金融科技有限公司', fileName: 'SHGJ_CREDIT_20261020.csv',
+    taskId: 'TASK20261021008', taskType: '解析落库', backid: 'BACK20261021002', agencyName: '上海数据集团金融科技有限公司', fileName: 'SHGJ_CREDIT_20261020.csv',
+    createTime: '2026-10-21 08:40:00', status: '成功', finishTime: '2026-10-21 08:52:30', operator: '赵磊（模型算法组）',
+    fileFingerprint: 'SHGJ_CREDIT_20261020.csv@39845888', writeOperation: true, stuckThresholdMinutes: 120,
+    logs: [
+      { time: '2026-10-21 08:40:00', stage: '任务创建', message: '解析落库任务已提交，进入执行中' },
+      { time: '2026-10-21 08:41:10', stage: '落临时库', message: '文件已落临时库 tmp_ext_retro_raw，生成 backid BACK20261021002' },
+      { time: '2026-10-21 08:52:30', stage: '任务结束', message: '解析落库完成，共写入 38000 行' },
+    ],
+    resumeContext: { ...RESUME_BASE_SHGJ, resumeStep: 2 },
+  },
+  {
+    taskId: 'TASK20261021009', taskType: '推进Hive', backid: 'BACK20261021002', agencyName: '上海数据集团金融科技有限公司', fileName: 'SHGJ_CREDIT_20261020.csv',
+    createTime: '2026-10-21 08:53:00', status: '成功', finishTime: '2026-10-21 08:58:40', operator: '赵磊（模型算法组）',
+    fileFingerprint: 'SHGJ_CREDIT_20261020.csv@39845888', writeOperation: true, stuckThresholdMinutes: 120,
+    logs: [
+      { time: '2026-10-21 08:53:00', stage: '任务创建', message: '推进 Hive 任务已提交，进入执行中' },
+      { time: '2026-10-21 08:54:20', stage: '写入 Hive', message: '写入目标表 dw_ods.ods_ext_shgj_retro_std 分区 datax=2026-10-20' },
+      { time: '2026-10-21 08:58:40', stage: '任务结束', message: '已落 Hive 标准库，写入 38000 行' },
+    ],
+    resumeContext: { ...RESUME_BASE_SHGJ, resumeStep: 2 },
+  },
+  {
+    taskId: 'TASK20261021011', taskType: '行数验证', backid: 'BACK20261021002', agencyName: '上海数据集团金融科技有限公司', fileName: 'SHGJ_CREDIT_20261020.csv',
     createTime: '2026-10-21 09:00:00', status: '执行中', finishTime: '', operator: '赵磊（模型算法组）',
     fileFingerprint: 'SHGJ_CREDIT_20261020.csv@39845888', writeOperation: false, stuckThresholdMinutes: 30,
     logs: [
@@ -755,8 +806,8 @@ export async function appendPersistRecord(record: PersistRecord): Promise<Persis
   return record
 }
 
-/** 查询通知记录（按 backid） */
-export async function listNotifyRecords(backid?: string): Promise<NotifyRecord[]> {
-  if (!backid) return [...notifyRecordsMock]
-  return notifyRecordsMock.filter((r) => r.backid === backid)
+/** 追加通知记录（R82：后台推送后留存通知明细） */
+export async function appendNotifyRecords(records: NotifyRecord[]): Promise<NotifyRecord[]> {
+  notifyRecordsMock.unshift(...records)
+  return records
 }

@@ -563,7 +563,7 @@
             </template>
           </a-table>
           <div class="table-tip">
-            先将回溯数据全量落临时库并生成 backid 批次标识，落库记录、验证报告、通知记录三处均通过 backid 关联。
+            先将回溯数据全量落临时库并生成 backid 批次标识，落库记录、验证报告、后台通知三处均通过 backid 关联。
           </div>
 
           <a-divider id="sec-3-2" :class="{ 'section-active': batchContext?.sectionKey === 'sec-3-2' }" orientation="left">3.2 一致性抽样校验</a-divider>
@@ -792,40 +792,6 @@
           </a-table>
           <a-empty v-else description="尚未落 Hive，后台行数验证任务未启动" />
           <div class="table-tip">三重行数 = 入库行数 + 源文件行数 + 原样本文件行数，三者一致方为通过；不一致时给出差值并标记异常行。</div>
-
-          <a-divider id="sec-3-5" :class="{ 'section-active': batchContext?.sectionKey === 'sec-3-5' }" orientation="left">3.5 通知记录</a-divider>
-          <a-table v-if="notifyRecords.length" :data="notifyRecords" :pagination="false" row-key="notifyId" size="small">
-            <template #columns>
-              <a-table-column title="通知编号" data-index="notifyId" :width="180">
-                <template #cell="{ record }"><span class="mono">{{ record.notifyId }}</span></template>
-              </a-table-column>
-              <a-table-column title="渠道" data-index="channel" :width="140" />
-              <a-table-column title="接收人" :width="220" ellipsis tooltip>
-                <template #cell="{ record }">{{ record.receivers.join('、') }}</template>
-              </a-table-column>
-              <a-table-column title="脱敏" :width="80">
-                <template #cell="{ record }">
-                  <a-tag size="small" :color="record.maskEnabled ? 'green' : 'gray'">
-                    {{ record.maskEnabled ? '已脱敏' : '未脱敏' }}
-                  </a-tag>
-                </template>
-              </a-table-column>
-              <a-table-column title="发送状态" :width="110">
-                <template #cell="{ record }">
-                  <a-tag size="small" :color="record.sendStatus === '发送成功' ? 'green' : 'red'">{{ record.sendStatus }}</a-tag>
-                </template>
-              </a-table-column>
-              <a-table-column title="重试次数" data-index="retryCount" :width="90" />
-              <a-table-column title="发送时间" data-index="sentAt" :width="170" />
-              <a-table-column title="失败原因" :width="220" ellipsis tooltip>
-                <template #cell="{ record }">
-                  <span v-if="record.failReason" class="err-text">{{ record.failReason }}</span>
-                  <span v-else class="table-tip">—</span>
-                </template>
-              </a-table-column>
-            </template>
-          </a-table>
-          <a-empty v-else description="后台通知任务尚未完成，暂无通知记录" />
         </div>
       </div>
 
@@ -1083,7 +1049,7 @@ const stepsList = [
   },
   {
     title: '解析落库',
-    sections: ['3.1 落临时库', '3.2 一致性抽样校验', '3.3 落 Hive 标准库', '3.4 落库结果（后台任务）', '3.5 通知记录'],
+    sections: ['3.1 落临时库', '3.2 一致性抽样校验', '3.3 落 Hive 标准库', '3.4 落库结果（后台任务）'],
   },
 ]
 
@@ -1120,7 +1086,7 @@ const {
   consistencyTargetOptions, consistencyTargetTable, consistencyDetails, consistencySummary,
   validating, consistencyPagination, pagedConsistencyDetails, onConsistencyPageChange,
   loadConsistencyTables, runTripleRowCheck, runConsistencyCheck, skipConsistencyCheck, reportVisible, openReport,
-  notifyConfig, loadNotifyConfig, notifyRecords, notifySent, sendNotify,
+  notifyConfig, loadNotifyConfig, notifySent, sendNotify,
   persistRecord, recordVisible, buildPersistRecord, openPersistRecord,
   createdTasks, createPersistTask, finishPersistTask, restoreFromResumeContext, restoreFromBackid,
 } = flow
@@ -1252,10 +1218,9 @@ const writeHive = async () => {
   await new Promise((r) => setTimeout(r, 1200))
   writing.value = false
   hiveWritten.value = true
-  // 落 Hive 即为流程终点，状态机不再流转到「待通知 / 已完成」
-  setStatus('Hive已落库')
-  await buildPersistRecord()
+  // 落 Hive 即为流程终点；任务置为成功后状态由批次任务推导为「Hive已落库」
   await finishPersistTask(task.taskId, '成功', `已落 Hive 标准库 ${hiveTable.value}，分区 datax=${partitionValue.value}`)
+  await buildPersistRecord()
   Message.success(`已落 Hive 标准库 ${hiveTable.value}，分区 datax=${partitionValue.value}`)
   // 行数验证与落库通知交由后台任务自动执行，页面不需手工触发
   await triggerBackgroundTasks()
@@ -1326,7 +1291,7 @@ const nextStep = async () => {
     if (!matchedTaskIds.value.length) {
       Message.info('前置外发任务匹配为可选环节，未关联也可继续落库')
     }
-    setStatus('任务已匹配')
+    setStatus('前置任务已匹配')
     buildMappingVersion()
   } else if (currentStep.value === 2) {
     if (!persistBatches.value.length) {

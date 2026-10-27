@@ -24,7 +24,6 @@ import {
   createBackid,
   savePersistRecord,
   fetchPersistRecord,
-  fetchNotifyRecords,
   createAsyncTask,
   saveAsyncTask,
   saveTaskLog,
@@ -37,9 +36,9 @@ import type { OutboundTask } from '../mock/outboundTasks'
 import type { BacktrackProduct } from '../mock/backtrackProducts'
 import type { HiveTableItem } from '../mock/hiveTables'
 import type { ValidationDetail, ConsistencySummary, TripleRowCheck } from '../mock/validation'
-import type { NotifyConfig, NotifyContent, NotifyRecord } from '../mock/notify'
+import type { NotifyConfig, NotifyContent } from '../mock/notify'
 import type { PersistRecord, PersistStatus, AsyncTask, AsyncTaskType, TaskResumeContext, BatchStage } from '../mock/backtrackPersist'
-import { PERSIST_STATUS_FLOW } from '../mock/backtrackPersist'
+import { PERSIST_STATUS_FLOW, resolveStatusFromTasks } from '../mock/backtrackPersist'
 
 /**
  * 外数回溯落库流程共享状态与业务逻辑
@@ -88,12 +87,35 @@ interface RequiredFieldRule {
  * @returns 流程状态与业务方法集合
  */
 export function useBacktrackPersist() {
-  /* ---------- 9 态状态机（3.1） ---------- */
-  const currentStatus = ref<PersistStatus>('待开始')
+  /* ---------- 状态机（3.1） ---------- */
+  /**
+   * 手工基准状态：前 5 态（待开始 → 前置任务已匹配）由页面交互推进
+   */
+  const baseStatus = ref<PersistStatus>('待开始')
 
-  /** 设置当前落库状态 */
+  /**
+   * 任务推导状态：后 2 态（临时库已落库 / Hive已落库）由批次任务推导，
+   * 任务列表为唯一事实源，避免页面状态与任务列表出现两套口径
+   */
+  const derivedStatus = computed<PersistStatus | null>(() => resolveStatusFromTasks(batchTasks.value))
+
+  /**
+   * 当前落库状态：手工基准与任务推导取更靠后者
+   * 两者一致时即为真实状态；任务推导优先体现已完成的落库动作
+   */
+  const currentStatus = computed<PersistStatus>(() => {
+    const base = baseStatus.value
+    const derived = derivedStatus.value
+    if (!derived) return base
+    return PERSIST_STATUS_FLOW.indexOf(derived) > PERSIST_STATUS_FLOW.indexOf(base) ? derived : base
+  })
+
+  /**
+   * 设置当前落库状态（仅作用于手工基准态）
+   * @param status 目标状态
+   */
   const setStatus = (status: PersistStatus) => {
-    currentStatus.value = status
+    baseStatus.value = status
   }
 
   /* ---------- B1 选择机构与文件获取 ---------- */
@@ -219,6 +241,8 @@ export function useBacktrackPersist() {
     uploadedFile.value = null
     uploadFileList.value = []
     previewRows.value = []
+    // 换机构即换批次，清空任务集合避免旧批次状态污染新流程的状态推导
+    batchTasks.value = []
     await loadRetroTree()
     if (dataSourceMode.value === 'sftp') {
       setStatus('待开始')
@@ -393,6 +417,8 @@ export function useBacktrackPersist() {
     selectedFile.value = file
     uploadedFile.value = null
     applyFileStructure(file)
+    // 换文件即换批次，清空任务集合避免旧批次状态污染新流程的状态推导
+    batchTasks.value = []
     // 回溯日期由文件名自动解析（3.2 关联条件与 3.3 分区值同源）
     await applyAutoReviewDate(file.name)
     if (!file.encrypted) {
@@ -928,7 +954,6 @@ export function useBacktrackPersist() {
         tempTable: 'tmp_ext_retro_raw',
       },
     ]
-    setStatus('临时库已落库')
     // 临时库数据已变更，需重新执行一致性校验后才可推进 Hive
     consistencyChecked.value = false
     consistencySkipped.value = false
@@ -937,15 +962,10 @@ export function useBacktrackPersist() {
     consistencyDetails.value = []
     // 任务回填 backid 并置为成功，供任务列表查看明细与续做
     if (taskId) {
-      const time = new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
-      await saveAsyncTask(taskId, { status: '成功', finishTime: time })
-      await saveTaskLog(taskId, {
-        time,
-        stage: '任务结束',
-        message: `已全量落临时库，生成 backid 批次 ${backid}`,
-      })
-      // backid 在落临时库收尾时才生成，需回写到任务与续做上下文
+      // backid 在落临时库收尾时才生成，需先回写到任务与续做上下文
       await bindTaskBackid(taskId, backid)
+      // 任务置为成功后，状态由批次任务推导为「临时库已落库」
+      await finishPersistTask(taskId, '成功', `已全量落临时库，生成 backid 批次 ${backid}`)
     }
     Message.success(`已全量落临时库，生成 backid 批次 ${backid}`)
   }
@@ -1163,14 +1183,6 @@ export function useBacktrackPersist() {
     notifyConfig.value = await fetchNotifyConfig()
   }
 
-  /** 通知记录列表（R82） */
-  const notifyRecords = ref<NotifyRecord[]>([])
-
-  /** 加载通知记录 */
-  const loadNotifyRecords = async () => {
-    notifyRecords.value = await fetchNotifyRecords(persistBatches.value[0]?.backid)
-  }
-
   /** 通知发送结果 */
   const notifySent = ref(false)
 
@@ -1198,11 +1210,10 @@ export function useBacktrackPersist() {
         ?? (consistencySkipped.value ? `未执行一致性校验（已跳过：${consistencySkipReason.value}）` : '未执行一致性校验'),
     })
     const records = await dispatchNotification(channels, content, receivers, notifyConfig.value.maskEnabled, notifyConfig.value.maxRetry)
-    notifyRecords.value = records
     notifySent.value = true
     const failed = records.filter((r) => r.sendStatus === '发送失败')
     if (failed.length) {
-      Message.warning(`落库通知已由后台推送，其中 ${failed.length} 条失败（已重试 ${notifyConfig.value.maxRetry} 次），可在通知记录中查看原因`)
+      Message.warning(`落库通知已由后台推送，其中 ${failed.length} 条失败（已重试 ${notifyConfig.value.maxRetry} 次）`)
     } else {
       Message.success('落库通知已由后台推送')
     }
@@ -1212,6 +1223,12 @@ export function useBacktrackPersist() {
 
   /** 本次会话创建的任务列表（供任务明细抽屉展示执行轨迹） */
   const createdTasks = ref<AsyncTask[]>([])
+
+  /**
+   * 当前批次关联的任务集合（状态推导的数据源）
+   * 新建任务时追加、任务结束时同步终态、按 backid 回填时整体替换
+   */
+  const batchTasks = ref<AsyncTask[]>([])
 
   /**
    * 构造任务续做上下文
@@ -1278,6 +1295,8 @@ export function useBacktrackPersist() {
       resumeContext: buildResumeContext(backid, resumeStep),
     })
     createdTasks.value = [task, ...createdTasks.value]
+    // 纳入批次任务集合，作为后两态的状态推导数据源
+    batchTasks.value = [...batchTasks.value.filter((t) => t.taskId !== task.taskId), task]
     return task
   }
 
@@ -1291,6 +1310,10 @@ export function useBacktrackPersist() {
     const time = new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
     await saveTaskLog(taskId, { time, stage: '任务结束', message, error: status === '失败' })
     await saveAsyncTask(taskId, { status, finishTime: time, ...(status === '失败' ? { failReason: message } : {}) })
+    // 同步批次任务集合的终态，状态徽标据此实时推导
+    batchTasks.value = batchTasks.value.map((t) =>
+      t.taskId === taskId ? { ...t, status, finishTime: time } : t
+    )
   }
 
   /**
@@ -1348,7 +1371,10 @@ export function useBacktrackPersist() {
           tempTable: 'tmp_ext_retro_raw',
         },
       ]
-      setStatus('临时库已落库')
+      // 后两态（临时库已落库 / Hive已落库）不在此硬编码，由批次任务推导
+      // 注：上方 onFileSelect 会清空任务集合，此处需按 backid 重新装载
+      const tasks = await fetchTasksByBackid(ctx.backid)
+      batchTasks.value = [...tasks]
     }
     return ctx.resumeStep
   }
@@ -1439,10 +1465,11 @@ export function useBacktrackPersist() {
     if (ctxTask?.resumeContext) {
       await restoreFromResumeContext(ctxTask.resumeContext)
     }
-    // 落库记录与通知记录按 backid 关联，此处一并载入，便于查看批次产出
+    // 批次任务集合作为后两态的状态推导数据源（须在回填之后装载，回填过程会清空）
+    batchTasks.value = [...tasks]
+    // 落库记录按 backid 关联，此处一并载入，便于查看批次产出
     const record = await fetchPersistRecord(backid)
     if (record) persistRecord.value = record
-    await loadNotifyRecords()
     return { stage, tasks }
   }
 
@@ -1575,8 +1602,6 @@ export function useBacktrackPersist() {
     // B5
     notifyConfig,
     loadNotifyConfig,
-    notifyRecords,
-    loadNotifyRecords,
     notifySent,
     sendNotify,
     // 落库记录

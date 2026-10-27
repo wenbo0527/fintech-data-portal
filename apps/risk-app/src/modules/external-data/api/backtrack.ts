@@ -6,6 +6,7 @@ import {
   listAsyncTasks,
   listAsyncTasksByBackid,
   resolveBatchStage,
+  resolveStatusFromTasks,
   findDuplicateWriteTask,
   appendAsyncTask,
   updateAsyncTask,
@@ -14,10 +15,10 @@ import {
   bindAsyncTaskBackid,
   getPersistRecord,
   appendPersistRecord,
-  listNotifyRecords,
+  appendNotifyRecords,
   generateBackid,
 } from '../mock/backtrackPersist'
-import type { AsyncTask, PersistRecord, NotifyRecord, TaskLogEntry, BatchStage } from '../mock/backtrackPersist'
+import type { AsyncTask, PersistRecord, NotifyRecord, TaskLogEntry, BatchStage, PersistStatus } from '../mock/backtrackPersist'
 import { getStdFieldNames, getStdFieldComment } from '../mock/stdFieldLibrary'
 import {
   listRetroFiles,
@@ -96,6 +97,16 @@ export async function fetchBatchStage(tasks: AsyncTask[]): Promise<BatchStage | 
   return null
 }
 
+/**
+ * 按批次任务推导落库状态机状态
+ * 后两态（临时库已落库 / Hive已落库）以任务列表为唯一事实源
+ * @param tasks 该 backid 关联的任务集合
+ */
+export async function fetchBatchStatus(tasks: AsyncTask[]): Promise<PersistStatus | null> {
+  if (useMock) return resolveStatusFromTasks(tasks)
+  return null
+}
+
 /** 文件指纹判重（R90：写操作类命中则阻断，只读类放行） */
 export async function checkDuplicateWriteTask(fileFingerprint: string, excludeTaskId?: string): Promise<AsyncTask | null> {
   if (useMock) return findDuplicateWriteTask(fileFingerprint, excludeTaskId)
@@ -152,12 +163,6 @@ export async function fetchPersistRecord(backid: string): Promise<PersistRecord 
 export async function savePersistRecord(record: PersistRecord): Promise<PersistRecord> {
   if (useMock) return appendPersistRecord(record)
   throw new Error('未接入后端服务，无法保存落库记录')
-}
-
-/** 查询通知记录 */
-export async function fetchNotifyRecords(backid?: string): Promise<NotifyRecord[]> {
-  if (useMock) return listNotifyRecords(backid)
-  return []
 }
 
 /** 生成 backid（R51） */
@@ -285,7 +290,7 @@ export async function createNotifyContent(params: {
   return { ...params }
 }
 
-/** 执行通知发送（R76 自动触发 / R81 失败重试 3 次） */
+/** 执行通知发送（R76 自动触发 / R81 失败重试 3 次），发送结果留存通知记录（R82） */
 export async function dispatchNotification(
   channels: NotifyChannel[],
   content: NotifyContent,
@@ -293,6 +298,9 @@ export async function dispatchNotification(
   maskEnabled: boolean,
   maxRetry = 3
 ): Promise<NotifyRecord[]> {
-  if (useMock) return sendNotification(channels, content, receivers, maskEnabled, maxRetry)
+  if (useMock) {
+    const records = await sendNotification(channels, content, receivers, maskEnabled, maxRetry)
+    return appendNotifyRecords(records)
+  }
   return []
 }

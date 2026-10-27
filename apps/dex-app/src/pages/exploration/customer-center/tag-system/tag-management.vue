@@ -752,7 +752,7 @@ const addTag = () => {
 
 // 自定义规则创建标签
 const addTagByRule = () => {
-  router.push({ name: 'tag-create' })
+  router.push({ name: 'TagSystemTagCreate' })
 }
 
 // 数据导入创建标签

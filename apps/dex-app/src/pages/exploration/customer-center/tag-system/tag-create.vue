@@ -552,7 +552,7 @@ const saveTag = () => {
 
 // 返回标签管理页面
 const goBack = () => {
-  router.push({ name: 'tag-management' })
+  router.push({ name: 'TagSystemTagManagement' })
 }
 </script>
 

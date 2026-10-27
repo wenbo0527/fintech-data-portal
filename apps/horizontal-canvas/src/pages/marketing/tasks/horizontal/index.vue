@@ -67,7 +67,71 @@
     </div>
   </a-modal>
 
-      <div class="content" ref="contentRef" @mousedown="onContentMouseDown" @mouseover="onContentMouseOver" @mouseout="onContentMouseOut">
+      <!-- 查看态顶部双 TAB + 通用时间筛选器（A0 / 模块 D） -->
+      <div v-if="statsAvailable" class="view-tabs">
+        <div class="view-tabs__nav" role="tablist" aria-label="画布视图切换">
+          <button
+            type="button"
+            role="tab"
+            class="view-tab"
+            :class="{ 'is-active': viewTab === 'structure' }"
+            :aria-selected="viewTab === 'structure'"
+            @click="switchViewTab('structure')"
+          >画布结构</button>
+          <button
+            type="button"
+            role="tab"
+            class="view-tab"
+            :class="{ 'is-active': viewTab === 'stats' }"
+            :aria-selected="viewTab === 'stats'"
+            @click="switchViewTab('stats')"
+          >数据统计</button>
+        </div>
+        <div class="view-tabs__extra">
+          <!-- B1 用户定向检索（仅画布结构 TAB） -->
+          <a-space v-if="viewTab === 'structure'" size="mini">
+            <a-input
+              v-model="customerSearchKey"
+              size="small"
+              style="width: 200px"
+              placeholder="检索客户号 / 手机号"
+              allow-clear
+              @press-enter="handleCustomerSearch"
+            />
+            <a-button size="small" @click="handleCustomerSearch">检索</a-button>
+            <a-button v-if="highlightedPath.length" size="small" @click="clearPathHighlight">清除高亮</a-button>
+          </a-space>
+          <StatsTimeFilter
+            :preset="statsPreset"
+            :from="statsFrom"
+            :to="statsTo"
+            :run-from="canvasRunFrom"
+            :run-to="canvasRunTo"
+            @change="onStatsRangeChange"
+          />
+        </div>
+      </div>
+
+      <!-- 数据统计 TAB：大盘视角（A1 KPI + A2 整体流量趋势 + A4 全量客户明细），不含节点维度 -->
+      <div v-if="isStatsTabActive" class="stats-view">
+        <CanvasStatsDashboard
+          :canvas-id="statsCanvasId"
+          :range="resolvedStatsRange"
+          :finished="!isCanvasRunning"
+          :cutoff-at="statsCutoffAt"
+          @open-customers="handleDashboardOpenCustomers"
+        />
+      </div>
+
+      <div
+        class="content"
+        :class="{ 'has-node-drawer': nodeDrawerVisible }"
+        v-show="!isStatsTabActive"
+        ref="contentRef"
+        @mousedown="onContentMouseDown"
+        @mouseover="onContentMouseOver"
+        @mouseout="onContentMouseOut"
+      >
 
     <CanvasHistoryPanel
       v-if="showHistoryPanel"
@@ -199,24 +263,53 @@
       @update:position="onDebugPanelPositionUpdate"
     />
     
-    <!-- 统计信息面板 - 仅在查看模式且发布状态下显示 -->
-    <div 
-      v-if="hasStatsPanelActive" 
-      class="statistics-panel-container"
-      :style="{ left: debugDockBounds.left + 'px', width: debugDockBounds.width + 'px', height: statisticsPanelHeight + 'px' }"
-      ref="statisticsPanelRef"
-    >
-      <div class="statistics-panel-resize-handle--top" @mousedown="startVerticalResize"></div>
-      <CanvasStatisticsPanel
-        :canvas-id="editingTaskId || 'default-canvas'"
-        :graph="graph"
-        :focus-node-id="statsFocusNodeId"
-        @close="closeStatisticsPanel"
-        @node-select="handleNodeSelect"
-        @path-highlight="handlePathHighlight"
-      />
+    <!-- 节点统计抽屉（A3）：仅画布结构 TAB 内，点击节点后临时出现 -->
+    <NodeStatsDrawer
+      v-if="nodeDrawerVisible && statsFocusNode"
+      class="node-drawer-host"
+      :canvas-id="statsCanvasId"
+      :node="statsFocusNode"
+      :range="resolvedStatsRange"
+      :finished="!isCanvasRunning"
+      :cutoff-at="statsCutoffAt"
+      @close="closeNodeDrawer"
+      @open-customers="handleDrawerOpenCustomers"
+    />
+
+    <!-- A4 下钻视图（节点 / 分支 / 单日维度）：覆盖层，保留上游筛选与返回落点 -->
+    <div v-if="detailOverlay" class="overlay-layer">
+      <div class="overlay-layer__panel">
+        <div class="overlay-layer__head">
+          <a-button size="small" @click="closeDetailOverlay">
+            <template #icon><IconLeft /></template>
+            返回
+          </a-button>
+          <span class="overlay-layer__title">客户明细列表</span>
+        </div>
+        <div class="overlay-layer__body">
+          <CustomerDetailTable
+            :canvas-id="statsCanvasId"
+            :range="resolvedStatsRange"
+            :source-dimension="detailOverlay"
+            @detail="openCustomerFlow"
+          />
+        </div>
+      </div>
     </div>
-    
+
+    <!-- A5 单客户流水详情（与 B1 检索共用同一页面） -->
+    <div v-if="customerFlow" class="overlay-layer overlay-layer--top">
+      <div class="overlay-layer__panel overlay-layer__panel--full">
+        <CustomerFlowPanel
+          :canvas-id="statsCanvasId"
+          :customer-no="customerFlow.customerNo"
+          :range="resolvedStatsRange"
+          :source="customerFlow.source"
+          @back="closeCustomerFlow"
+        />
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -264,7 +357,14 @@ import { IconEdit, IconCheck } from '@arco-design/web-vue/es/icon'
  
 import { useRouter, useRoute } from 'vue-router'
 import { TaskStorage } from '../../../../utils/taskStorage.js'
-import CanvasStatisticsPanel from '@/components/statistics/CanvasStatisticsPanel.vue'
+import CanvasStatsDashboard from '@/components/statistics/CanvasStatsDashboard.vue'
+import NodeStatsDrawer from '@/components/statistics/NodeStatsDrawer.vue'
+import CustomerDetailTable from '@/components/statistics/CustomerDetailTable.vue'
+import CustomerFlowPanel from '@/components/statistics/CustomerFlowPanel.vue'
+import StatsTimeFilter from '@/components/statistics/StatsTimeFilter.vue'
+import { resolveStatsRange } from '@/utils/statsRange.js'
+import { toDateStr } from '@/utils/canvasFlowDataset.js'
+import { RuntimeStatsMock } from '@/utils/runtimeStatsMock.js'
 import { collectCanvasData, loadCanvasData as loadCanvasDataSvc, saveTask as saveTaskSvc, publishTask as publishTaskSvc, validateForPublish } from './persistence/PersistenceService'
 import { useCurrentUser } from '../../../../composables/useCurrentUser.js'
 import * as tracker from '../../../../utils/trackerService.js'
@@ -309,7 +409,7 @@ const editingTaskVersion = ref(null)
 const isLoadingTask = ref(false)
 
 // 统计面板与画布状态
-const { showStatisticsPanel, showMinimap, scaleDisplayText, statisticsPanelWidth, statisticsPanelHeight } = useCanvasState()
+const { showStatisticsPanel, showMinimap, scaleDisplayText, statisticsPanelWidth } = useCanvasState()
 const isViewMode = computed(() => route.query.mode === 'view')
 const selectedVersionId = ref('')
 const versionOptions = computed(() => {
@@ -332,9 +432,62 @@ const isEmptyCanvas = computed(() => {
   } catch { return false }
 })
 
-// 统计面板激活态：仅在有焦点节点时预留空间与展示
+// 统计抽屉聚焦的节点 ID
 const statsFocusNodeId = ref('')
-const hasStatsPanelActive = computed(() => showStatisticsPanel.value && isViewMode.value && isPublished.value && !!statsFocusNodeId.value)
+
+// ===== A0 查看态双 TAB 与统计区间 =====
+/** 当前视图 TAB：structure（画布结构）/ stats（数据统计） */
+const viewTab = ref('structure')
+/** 时间筛选预设：today / 7d / 30d / 90d / custom */
+const statsPreset = ref('7d')
+/** 自定义区间起止（YYYY-MM-DD） */
+const statsFrom = ref('')
+const statsTo = ref('')
+/** 数据截止时刻（运行中画布的标注来源） */
+const statsCutoffAt = ref(Date.now())
+/** 节点统计抽屉是否展开 */
+const nodeDrawerVisible = ref(false)
+/** 抽屉聚焦节点 { id, name, type, config } */
+const statsFocusNode = ref(null)
+/** A4 下钻覆盖层来源维度 */
+const detailOverlay = ref(null)
+/** A5 单客户流水详情 { customerNo, source } */
+const customerFlow = ref(null)
+/** B1 检索关键词 */
+const customerSearchKey = ref('')
+/** B2 已高亮的路径节点 ID 集合 */
+const highlightedPath = ref([])
+
+/** 统计能力是否可用（R74：仅运行中与已结束画布） */
+const statsAvailable = computed(() => isViewMode.value && ['running', 'published', 'completed'].includes(String(taskStatus.value)))
+/** 画布是否运行中（运行中才标注截止时间与进行中） */
+const isCanvasRunning = computed(() => String(taskStatus.value) === 'running')
+/** 是否处于数据统计 TAB */
+const isStatsTabActive = computed(() => statsAvailable.value && viewTab.value === 'stats')
+
+/** 画布运行周期起点（用于 R44 区间裁剪） */
+const canvasRunFrom = computed(() => {
+  try {
+    const versions = TaskStorage.getTaskVersions(editingTaskId.value) || []
+    const active = versions.find(v => String(v.version) === String(editingTaskVersion.value)) || versions[0] || {}
+    const raw = active.publishTime || active.createTime || ''
+    return raw ? toDateStr(new Date(raw)) : ''
+  } catch { return '' }
+})
+/** 画布运行周期终点 */
+const canvasRunTo = computed(() => toDateStr(new Date()))
+
+/** 统计组件使用的画布标识（统一为字符串，避免 prop 类型告警） */
+const statsCanvasId = computed(() => String(editingTaskId.value || 'default-canvas'))
+
+/** 生效的统计区间（两个 TAB 全局联动） */
+const resolvedStatsRange = computed(() => resolveStatsRange({
+  preset: statsPreset.value,
+  from: statsFrom.value,
+  to: statsTo.value,
+  runFrom: canvasRunFrom.value,
+  runTo: canvasRunTo.value
+}))
 
 const canvasContainerRef = ref(null)
 const contentRef = ref(null)
@@ -546,12 +699,8 @@ const showSnapline = ref(true)
 
 // 横版专用快速布局实例
 
-// 统计面板尺寸与拖拽状态
-// 由 useCanvasState 提供 statisticsPanelWidth/statisticsPanelHeight
-  const statsPanelPosition = ref({ left: 16, top: 64 })
-  const statisticsPanelRef = ref(null)
-  const toolbarWrapperRef = ref(null)
-const isResizing = ref(false)
+// 工具栏容器引用与统计面板停靠相关状态
+const toolbarWrapperRef = ref(null)
 const statisticsPanelTop = ref(0)
 
 function updateStatisticsPanelTop() {
@@ -560,33 +709,6 @@ function updateStatisticsPanelTop() {
 
 function updateDebugDockBounds() {
   try { useCanvasState().updateDebugDockBounds(contentRef.value, showStatisticsPanel, isViewMode.value, isPublished.value, statisticsPanelWidth, debugDockBounds) } catch {}
-}
-
-// 移除未使用的禁用态计算属性
-
-/**
- * 测试横版快速布局功能
- */
-// 移除未使用的测试与抽屉控制函数
-  
-// 移除未使用的统计面板宽度拖拽函数（已使用顶部拖拽）
-
-function startVerticalResize(event) {
-  isResizing.value = true
-  const startY = event.clientY
-  const startHeight = statisticsPanelHeight.value
-  const handleMouseMove = (e) => {
-    const deltaY = startY - e.clientY
-    const newHeight = Math.max(180, Math.min(520, startHeight + deltaY))
-    statisticsPanelHeight.value = newHeight
-  }
-  const handleMouseUp = () => {
-    isResizing.value = false
-    document.removeEventListener('mousemove', handleMouseMove)
-    document.removeEventListener('mouseup', handleMouseUp)
-  }
-  document.addEventListener('mousemove', handleMouseMove)
-  document.addEventListener('mouseup', handleMouseUp)
 }
 
 function performCopyFromSelection() {
@@ -633,70 +755,221 @@ function performPasteFromClipboard() {
 
 
 
+/* ===================== 查看态统计：A0 / D / A3 / A4 / A5 / B1 / B2 ===================== */
+
 /**
- * 处理节点选择事件
+ * 按容器实测尺寸同步 X6 图实例尺寸
+ * 说明：X6 的 graph.resize() 无参调用会沿用初始化时的 options.width/height，
+ *      抽屉展开导致 .canvas-container 收缩后图实例仍保留旧宽度，视图矩阵与可视区不一致。
+ *      此处显式传入容器 clientWidth/clientHeight，保证图实例尺寸与可视区一致。
+ * 返回：void
  */
-const handleNodeSelect = (nodeIds) => {
-  // 这里可以实现节点高亮或其他交互逻辑
-  if (graph && nodeIds && nodeIds.length > 0) {
-    // 清除之前的选中状态
-    graph.getSelectedCells().forEach(cell => {
-      if (cell.isNode()) {
-        graph.unselect(cell)
-      }
-    })
-    
-    // 选中新节点
-    nodeIds.forEach(nodeId => {
-      const node = graph.getCellById(nodeId)
-      if (node && node.isNode()) {
-        graph.select(node)
-      }
-    })
+function syncGraphSize() {
+  try {
+    if (!graph || !graph.resize) return
+    const el = canvasContainerRef.value
+    if (!el) { graph.resize(); return }
+    const w = el.clientWidth
+    const h = el.clientHeight
+    if (!w || !h) { graph.resize(); return }
+    graph.resize(w, h)
+  } catch {}
+}
+
+/**
+ * 切换查看页 TAB（A0）
+ * 入参：tab('structure' | 'stats')
+ * 返回：void
+ * 边界：节点统计抽屉只在画布结构 TAB 出现（R76）；切换后同步画布尺寸
+ */
+function switchViewTab(tab) {
+  viewTab.value = tab === 'stats' ? 'stats' : 'structure'
+  if (viewTab.value === 'stats') nodeDrawerVisible.value = false
+  showStatisticsPanel.value = viewTab.value === 'stats'
+  nextTick(() => syncGraphSize())
+}
+
+/**
+ * 时间筛选变化：全局联动两个 TAB（模块 D / R42）
+ * 入参：payload({ preset, from, to })
+ * 返回：void
+ */
+function onStatsRangeChange(payload) {
+  statsPreset.value = payload?.preset || '7d'
+  statsFrom.value = payload?.from || ''
+  statsTo.value = payload?.to || ''
+}
+
+/**
+ * 打开节点统计抽屉（R13-2：画布结构 TAB 内点击任意节点即滑出）
+ * 入参：node(X6 Node)
+ * 返回：void
+ */
+function openNodeStatsDrawer(node) {
+  try {
+    const data = node?.getData?.() || {}
+    const id = String(node?.id || '')
+    if (!id) return
+    statsFocusNodeId.value = id
+    statsFocusNode.value = {
+      id,
+      name: data.nodeName || data.headerTitle || data.label || id,
+      type: data.type || data.nodeType || 'node',
+      config: data.config || {}
+    }
+    nodeDrawerVisible.value = true
+    nextTick(() => syncGraphSize())
+  } catch {}
+}
+
+/**
+ * 关闭节点统计抽屉（R76）
+ * 返回：void
+ */
+function closeNodeDrawer() {
+  nodeDrawerVisible.value = false
+  nextTick(() => syncGraphSize())
+}
+
+/**
+ * 节点抽屉下钻到 A4 客户明细（R13-1 / R66）
+ * 入参：payload({ type, label, nodeId, branchKey, enterFrom, enterTo })
+ * 返回：void
+ * 说明：enterFrom / enterTo 为「进入时刻」窗口（毫秒时间戳），用于按进入时间查看的下钻
+ */
+function handleDrawerOpenCustomers(payload) {
+  detailOverlay.value = {
+    type: payload?.type || 'node',
+    label: payload?.label || '节点',
+    nodeId: payload?.nodeId || '',
+    branchKey: payload?.branchKey || '',
+    enterFrom: payload?.enterFrom || 0,
+    enterTo: payload?.enterTo || 0
   }
 }
 
 /**
- * 处理路径高亮事件
+ * 大盘下钻：A2 单日 → A4（带日期）；A4 行「详情」→ A5
+ * 入参：payload({ date } | { row })
+ * 返回：void
  */
-const handlePathHighlight = (pathData) => {
-  // 这里可以实现路径高亮逻辑
-  if (graph && pathData && pathData.path) {
-    // 清除之前的高亮
-    graph.getEdges().forEach(edge => {
-      edge.setAttrs({
-        line: {
-          stroke: '#94a3b8',
-          strokeWidth: 2
-        }
-      })
-    })
-    
-    // 高亮路径中的边
-    pathData.path.forEach((node, index) => {
-      if (index < pathData.path.length - 1) {
-        const nextNode = pathData.path[index + 1]
-        const edges = graph.getEdges().filter(edge => {
-          const sourceId = edge.getSourceCellId()
-          const targetId = edge.getTargetCellId()
-          return sourceId === node.nodeId && targetId === nextNode.nodeId
-        })
-        
-        edges.forEach(edge => {
-          edge.setAttrs({
-            line: {
-              stroke: '#f59e0b',
-              strokeWidth: 3
-            }
-          })
-        })
-      }
-    })
+function handleDashboardOpenCustomers(payload) {
+  if (payload?.date) {
+    detailOverlay.value = {
+      type: 'canvas',
+      label: `全画布 · ${payload.date}`,
+      nodeId: '',
+      branchKey: '',
+      from: payload.date,
+      to: payload.date
+    }
+    return
   }
+  if (payload?.row) openCustomerFlow(payload.row)
 }
 
-function closeStatisticsPanel() {
-  try { showStatisticsPanel.value = false; statsFocusNodeId.value = '' } catch {}
+/**
+ * 关闭 A4 下钻覆盖层（R73-1：返回后节点抽屉保持展开、画布视口不变）
+ * 返回：void
+ */
+function closeDetailOverlay() {
+  detailOverlay.value = null
+}
+
+/**
+ * 打开 A5 单客户流水详情（A4 下钻与 B1 检索共用）
+ * 入参：row(object)
+ * 返回：void
+ */
+function openCustomerFlow(row) {
+  const no = row?.customerNo || ''
+  if (!no) return
+  customerFlow.value = { customerNo: no, source: 'detail' }
+}
+
+/**
+ * 关闭 A5，返回来源页（R73：返回后保留原筛选/检索词）
+ * 返回：void
+ */
+function closeCustomerFlow() {
+  customerFlow.value = null
+}
+
+/**
+ * B1 客户定向检索：支持客户唯一 ID 与绑定手机号，自动识别
+ * 返回：void
+ */
+function handleCustomerSearch() {
+  const kw = String(customerSearchKey.value || '').trim()
+  if (!kw) {
+    try { Message.warning('请输入客户号或手机号') } catch {}
+    return
+  }
+  let matched = null
+  try {
+    const list = RuntimeStatsMock.searchCustomers(String(editingTaskId.value || 'default-canvas'), kw, {
+      from: resolvedStatsRange.value.from,
+      to: resolvedStatsRange.value.to,
+      days: resolvedStatsRange.value.days,
+      limit: 1
+    }) || []
+    matched = list[0] || null
+  } catch { matched = null }
+  if (!matched) {
+    try { Message.warning('未查询到该用户在画布内的流转记录') } catch {}
+    clearPathHighlight()
+    return
+  }
+  customerFlow.value = { customerNo: matched.customerNo, source: 'search' }
+  highlightCustomerPath(matched.customerNo)
+}
+
+/**
+ * B2 画布路径可视化高亮：走过的节点与连线高亮，其余置灰
+ * 入参：customerNo(string)
+ * 返回：void
+ */
+function highlightCustomerPath(customerNo) {
+  try {
+    const path = RuntimeStatsMock.getUserPath(String(editingTaskId.value || 'default-canvas'), String(customerNo)) || []
+    const ids = path.map(String)
+    if (!ids.length) return
+    highlightedPath.value = ids
+    const set = new Set(ids)
+    graph.getNodes().forEach(n => {
+      try {
+        const on = set.has(String(n.id))
+        n.removeClass?.('path-highlight')
+        n.removeClass?.('path-dimmed')
+        if (on) n.addClass?.('path-highlight')
+        else n.addClass?.('path-dimmed')
+      } catch {}
+    })
+    graph.getEdges().forEach(e => {
+      try {
+        const s = String(e.getSourceCellId?.() || '')
+        const t = String(e.getTargetCellId?.() || '')
+        const on = set.has(s) && set.has(t)
+        e.setAttrs({ line: { stroke: on ? '#f59e0b' : '#4C78FF', strokeWidth: on ? 3 : 2, opacity: on ? 1 : 0.25 } })
+      } catch {}
+    })
+  } catch {}
+}
+
+/**
+ * B2 一键清除高亮，恢复原始视图（R25）
+ * 返回：void
+ */
+function clearPathHighlight() {
+  highlightedPath.value = []
+  try {
+    graph.getNodes().forEach(n => {
+      try { n.removeClass?.('path-highlight'); n.removeClass?.('path-dimmed') } catch {}
+    })
+    graph.getEdges().forEach(e => {
+      try { e.setAttrs({ line: { stroke: '#4C78FF', strokeWidth: 2, opacity: 1 } }) } catch {}
+    })
+  } catch {}
 }
 
 // 测试调试功能的函数
@@ -1186,15 +1459,11 @@ onMounted(async () => {
   new CanvasController({
     graph,
     readOnly: isViewMode.value,
-    isStatisticsMode: () => !!showStatisticsPanel.value,
-    onNodeClickForStats: (node) => { 
-      try { 
-        const id = String(node?.id || '')
-        statsFocusNodeId.value = id
-        try { window.dispatchEvent(new CustomEvent('stats:focus', { detail: { id } })) } catch {}
-    showStatisticsPanel.value = true 
-    } catch {} 
-  },
+    // 统计模式：画布结构 TAB 内点击节点唤出节点统计抽屉（A0 / R13-2）
+    isStatisticsMode: () => statsAvailable.value && viewTab.value === 'structure',
+    onNodeClickForStats: (node) => {
+      openNodeStatsDrawer(node)
+    },
     openConfigDrawer: (type, node, data) => {
       configDrawers.openConfigDrawer(type, node, { ...(data || {}), __readOnly: isViewMode.value });
     },
@@ -1241,6 +1510,13 @@ onMounted(async () => {
   graph.on('node:mouseleave', ({ node }) => {
     if (isPanning.value) return
     try { node.removeClass && node.removeClass('node-hover') } catch {}
+  })
+
+  // 点击画布空白处收起节点统计抽屉（R76）
+  graph.on('blank:click', () => {
+    try {
+      if (nodeDrawerVisible.value) closeNodeDrawer()
+    } catch {}
   })
   
   graph.on('node:selected', ({ node }) => {
@@ -1805,7 +2081,7 @@ const bindNodeClickEvents = () => {
       try {
         if (isNodeMenuHot(e)) return
         // 统计模式：节点点击用于切换统计焦点（由 EventService 统一处理），此处不打开配置抽屉
-        if (showStatisticsPanel.value) return
+        if (statsAvailable.value && viewTab.value === 'structure') return
         openNodeConfigDrawer(node)
       } catch {}
     })
@@ -2539,45 +2815,8 @@ const handleJumpToHistoryState = (index) => {
     }, 100)
   }
   const onToggleStatisticsPanel = (payload) => {
-    showStatisticsPanel.value = !showStatisticsPanel.value
-    try {
-      const canvasRect = canvasContainerRef.value?.getBoundingClientRect?.()
-      const toolbarRect = toolbarWrapperRef.value?.getBoundingClientRect?.()
-      const anchor = payload?.anchorRect || toolbarRect
-      if (anchor && canvasRect) {
-        const offsetY = 8
-        const left = Math.max(16, anchor.left - canvasRect.left)
-        const top = Math.max(16, anchor.bottom - canvasRect.top + offsetY)
-        statsPanelPosition.value = { left, top }
-      } else {
-        statsPanelPosition.value = { left: 16, top: 64 }
-      }
-    } catch { statsPanelPosition.value = { left: 16, top: 64 } }
-
-    try {
-      if (showStatisticsPanel.value && graph) {
-        const nodes = graph.getNodes?.() || []
-        const start = nodes.find(n => { try { const d = n.getData?.() || {}; return d.type === 'start' || d.nodeType === 'start' } catch { return false } })
-        statsFocusNodeId.value = String((start && start.id) || (nodes[0]?.id) || statsFocusNodeId.value || '')
-      }
-    } catch {}
-
-    nextTick(() => {
-      try {
-        const panel = statisticsPanelRef.value?.getBoundingClientRect?.()
-        const canvasRect = canvasContainerRef.value?.getBoundingClientRect?.()
-        if (panel && canvasRect) {
-        statsPanelPosition.value = useCanvasState().clampPanelPosition(statsPanelPosition.value, canvasRect, panel, 16)
-        }
-      } catch {}
-      try {
-        const contentRect = contentRef.value?.getBoundingClientRect?.()
-        const canvasRectNow = canvasContainerRef.value?.getBoundingClientRect?.()
-        const cs = window.getComputedStyle ? window.getComputedStyle(contentRef.value) : null
-        const pr = cs ? parseInt(cs.paddingRight || '0', 10) : 0
-        const statsW = Number(statisticsPanelWidth.value || 0)
-      } catch {}
-    })
+    // 工具栏「统计」按钮：切换查看页的数据统计 TAB（A0）
+    switchViewTab(viewTab.value === 'stats' ? 'structure' : 'stats')
   }
 
 const handleToggleMinimap = (payload) => {
@@ -3096,35 +3335,91 @@ const testClick = () => {
   margin-bottom: 12px;
  }
 
-/* 统计面板容器样式 */
-.statistics-panel-container {
-  position: fixed;
-  left: 0;
-  right: auto;
-  top: auto;
-  bottom: 0;
-  background: #fff;
-  border-top: 1px solid #e5e7eb;
-  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
-  z-index: 1200;
+/* ===== 查看态统计：A0 双 TAB / D 时间筛选 / A3 节点抽屉 / A4-A5 覆盖层 ===== */
+.view-tabs {
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 16px;
+  background: rgba(255, 255, 255, 0.95);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+}
+.view-tabs__nav { display: flex; gap: 4px; }
+.view-tab {
+  position: relative;
+  padding: 10px 16px;
+  font-size: 14px;
+  color: #64748b;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.view-tab:hover { color: #1e293b; }
+.view-tab.is-active { color: #1d4ed8; font-weight: 600; }
+.view-tab.is-active::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -1px;
+  height: 2px;
+  background: #2563eb;
+  border-radius: 2px 2px 0 0;
+}
+.view-tabs__extra { display: flex; align-items: center; gap: 12px; }
+
+.stats-view { flex: 1; overflow: auto; }
+
+/* 节点统计抽屉宿主：绝对定位于画布右侧，不遮挡画布主体 */
+.node-drawer-host {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+}
+.content.has-node-drawer .canvas-container {
+  width: calc(100% - 600px) !important;
 }
 
-.statistics-panel-resize-handle--top {
+/* A4 / A5 覆盖层 */
+.overlay-layer {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: -4px;
-  height: 8px;
-  cursor: ns-resize;
-  background: transparent;
-  z-index: 1;
+  inset: 0;
+  z-index: 1300;
+  background: rgba(241, 245, 249, 0.96);
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  overflow: auto;
 }
-.statistics-panel-resize-handle--top:hover {
-  background: rgba(59, 130, 246, 0.15);
+.overlay-layer--top { z-index: 1400; }
+.overlay-layer__panel {
+  width: 100%;
+  max-width: 1180px;
+  align-self: flex-start;
+  background: #f7f8fa;
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
+.overlay-layer__panel--full { max-width: 1380px; }
+.overlay-layer__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #fff;
+  border-bottom: 1px solid #e5e6eb;
+}
+.overlay-layer__title { font-size: 15px; font-weight: 600; color: #1d2129; }
+.overlay-layer__body { padding: 16px; overflow: auto; }
+
+/* B2 路径高亮：走过的节点保持高亮，其余置灰 */
+.content :deep(.x6-node.path-dimmed) { opacity: .25; }
+.content :deep(.x6-node.path-highlight .x6-node-foreign-object) { filter: drop-shadow(0 0 4px rgba(245, 158, 11, .85)); }
 
 /* 校验对话框 */
 .validation-list { display: flex; flex-direction: column; gap: 10px; max-height: 60vh; overflow-y: auto; }
@@ -3151,8 +3446,5 @@ const testClick = () => {
   overflow: hidden;
 }
 
-.horizontal-task-flow-page:has(.statistics-panel-container) .content {
-  margin-right: 0;
-}
 </style>
   

@@ -1,5 +1,5 @@
 import { migrateCanvasData, MIGRATION_VERSION } from './migrateCanvasData.js'
-import { RuntimeStatsMock } from './runtimeStatsMock.js'
+import { RuntimeStatsMock, clearFlowDatasetCache } from './runtimeStatsMock.js'
 import { submitApproval as submitApprovalSvc, approveVersions as approveVersionsSvc, withdrawApproval as withdrawApprovalSvc } from './approvalService.js'
 
 const KEY = 'horizontal_canvas_tasks'
@@ -75,6 +75,8 @@ export const TaskStorage = {
 
   updateTask(id, data) {
     // DocRef: 架构文档「关键代码片段/本地任务存储：创建与更新」
+    // 画布结构可能变化，清空运行态统计数据集缓存，避免统计口径与画布不一致
+    if (data && data.canvasData) { try { clearFlowDatasetCache() } catch {} }
     const list = this.getAllTasks()
     const idx = list.findIndex(t => String(t.id) === String(id))
     if (idx >= 0) {
@@ -109,7 +111,13 @@ export const TaskStorage = {
   },
 
   // DocRef: 架构文档「关键代码片段/本地任务存储：创建与更新」
-  createTask(task) { const t = { id: String(Date.now()), ...task }; this.saveTask(t); return t },
+  createTask(task) {
+    const t = { id: String(Date.now()), ...task }
+    this.saveTask(t)
+    // 画布结构可能变化，清空运行态统计数据集缓存，避免统计口径与画布不一致
+    try { clearFlowDatasetCache() } catch {}
+    return t
+  },
   getStorageStats() { const list = this.getAllTasks(); return { totalTasks: list.length } },
 
   // 审批流转发到 approvalService（审批读写与 TaskStorage 同一份 localStorage 列表）
@@ -135,6 +143,14 @@ export const TaskStorage = {
     const list = this.getAllTasks()
     if (Array.isArray(list) && list.length) return
     const now = new Date().toLocaleString('zh-CN')
+    // 运行周期起点：mock 任务视为已上线 N 天，R44 裁剪与 A2 趋势图据此推导多日区间
+    const runFromDaysAgo = (days) => {
+      const d = new Date()
+      d.setDate(d.getDate() - days)
+      d.setHours(0, 0, 0, 0)
+      return d.toISOString()
+    }
+    const publishedDaysAgo = 6
     // 统计模式种子数据：versions[].status 必须为 published/running，
     // 否则画布页 isPublished 恒为 false，统计入口不出现
     const statsCanvas = {
@@ -143,7 +159,8 @@ export const TaskStorage = {
         { id: 'crowd', type: 'crowd-split', x: 260, y: 220, label: '人群分流', isConfigured: true, config: { nodeType: 'crowd-split', crowdLayers: [ { id: 'layer_1', order: 1, crowdId: 'c_black', crowdName: '黑名单' }, { id: 'layer_2', order: 2, crowdId: 'c_high', crowdName: '高响应客群' } ], unmatchBranch: { id: 'unmatch', name: '其他', isDefault: true, crowdId: '', crowdName: '其他', order: 3 } } },
         { id: 'ab', type: 'ab-test', x: 460, y: 220, label: 'AB实验', isConfigured: true, config: { nodeType: 'ab-test', experimentName: '短信模板AB', description: '对比两种文案', branches: [ { id: 'branch_1', name: '文案A', label: '文案A', percentage: 50 }, { id: 'branch_2', name: '文案B', label: '文案B', percentage: 50 } ] } },
         { id: 'sms', type: 'sms', x: 660, y: 220, label: '短信', isConfigured: true, config: { nodeType: 'sms', smsTemplate: 'marketing' } },
-        { id: 'end', type: 'end', x: 860, y: 220, label: '结束', isConfigured: true }
+        { id: 'wait', type: 'wait', x: 860, y: 220, label: '等待', isConfigured: true, config: { nodeType: 'wait', nodeName: '等待', value: 10, unit: '分钟' } },
+        { id: 'end', type: 'end', x: 1060, y: 220, label: '结束', isConfigured: true }
       ],
       connections: [
         { source: 'start', target: 'crowd', sourcePort: 'out-0', targetPort: 'in' },
@@ -152,7 +169,8 @@ export const TaskStorage = {
         { source: 'crowd', target: 'sms', sourcePort: 'out-2', targetPort: 'in' },
         { source: 'ab', target: 'sms', sourcePort: 'out-0', targetPort: 'in' },
         { source: 'ab', target: 'sms', sourcePort: 'out-1', targetPort: 'in' },
-        { source: 'sms', target: 'end', sourcePort: 'out-0', targetPort: 'in' }
+        { source: 'sms', target: 'wait', sourcePort: 'out-0', targetPort: 'in' },
+        { source: 'wait', target: 'end', sourcePort: 'out-0', targetPort: 'in' }
       ]
     }
     const mock = [
@@ -161,8 +179,8 @@ export const TaskStorage = {
         createdAt: now, creator: 'current_user', description: '面向全量客户的人群分流与文案 AB 实验',
         canvasData: statsCanvas,
         versions: [
-          { version: 1, status: 'published', approvalStatus: 'approved', createTime: now, isActive: false, publishReady: true, publishMessages: [], canvasData: statsCanvas },
-          { version: 2, status: 'running', approvalStatus: 'approved', createTime: now, isActive: true, publishReady: true, publishMessages: [], canvasData: statsCanvas }
+          { version: 1, status: 'published', approvalStatus: 'approved', createTime: now, isActive: false, publishReady: true, publishMessages: [], canvasData: statsCanvas, publishTime: runFromDaysAgo(publishedDaysAgo) },
+          { version: 2, status: 'running', approvalStatus: 'approved', createTime: now, isActive: true, publishReady: true, publishMessages: [], canvasData: statsCanvas, publishTime: runFromDaysAgo(publishedDaysAgo) }
         ]
       },
       {
@@ -170,7 +188,7 @@ export const TaskStorage = {
         createdAt: now, creator: 'current_user', description: '授信额度提升策略（已发布，可查看统计）',
         canvasData: statsCanvas,
         versions: [
-          { version: 1, status: 'published', approvalStatus: 'approved', createTime: now, isActive: true, publishReady: true, publishMessages: [], canvasData: statsCanvas }
+          { version: 1, status: 'published', approvalStatus: 'approved', createTime: now, isActive: true, publishReady: true, publishMessages: [], canvasData: statsCanvas, publishTime: runFromDaysAgo(publishedDaysAgo) }
         ]
       },
       {

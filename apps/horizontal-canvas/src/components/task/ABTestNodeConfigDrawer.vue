@@ -27,7 +27,7 @@
           <div v-for="(branch, index) in formData.branches" :key="index" class="branch-item">
             <div class="branch-header">
               <span class="branch-label">分支 {{ index + 1 }}</span>
-              <a-button v-if="formData.branches.length > 2" type="text" status="danger" size="small" @click="removeBranch(index)"><template #icon><icon-delete /></template>删除</a-button>
+              <a-button v-if="!readOnly && formData.branches.length > 2" type="text" status="danger" size="small" @click="removeBranch(index)"><template #icon><icon-delete /></template>删除</a-button>
             </div>
             <div class="branch-content">
               <a-form-item :field="`branches.${index}.name`" label="分支名称" :rules="[{ required: true, message: '请输入分支名称' }]">
@@ -39,13 +39,13 @@
             </div>
           </div>
           <div class="percentage-summary">
-            <a-alert :type="totalPercentage === 100 ? 'success' : 'warning'" :message="`当前总占比: ${totalPercentage}% ${totalPercentage === 100 ? '✓' : ''}`" show-icon />
-            <div v-if="totalPercentage !== 100" class="percentage-actions">
-              <a-button type="text" size="small" @click="autoAdjustPercentages">自动调整为100%</a-button>
-              <a-button type="text" size="small" @click="averageDistribute">平均分配</a-button>
+              <a-alert :type="totalPercentage === 100 ? 'success' : 'warning'" :message="`当前总占比: ${totalPercentage}% ${totalPercentage === 100 ? '✓' : ''}`" show-icon />
+              <div v-if="!readOnly && totalPercentage !== 100" class="percentage-actions">
+                <a-button type="text" size="small" @click="autoAdjustPercentages">自动调整为100%</a-button>
+                <a-button type="text" size="small" @click="averageDistribute">平均分配</a-button>
+              </div>
             </div>
-          </div>
-          <a-button v-if="formData.branches.length < 10" type="dashed" block @click="addBranch"><template #icon><icon-plus /></template>新增分支</a-button>
+            <a-button v-if="!readOnly && formData.branches.length < 10" type="dashed" block @click="addBranch"><template #icon><icon-plus /></template>新增分支</a-button>
         </div>
       </a-form-item>
     </template>

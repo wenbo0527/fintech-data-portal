@@ -12,7 +12,7 @@
     @cancel="handleCancel"
   >
     <template #form>
-      <div class="debug-info">
+      <div v-if="!readOnly" class="debug-info">
         <div>表单验证状态: {{ isValid ? '✓' : '✗' }}</div>
         <div v-if="isFromCombo">来源：{{ comboOriginLabel }}</div>
         <div>超时设置：{{ formData.timeout || 0 }}{{ formData.unit || '分钟' }}</div>
@@ -36,7 +36,7 @@
                 class="branch-item__name"
               />
               <a-button
-                v-if="branch.type !== 'miss' && branches.filter(b => b.type !== 'miss').length > 1"
+                v-if="!readOnly && branch.type !== 'miss' && branches.filter(b => b.type !== 'miss').length > 1"
                 status="danger"
                 size="mini"
                 @click="removeBranch(bIdx)"
@@ -89,9 +89,9 @@
                       <a-option value="not_in">不属于</a-option>
                     </a-select>
                     <a-input v-model="cond.value" placeholder="属性值" :disabled="readOnly" allow-clear style="flex: 1" />
-                    <a-button status="danger" size="mini" @click="removeCondition(bIdx, cIdx)" :disabled="branch.conditions.length <= 1">删除</a-button>
+                    <a-button v-if="!readOnly" status="danger" size="mini" @click="removeCondition(bIdx, cIdx)" :disabled="branch.conditions.length <= 1">删除</a-button>
                   </div>
-                  <div class="branch-condition-actions">
+                  <div v-if="!readOnly" class="branch-condition-actions">
                     <a-button size="small" type="primary" @click="addCondition(bIdx)">+ 增加属性判断</a-button>
                     <span class="form-item-tip">同一分支内多条件为 AND 关系；分支按顺序匹配，命中第一个后即落入</span>
                   </div>
@@ -112,7 +112,7 @@
               <div class="form-item-tip">该分支是兜底分支，所有命中分支条件都不满足时进入</div>
             </div>
           </div>
-          <div class="branch-list__actions">
+          <div v-if="!readOnly" class="branch-list__actions">
             <a-button size="small" type="primary" @click="addBranch">+ 增加分支</a-button>
           </div>
         </div>

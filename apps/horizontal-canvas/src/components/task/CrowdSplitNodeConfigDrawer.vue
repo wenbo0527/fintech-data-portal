@@ -23,13 +23,13 @@
         <div v-for="(layer, index) in formData.crowdLayers" :key="layer.id" class="crowd-layer">
           <div class="layer-header">
             <span class="layer-title">人群{{ index + 1 }}：</span><span class="layer-label">命中</span>
-            <a-button v-if="formData.crowdLayers.length > 1" type="text" status="danger" size="small" class="remove-btn" @click="removeCrowdLayer(index)"><icon-minus /></a-button>
+            <a-button v-if="!readOnly && formData.crowdLayers.length > 1" type="text" status="danger" size="small" class="remove-btn" @click="removeCrowdLayer(index)"><icon-minus /></a-button>
           </div>
           <div class="layer-content">
-            <a-select v-model="layer.crowdId" placeholder="请选择人群" class="crowd-select" @change="(value) => handleCrowdChange(index, value)">
-              <a-option v-for="crowd in getAvailableCrowds(index)" :key="crowd.id" :value="crowd.id">{{ crowd.name }}</a-option>
+            <a-select v-model="layer.crowdId" placeholder="请选择人群" class="crowd-select" :disabled="readOnly" @change="(value) => handleCrowdChange(index, value)">
+              <a-option v-for="crowd in getAvailableCrowds(index)" :key="crowd.id" :value="crowd.id">{{ crowd.name}}</a-option>
             </a-select>
-            <a-button type="text" size="small" class="search-btn"><icon-search /></a-button>
+            <a-button v-if="!readOnly" type="text" size="small" class="search-btn"><icon-search /></a-button>
           </div>
         </div>
       </div>
@@ -38,12 +38,12 @@
         <div class="crowd-layer unmatch-layer">
           <div class="layer-header"><span class="layer-title">其他：</span><span class="layer-label fixed-label">固定分支</span></div>
           <div class="layer-content">
-            <a-input v-model="formData.unmatchBranch.name" placeholder="请输入其他分支名称" class="branch-name-input" @change="handleUnmatchBranchNameChange" />
-            <a-button type="text" size="small" class="search-btn" disabled><icon-search /></a-button>
+            <a-input v-model="formData.unmatchBranch.name" placeholder="请输入其他分支名称" class="branch-name-input" :disabled="readOnly" @change="handleUnmatchBranchNameChange" />
+            <a-button v-if="!readOnly" type="text" size="small" class="search-btn" disabled><icon-search /></a-button>
           </div>
         </div>
       </div>
-      <div class="action-buttons">
+      <div v-if="!readOnly" class="action-buttons">
         <a-button type="primary" class="add-crowd-btn" @click="addCrowdLayer">新增人群</a-button>
         <a-button type="primary" class="add-hit-crowd-btn" @click="addHitCrowdLayer">添加命中人群</a-button>
       </div>
@@ -127,7 +127,22 @@ onMounted(() => { fetchCrowdList() })
 watch(() => props.visible, (val, oldVal) => { crowdSplitLogger.info('LIFECYCLE', `抽屉显示状态变化: ${oldVal} -> ${val}`) }, { immediate: true })
 // 表单数据变化时记录日志（深度监听）
 watch(() => formData, (val) => { if (val) crowdSplitLogger.logFormDataChange('表单数据监听变化', val) }, { deep: true })
-const getAvailableCrowds = (currentIndex) => { if (!formData || !formData.crowdLayers) return crowdList.value || []; const selectedCrowdIds = formData.crowdLayers.filter((layer, index) => index !== currentIndex && layer.crowdId).map(layer => layer.crowdId); return crowdList.value.filter(crowd => !selectedCrowdIds.includes(crowd.id)) }
+/**
+ * 获取当前层级可选的人群列表
+ * 入参：currentIndex(number) —— 当前层级下标
+ * 返回：Array<{ id, name }>
+ * 说明：排除其他层级已选人群；当前层级已保存的人群若不在候选列表中（历史数据），补入一项以正确回显名称
+ */
+const getAvailableCrowds = (currentIndex) => {
+  if (!formData || !formData.crowdLayers) return crowdList.value || []
+  const selectedCrowdIds = formData.crowdLayers.filter((layer, index) => index !== currentIndex && layer.crowdId).map(layer => layer.crowdId)
+  const list = crowdList.value.filter(crowd => !selectedCrowdIds.includes(crowd.id))
+  const current = formData.crowdLayers[currentIndex]
+  if (current && current.crowdId && !list.some(crowd => crowd.id === current.crowdId)) {
+    list.push({ id: current.crowdId, name: current.crowdName || String(current.crowdId) })
+  }
+  return list
+}
 const handleCrowdChange = (index, crowdId) => { if (!formData || !formData.crowdLayers || !formData.crowdLayers[index]) return; const layer = formData.crowdLayers[index]; layer.crowdId = crowdId; if (crowdId) { const selectedCrowd = crowdList.value.find(crowd => crowd.id === crowdId); layer.crowdName = selectedCrowd ? selectedCrowd.name : '' ; crowdSplitLogger.logCrowdSelection(index, crowdId, layer.crowdName) } else { layer.crowdName = '' } }
 const addCrowdLayer = () => { if (!formData || !formData.crowdLayers) return; const newLayer = { id: generateId(), crowdId: null, crowdName: '' }; formData.crowdLayers.push(newLayer); crowdSplitLogger.logLayerOperation('新增层级', formData.crowdLayers.length - 1, { layerId: newLayer.id }) }
 const addHitCrowdLayer = () => { addCrowdLayer() }

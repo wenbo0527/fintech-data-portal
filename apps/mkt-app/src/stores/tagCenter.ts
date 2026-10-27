@@ -152,7 +152,7 @@ export const useTagCenterStore = defineStore('tagCenter', () => {
       const response = await tagAPI.batchImportTags(data)
       
       if (response.success) {
-        // 批量导入成功，重新加载数据
+        // 导入成功后重新加载列表
         await loadTagTables()
         return response.data
       } else {

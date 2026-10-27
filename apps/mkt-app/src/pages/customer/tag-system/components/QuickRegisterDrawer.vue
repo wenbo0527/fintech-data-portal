@@ -1,6 +1,6 @@
 <template>
   <a-drawer
-    v-model:visible="visible"
+    v-model:visible="visibleProxy"
     title="快速注册标签表"
     :width="800"
     :footer="false"
@@ -274,6 +274,12 @@ const emit = defineEmits<{
   'update:visible': [value: boolean]
   success: []
 }>()
+
+// 抽屉显隐代理：props 只读不可直接 v-model，用可写 computed 桥接父组件的 update:visible
+const visibleProxy = computed({
+  get: () => props.visible,
+  set: (value) => emit('update:visible', value)
+})
 
 const tagCenterStore = useTagCenterStore()
 

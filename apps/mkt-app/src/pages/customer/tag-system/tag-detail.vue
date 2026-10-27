@@ -118,6 +118,7 @@
                 <a-radio value="distribution">数据分布</a-radio>
                 <a-radio value="trend">趋势分析</a-radio>
                 <a-radio value="lineage">血缘查询</a-radio>
+                <a-radio v-if="showQuantileTab" value="quantile">分位统计</a-radio>
               </a-radio-group>
             </div>
             
@@ -150,8 +151,13 @@
                  </div>
                </div>
                <div v-if="activeTab === 'lineage'" class="lineage-chart">
-                 <div ref="lineageChartRef" style="height: 500px;"></div>
-               </div>
+                <div ref="lineageChartRef" style="height: 500px;"></div>
+              </div>
+
+              <!-- 连续型标签分位统计（模块 E） -->
+              <div v-if="activeTab === 'quantile'" class="quantile-chart-wrap">
+                <TagQuantilePanel :tag-id="tagDetail.id" />
+              </div>
             </div>
           </div>
         </div>
@@ -307,7 +313,7 @@
 import { ref, watch, nextTick, reactive } from 'vue'
 import * as echarts from 'echarts'
 import { safeInitECharts, safeDisposeChart } from '@/utils/echartsUtils'
-import { getTagLineage } from '@/api/tag'
+import { getTagLineage, getTag } from '@/api/tag'
 import { useRoute, useRouter } from 'vue-router'
 import {
   IconHome,
@@ -330,6 +336,7 @@ import {
   IconClose
 } from '@arco-design/web-vue/es/icon'
 import ConditionConfig from '@/components/common/ConditionConfig.vue'
+import TagQuantilePanel from './components/TagQuantilePanel.vue'
 import { onMounted } from 'vue';
 
 // 血缘数据处理函数
@@ -651,8 +658,15 @@ const tagDetail = reactive({
   dimensionType: '客户级',
   shareLevel: 'public',
   createUser: '张力',
-  description: '这是一个产品、商品分类、商品中类、商品小类、商品品牌、商品规格、商品价格、商品促销、商品库存、商品销量、商品评价、商品推荐、商品搜索、商品收藏、商品分享、商品比较、商品咨询、商品投诉、商品退换货等信息的标签主体。'
+  description: '这是一个产品、商品分类、商品中类、商品小类、商品品牌、商品规格、商品价格、商品促销、商品库存、商品销量、商品评价、商品推荐、商品搜索、商品收藏、商品分享、商品比较、商品咨询、商品投诉、商品退换货等信息的标签主体。',
+  // 分位统计所需元数据（R47 连续型判定 / R57-1 派生标记 / R57-2 数值单位）
+  unit: '',
+  derived: false,
+  continuousType: 'categorical'
 })
+
+// 是否展示「分位统计」页签（R47：仅连续型标签提供分位统计）
+const showQuantileTab = ref(false)
 
 // 标签统计数据
 const tagStats = reactive({
@@ -1203,13 +1217,40 @@ const getFieldOptions = (dataSourceType) => {
 
 
 
+/**
+ * 按路由参数加载标签详情（含分位统计所需的连续型/派生/单位元数据）
+ * @param {string} tagId 标签 ID
+ * @returns {Promise<void>} 加载完成
+ */
+const loadTagDetail = async (tagId) => {
+  if (!tagId) return
+  try {
+    const tag = await getTag(tagId)
+    if (!tag) return
+    tagDetail.id = tag.id
+    tagDetail.name = tag.name
+    tagDetail.dataType = tag.dataType
+    tagDetail.category = tag.category
+    tagDetail.dimensionType = tag.dimensionKey
+    tagDetail.shareLevel = tag.shareLevel
+    tagDetail.createUser = tag.createUser
+    if (tag.description) tagDetail.description = tag.description
+    tagDetail.unit = tag.unit || ''
+    tagDetail.derived = !!tag.derived
+    tagDetail.continuousType = tag.continuousType || 'categorical'
+    // R47：仅连续型标签提供分位统计入口
+    showQuantileTab.value = tagDetail.continuousType === 'continuous'
+    if (!showQuantileTab.value && activeTab.value === 'quantile') {
+      activeTab.value = 'distribution'
+    }
+  } catch (error) {
+    console.warn('标签详情加载失败，保留演示数据:', error)
+  }
+}
+
 // 组件挂载时获取标签详情
 onMounted(() => {
-  const tagId = route.params.id
-  if (tagId) {
-    // 这里可以根据tagId获取具体的标签详情
-    console.log('获取标签详情:', tagId)
-  }
+  loadTagDetail(route.params.id || 'tag_003')
 })
 
 
@@ -1455,6 +1496,11 @@ onMounted(() => {
 .trend-placeholder {
   color: var(--subapp-text-tertiary);
   font-size: 16px;
+}
+
+/* 连续型标签分位统计区（模块 E） */
+.quantile-chart-wrap {
+  padding: 16px 0 8px;
 }
 
 /* 规则配置区域样式 */

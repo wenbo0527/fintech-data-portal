@@ -13,6 +13,7 @@
 
 import { mockDataModels } from '@/mock/data-models'
 import { mockAlertRules } from '@/mock/alert-rules'
+import { mockCdpTags } from '@/mock/cdp-tags'
 
 /**
  * 模拟延迟
@@ -39,32 +40,28 @@ export default async function request(config) {
   await delay()
   
   try {
+    let res
     // 根据 URL 路径匹配对应的 mock 数据
     if (url.includes('/api/data-models')) {
-      return handleDataModelsAPI(url, method, params, data)
+      res = handleDataModelsAPI(url, method, params, data)
+    } else if (url.includes('/api/alert-rules')) {
+      res = handleAlertRulesAPI(url, method, params, data)
+    } else if (url.includes('/api/variables')) {
+      res = handleVariablesAPI(url, method, params, data)
+    } else if (url.includes('/api/variable-map')) {
+      res = handleVariableMapAPI(url, method, params, data)
+    } else if (url.includes('/api/v1/')) {
+      res = handleV1TagAndDatasourceAPI(url, method, params, data)
+    } else {
+      // 默认返回成功响应
+      res = { code: 200, message: 'success', data: null }
     }
-    if (url.includes('/api/alert-rules')) {
-      return handleAlertRulesAPI(url, method, params, data)
-    }
-    if (url.includes('/api/variables')) {
-      return handleVariablesAPI(url, method, params, data)
-    }
-    if (url.includes('/api/variable-map')) {
-      return handleVariableMapAPI(url, method, params, data)
-    }
-    if (url.includes('/api/v1/')) {
-      return handleV1TagAndDatasourceAPI(url, method, params, data)
-    }
-    
-    // 默认返回成功响应
-    return {
-      code: 200,
-      message: 'success',
-      data: null
-    }
+    // 统一补齐 success 字段（各 handler 只返回 code/message/data）
+    return { success: res.code === 200, ...res }
   } catch (error) {
     // 模拟错误响应
     return Promise.reject({
+      success: false,
       code: 500,
       message: error.message || '请求失败',
       data: null
@@ -276,33 +273,57 @@ function handleV1TagAndDatasourceAPI(url, method, params, data) {
     handleV1TagAndDatasourceAPI.__v1TagTables = [
       {
         id: 'tt_001',
+        name: '用户日颗粒标签表',
+        code: 'tag_user_daily',
+        description: '用户日颗粒标签明细',
         tableName: 'tag_user_daily',
         tableDesc: '用户日颗粒标签明细',
-        dataSource: 'ds-1001',
+        categories: ['基础信息'],
+        dataSource: 'Doris 生产集群',
+        dataSourceId: 'ds-1001',
         recordCount: 120000,
         status: 'active',
         mappingStatus: 'configured',
         identityType: 'mobile',
         primaryKey: 'mobile',
+        primaryKeyFormat: 'raw',
+        mappingRules: [],
+        enableMapping: true,
+        creator: 'admin',
         createTime: '2024-11-01 10:00:00',
+        updater: 'admin',
         updateTime: '2025-01-10 09:00:00'
       },
       {
         id: 'tt_002',
+        name: '用户画像主表',
+        code: 'user_profile',
+        description: '用户画像主表',
         tableName: 'user_profile',
         tableDesc: '用户画像主表',
-        dataSource: 'ds-1002',
+        categories: ['资产信息'],
+        dataSource: 'MySQL 用户库',
+        dataSourceId: 'ds-1002',
         recordCount: 56000,
         status: 'active',
         mappingStatus: 'partial',
         identityType: 'mobile',
         primaryKey: 'mobile',
+        primaryKeyFormat: 'raw',
+        mappingRules: [],
+        enableMapping: true,
+        creator: 'admin',
         createTime: '2024-10-21 09:00:00',
+        updater: 'admin',
         updateTime: '2025-01-08 12:00:00'
       }
     ]
+    // 标签实体（标签管理页消费）：与标签表结构不同，按 TagItem 字段组织
+    // 数据来源：@/mock/cdp-tags（与标签详情、连续型标签分位统计共用同一份元数据）
+    handleV1TagAndDatasourceAPI.__v1Tags = mockCdpTags
   }
   const __v1TagTables = handleV1TagAndDatasourceAPI.__v1TagTables
+  const __v1Tags = handleV1TagAndDatasourceAPI.__v1Tags
   const __tableFields = {
     // doris
     'ds-1001/tag_user_daily': [
@@ -400,6 +421,70 @@ function handleV1TagAndDatasourceAPI(url, method, params, data) {
       }
     }
   }
+  // GET /api/v1/tags（标签实体列表，标签管理页消费）
+  if (url === '/api/v1/tags' && upperMethod === 'GET') {
+    let list = [...__v1Tags]
+    // 支持 search / searchText 两种关键字参数
+    const keyword = params?.searchText || params?.search
+    if (keyword) {
+      const s = String(keyword).toLowerCase()
+      list = list.filter(t => (t.name || '').toLowerCase().includes(s) || (t.id || '').toLowerCase().includes(s))
+    }
+    if (params?.category) {
+      list = list.filter(t => t.category === params.category)
+    }
+    if (params?.tagType) {
+      list = list.filter(t => t.tagType === params.tagType)
+    }
+    return {
+      code: 200,
+      message: 'success',
+      data: {
+        data: list,
+        total: list.length,
+        current: 1,
+        pageSize: list.length,
+        pages: 1
+      }
+    }
+  }
+  // POST /api/v1/tags
+  if (url === '/api/v1/tags' && upperMethod === 'POST') {
+    const id = data?.id || `tag_${Date.now()}`
+    const newItem = {
+      ...data,
+      id,
+      createTime: data?.createTime || new Date().toISOString().replace('T', ' ').substring(0, 19)
+    }
+    __v1Tags.unshift(newItem)
+    handleV1TagAndDatasourceAPI.__v1Tags = __v1Tags
+    return { code: 200, message: 'created', data: newItem }
+  }
+  // GET /api/v1/tags/:id
+  if (url.match(/\/api\/v1\/tags\/[^/]+$/) && upperMethod === 'GET') {
+    const id = url.split('/').pop()
+    const tag = __v1Tags.find(t => t.id === id)
+    if (!tag) { return { code: 404, message: 'not_found', data: null } }
+    return { code: 200, message: 'success', data: tag }
+  }
+  // PUT /api/v1/tags/:id
+  if (url.match(/\/api\/v1\/tags\/[^/]+$/) && upperMethod === 'PUT') {
+    const id = url.split('/').pop()
+    const idx = __v1Tags.findIndex(t => t.id === id)
+    if (idx === -1) { return { code: 404, message: 'not_found', data: null } }
+    __v1Tags[idx] = { ...__v1Tags[idx], ...data, id }
+    handleV1TagAndDatasourceAPI.__v1Tags = __v1Tags
+    return { code: 200, message: 'updated', data: __v1Tags[idx] }
+  }
+  // DELETE /api/v1/tags/:id
+  if (url.match(/\/api\/v1\/tags\/[^/]+$/) && upperMethod === 'DELETE') {
+    const id = url.split('/').pop()
+    const before = __v1Tags.length
+    const next = __v1Tags.filter(t => t.id !== id)
+    handleV1TagAndDatasourceAPI.__v1Tags = next
+    const success = next.length < before
+    return { code: success ? 200 : 404, message: success ? 'deleted' : 'not_found', data: null }
+  }
   // POST /api/v1/tag-tables
   if (url === '/api/v1/tag-tables' && upperMethod === 'POST') {
     const id = `tt_${Date.now()}`
@@ -418,6 +503,70 @@ function handleV1TagAndDatasourceAPI(url, method, params, data) {
     }
     __v1TagTables.unshift(newItem)
     return { code: 200, message: 'created', data: newItem }
+  }
+  // POST /api/v1/tag-tables/import
+  if (url === '/api/v1/tag-tables/import' && upperMethod === 'POST') {
+    const rows = Array.isArray(data) ? data : []
+    const failedItems = []
+    let skipped = 0
+    rows.forEach((row) => {
+      if (!row?.name) {
+        skipped += 1
+        failedItems.push({ name: row?.name || '(空)', reason: '标签名称不能为空' })
+      }
+    })
+    const failed = failedItems.length
+    return {
+      code: 200,
+      message: 'success',
+      data: {
+        success: rows.length - failed,
+        skipped,
+        failed,
+        failedItems
+      }
+    }
+  }
+  // GET /api/v1/tag-tables/stats（须在 :id 详情之前判断，否则会被通配路由吃掉）
+  if (url === '/api/v1/tag-tables/stats' && upperMethod === 'GET') {
+    const total = __v1TagTables.length
+    const active = __v1TagTables.filter(t => t.status === 'active').length
+    return {
+      code: 200,
+      message: 'success',
+      data: {
+        total,
+        active,
+        archived: total - active,
+        trend: { total: 6.2, active: 4.8, archived: -1.5 }
+      }
+    }
+  }
+  // GET /api/v1/tag-tables/:id/lineage
+  if (url.match(/\/api\/v1\/tag-tables\/[^/]+\/lineage$/) && upperMethod === 'GET') {
+    const id = url.split('/')[4]
+    const table = __v1TagTables.find(t => t.id === id) || __v1TagTables[0]
+    return {
+      code: 200,
+      message: 'success',
+      data: {
+        tagName: table?.tableName || '标签',
+        relatedAudiences: [
+          { audienceName: '高净值客群', memberCount: 12800, lastUpdateTime: '2025-01-10 09:00:00' },
+          { audienceName: '近期活跃客群', memberCount: 45200, lastUpdateTime: '2025-01-09 18:30:00' }
+        ],
+        relatedTables: [
+          { tableName: table?.tableName || 'tag_user_daily', lastSyncTime: '2025-01-10 09:00:00' }
+        ]
+      }
+    }
+  }
+  // GET /api/v1/tag-tables/:id
+  if (url.match(/\/api\/v1\/tag-tables\/[^/]+$/) && upperMethod === 'GET') {
+    const id = url.split('/').pop()
+    const table = __v1TagTables.find(t => t.id === id)
+    if (!table) { return { code: 404, message: 'not_found', data: null }}
+    return { code: 200, message: 'success', data: table }
   }
   // PUT /api/v1/tag-tables/:id
   if (url.match(/\/api\/v1\/tag-tables\/[^/]+$/) && upperMethod === 'PUT') {

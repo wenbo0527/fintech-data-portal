@@ -1,13 +1,29 @@
 import request from '@/utils/mockRequest'
-import type { 
-  TagTable, 
-  CreateTagTableDTO, 
-  UpdateTagTableDTO, 
+import type {
+  TagTable,
+  TagItem,
+  CreateTagTableDTO,
+  UpdateTagTableDTO,
   GetTagTablesParams,
   TableField,
   DataSource,
   UniquenessCheckResult,
-  BatchCreateResult
+  BatchCreateResult,
+  BatchImportResult
+} from '@/types/tag'
+
+// 类型再导出：便于其它模块直接 `import type { TagTable } from '@/api/tag'`
+export type {
+  TagTable,
+  TagItem,
+  CreateTagTableDTO,
+  UpdateTagTableDTO,
+  GetTagTablesParams,
+  TableField,
+  DataSource,
+  UniquenessCheckResult,
+  BatchCreateResult,
+  BatchImportResult
 } from '@/types/tag'
 
 // 统一响应格式
@@ -132,7 +148,7 @@ export const tagAPI = {
   /**
    * 批量导入标签
    */
-  batchImportTags: (data: CreateTagTableDTO[]): Promise<ApiResponse<BatchCreateResult>> => {
+  batchImportTags: (data: CreateTagTableDTO[]): Promise<ApiResponse<BatchImportResult>> => {
     return request.post('/api/v1/tag-tables/import', data)
   }
 }
@@ -214,28 +230,89 @@ export const datasourceAPI = {
   }
 }
 
-export const listTags = async (params?: GetTagTablesParams): Promise<{ list: TagTable[]; total: number }> => {
-  const res = await tagAPI.getTagTables(params)
+/**
+ * 标签实体 API（标签管理页消费，结构为 TagItem 而非标签表）
+ */
+export const tagItemAPI = {
+  /**
+   * 获取标签实体列表
+   */
+  getTags: (params?: { searchText?: string; category?: string; tagType?: string }): Promise<ApiResponse<PaginatedResponse<TagItem>>> => {
+    return request.get('/api/v1/tags', { params })
+  },
+
+  /**
+   * 获取标签实体详情
+   */
+  getTagItem: (id: string): Promise<ApiResponse<TagItem>> => {
+    return request.get(`/api/v1/tags/${id}`)
+  },
+
+  /**
+   * 创建标签实体
+   */
+  createTagItem: (data: Partial<TagItem>): Promise<ApiResponse<TagItem>> => {
+    return request.post('/api/v1/tags', data)
+  },
+
+  /**
+   * 更新标签实体
+   */
+  updateTagItem: (id: string, data: Partial<TagItem>): Promise<ApiResponse<TagItem>> => {
+    return request.put(`/api/v1/tags/${id}`, data)
+  },
+
+  /**
+   * 删除标签实体
+   */
+  deleteTagItem: (id: string): Promise<ApiResponse<void>> => {
+    return request.delete(`/api/v1/tags/${id}`)
+  }
+}
+
+/**
+ * 获取标签实体列表
+ * @param params 查询参数（关键字、分类、标签类型）
+ */
+export const listTags = async (params?: { searchText?: string; category?: string; tagType?: string }): Promise<{ list: TagItem[]; total: number }> => {
+  const res = await tagItemAPI.getTags(params)
   return { list: res.data.data, total: res.data.total }
 }
 
-export const getTag = async (id: string): Promise<TagTable> => {
-  const res = await tagAPI.getTagTableDetail(id)
+/**
+ * 获取单个标签实体
+ * @param id 标签 ID
+ */
+export const getTag = async (id: string): Promise<TagItem> => {
+  const res = await tagItemAPI.getTagItem(id)
   return res.data
 }
 
-export const createTag = async (data: CreateTagTableDTO): Promise<TagTable> => {
-  const res = await tagAPI.createTagTable(data)
+/**
+ * 创建标签实体
+ * @param data 标签字段
+ */
+export const createTag = async (data: Partial<TagItem>): Promise<TagItem> => {
+  const res = await tagItemAPI.createTagItem(data)
   return res.data
 }
 
-export const updateTag = async (id: string, data: UpdateTagTableDTO): Promise<boolean> => {
-  const res = await tagAPI.updateTagTable(id, data)
+/**
+ * 更新标签实体
+ * @param id 标签 ID
+ * @param data 待更新字段
+ */
+export const updateTag = async (id: string, data: Partial<TagItem>): Promise<boolean> => {
+  const res = await tagItemAPI.updateTagItem(id, data)
   return !!res.success
 }
 
+/**
+ * 批量删除标签实体
+ * @param ids 标签 ID 列表
+ */
 export const deleteTags = async (ids: string[]): Promise<boolean> => {
-  const results = await Promise.all(ids.map((id) => tagAPI.deleteTagTable(id)))
+  const results = await Promise.all(ids.map((id) => tagItemAPI.deleteTagItem(id)))
   return results.every((r) => !!r.success)
 }
 
@@ -265,4 +342,19 @@ export const getTagLineage = async (id: string): Promise<any> => {
   } catch {
     return { nodes: [], edges: [] }
   }
+}
+
+/**
+ * 获取标签详情（含可选血缘）
+ * @param id 标签表 ID
+ * @param options.withLineage 是否附带血缘数据
+ * @returns { data: 标签详情 & { lineage } } 统一返回 { data } 结构
+ */
+export const getTagDetail = async (id: string, options?: { withLineage?: boolean }): Promise<{ data: any }> => {
+  const res = await tagAPI.getTagTableDetail(id)
+  const detail: any = { ...(res?.data || {}) }
+  if (options?.withLineage) {
+    detail.lineage = await getTagLineage(id)
+  }
+  return { data: detail }
 }

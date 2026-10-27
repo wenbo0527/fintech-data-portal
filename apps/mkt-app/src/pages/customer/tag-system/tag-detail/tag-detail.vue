@@ -31,7 +31,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, watch, nextTick, onMounted } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { getTagDetail } from '@/api/tag'
 import { useRoute } from 'vue-router'
@@ -40,12 +40,13 @@ import * as echarts from 'echarts'
 const lineageChartRef = ref(null)
 const loading = ref(true)
 const tagDetail = ref({})
+const route = useRoute()
 
 const fetchTagDetail = async (tagId) => {
   try {
     loading.value = true
     const { data } = await getTagDetail(tagId, { withLineage: true })
-    
+
     tagDetail.value = {
       ...data,
       lineageData: processLineageData(data.lineage)
@@ -58,18 +59,22 @@ const fetchTagDetail = async (tagId) => {
   }
 }
 
+// 将血缘接口数据转换为 echarts 树结构
 const processLineageData = (lineage) => {
+  if (!lineage) return null
+  const relatedAudiences = Array.isArray(lineage.relatedAudiences) ? lineage.relatedAudiences : []
+  const relatedTables = Array.isArray(lineage.relatedTables) ? lineage.relatedTables : []
   return {
     name: lineage.tagName,
     category: 'tag',
     children: [
-      ...lineage.relatedAudiences.map(a => ({
+      ...relatedAudiences.map(a => ({
         name: a.audienceName,
         category: 'audience',
         relatedCount: a.memberCount,
         updatedAt: a.lastUpdateTime
       })),
-      ...lineage.relatedTables.map(t => ({
+      ...relatedTables.map(t => ({
         name: t.tableName,
         category: 'table',
         syncTime: t.lastSyncTime
@@ -127,8 +132,6 @@ const initLineageChart = () => {
   chart.setOption(option);
   window.addEventListener('resize', () => chart.resize());
 };
-
-const route = useRoute()
 
 watch(() => tagDetail.value.lineageData, (newVal) => {
   if (newVal) {

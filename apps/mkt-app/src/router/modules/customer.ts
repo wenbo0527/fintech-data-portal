@@ -12,10 +12,49 @@ export const customerRoutes: RouteRecordRaw[] = [
     meta: { title: '客群中心' }
   },
   {
+    // 标签系统为布局路由：index.vue 承载入口卡片，子页面通过 <router-view> 渲染
     path: 'customer/tag-system',
     name: 'TagSystem',
     component: () => import('@/pages/customer/tag-system/index.vue'),
-    meta: { title: '标签系统' }
+    meta: { title: '标签系统' },
+    children: [
+      {
+        path: 'table-management',
+        name: 'TagSystemTableManagement',
+        component: () => import('@/pages/customer/tag-system/table-management.vue'),
+        meta: { title: '标签表管理' }
+      },
+      {
+        path: 'tag-management',
+        name: 'TagSystemTagManagement',
+        component: () => import('@/pages/customer/tag-system/tag-management.vue'),
+        meta: { title: '标签管理' }
+      },
+      {
+        path: 'attribute-management',
+        name: 'TagSystemAttributeManagement',
+        component: () => import('@/pages/customer/tag-system/attribute-management.vue'),
+        meta: { title: '属性管理' }
+      },
+      {
+        path: 'table-registration',
+        name: 'TagSystemTableRegistration',
+        component: () => import('@/pages/customer/tag-system/table-registration.vue'),
+        meta: { title: '标签表注册' }
+      },
+      {
+        path: 'tag-detail/:id?',
+        name: 'TagSystemTagDetail',
+        component: () => import('@/pages/customer/tag-system/tag-detail.vue'),
+        meta: { title: '标签详情' }
+      },
+      {
+        path: 'tag-center',
+        name: 'TagSystemTagCenter',
+        component: () => import('@/pages/customer/tag-system/tag-center.vue'),
+        meta: { title: '标签中心' }
+      }
+    ]
   },
   {
     path: 'customer/tag-management',

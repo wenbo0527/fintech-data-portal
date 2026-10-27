@@ -214,11 +214,10 @@ const estimatedRecords = computed(() => {
 
 // 方法
 const goBack = () => {
-  router.push({ name: 'tag-management' })
+  router.push({ name: 'TagSystemTagManagement' })
 }
 
 const { tableSchema, checkPrimaryKey, registerTable, loadTableSchema } = useTableRegistration()
-const goManage = () => { router.push({ name: 'datasource-management' }) }
 watch([() => dsForm.dataSourceId, () => dsForm.tableName], async ([dsId, tbl]: [string, string]) => {
   if (dsId && tbl) {
     const ds = dataSources.find((x: any) => x.id === dsId)
@@ -387,7 +386,7 @@ const submitRegistration = async () => {
 }
 
 const viewRegisteredTable = () => {
-  router.push({ name: 'tag-management' })
+  router.push({ name: 'TagSystemTagManagement' })
 }
 
 const registerAnother = () => {

@@ -752,7 +752,7 @@ const addTag = () => {
 
 // 自定义规则创建标签
 const addTagByRule = () => {
-  router.push({ name: 'tag-create' })
+  router.push({ name: 'TagCreate' })
 }
 
 // 数据导入创建标签
@@ -797,7 +797,7 @@ const editTag = (record: TagItem) => {
 // 跳转到标签详情页
 const goToTagDetail = (record: TagItem) => {
   router.push({
-    name: 'tag-detail',
+    name: 'TagSystemTagDetail',
     params: {
       id: record.id
     }
@@ -807,7 +807,7 @@ const goToTagDetail = (record: TagItem) => {
 // 跳转到表注册页面
 const goToTableRegistration = () => {
   router.push({
-    name: 'table-registration'
+    name: 'TagSystemTableRegistration'
   })
 }
 

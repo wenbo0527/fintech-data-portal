@@ -1,5 +1,5 @@
 <template>
-  <div v-if="$route.name === 'tag-system'" class="tag-system-index">
+  <div v-if="$route.name === 'TagSystem'" class="tag-system-index">
     <a-card title="标签系统" :bordered="false">
       <a-row :gutter="[24, 24]">
         <a-col :span="8">
@@ -176,7 +176,7 @@ const router = useRouter()
 const showImportDialog = ref(false)
 const fileList = ref([])
 
-// 导航方法
+// 导航方法（跳转到标签系统下的子页面）
 const navigateTo = (routeName) => {
   router.push(`/customer/tag-system/${routeName}`)
 }

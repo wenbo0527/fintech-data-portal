@@ -1,11 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { fetchTableSchema, validatePrimaryKey, registerTagTable } from '@/api/tag'
-import type { TableField, ValidationResult } from '@/types/table'
+import type { TableField, UniquenessCheckResult } from '@/types/tag'
 
 export const useTableRegistrationStore = defineStore('tableRegistration', () => {
   const tableSchema = ref<TableField[]>([])
-  const validation = ref<ValidationResult | null>(null)
+  const validation = ref<UniquenessCheckResult | null>(null)
   const loading = ref(false)
   const currentDataSourceId = ref<string>('')
   const currentTableName = ref<string>('')

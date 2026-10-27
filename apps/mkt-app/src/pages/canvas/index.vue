@@ -37,19 +37,35 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { Message } from '@arco-design/web-vue'
 
-// horizontal-canvas 独立子应用的端口（与 apps/horizontal-canvas/vite.config.ts 一致）
-const HORIZONTAL_CANVAS_PORT = 5175
-// horizontal-canvas 内部路径前缀
-const HORIZONTAL_CANVAS_BASE = '/marketing/tasks/horizontal'
+// horizontal-canvas 独立子应用接入配置
+// - 生产：与宿主同源，走 nginx location /horizontal-canvas/（HC vite base: '/horizontal-canvas/'）
+// - 开发：独立 dev server http://<host>:5175，dev server 同样按 base 前缀挂载 → 也必须带 /horizontal-canvas
+const HORIZONTAL_CANVAS_DEV_PORT = 5175
+// HC 应用 base 前缀（apps/horizontal-canvas/vite.config.ts → base: '/horizontal-canvas/'）
+const HORIZONTAL_CANVAS_BASE_PATH = '/horizontal-canvas'
+// HC 内部路由（见 apps/horizontal-canvas/src/router.ts）
+const HC_TASKS_PATH = '/marketing/tasks'          // 任务列表页
+const HC_CANVAS_PATH = '/marketing/tasks/horizontal' // 画布编辑页
 
 const iframeSrc = ref('')
 const currentTaskId = ref('')
 let iframeEl = null
 
+// HC 根地址（不含内部路由）：
+// 生产 = window.location.origin + '/horizontal-canvas'（同源，nginx 已配 location /horizontal-canvas/）
+// 开发 = http://<host>:5175/horizontal-canvas（dev server 端口 + base 前缀）
+function getHorizontalCanvasRoot() {
+  if (import.meta.env.DEV) {
+    const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
+    return `http://${host}:${HORIZONTAL_CANVAS_DEV_PORT}${HORIZONTAL_CANVAS_BASE_PATH}`
+  }
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  return `${origin}${HORIZONTAL_CANVAS_BASE_PATH}`
+}
+
 function buildCanvasUrl(taskId) {
-  const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
   const qs = new URLSearchParams({ mode: 'edit', id: String(taskId), version: '1' })
-  return `http://${host}:${HORIZONTAL_CANVAS_PORT}${HORIZONTAL_CANVAS_BASE}?${qs.toString()}`
+  return `${getHorizontalCanvasRoot()}${HC_CANVAS_PATH}?${qs.toString()}`
 }
 
 // 生成 mkt-app 侧的本地任务 ID（与 horizontal-canvas TaskStorage.createTask 保持一致：String(Date.now())）
@@ -66,8 +82,7 @@ function onCreateTask() {
 
 function onOpenTaskList() {
   // 跳到 horizontal-canvas 的任务列表，由用户在独立应用内选择/新建
-  const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
-  iframeSrc.value = `http://${host}:${HORIZONTAL_CANVAS_PORT}/marketing/tasks`
+  iframeSrc.value = `${getHorizontalCanvasRoot()}${HC_TASKS_PATH}`
   currentTaskId.value = ''
   Message.info('已切换到任务列表，请选择或新建任务')
 }

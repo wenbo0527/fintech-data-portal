@@ -53,6 +53,7 @@
           <a-sub-menu key="external-data-service-group">
             <template #title>外数服务管理</template>
             <a-menu-item key="/variable-hub/external-data/service-scene">服务场景入口</a-menu-item>
+            <a-menu-item key="/variable-hub/external-data/backtrack-persist">外数回溯落库申请</a-menu-item>
             <a-menu-item key="/variable-hub/external-data/task-list">服务任务列表</a-menu-item>
             <a-menu-item key="/variable-hub/external-data/sample-preparation">样本表准备</a-menu-item>
             <a-menu-item key="/variable-hub/external-data/validation-template">服务校验模版管理</a-menu-item>
@@ -143,6 +144,7 @@ function updateMenuState(path: string) {
   else if (path.startsWith('/variable-hub/external-data/archive')) activeSideMenu.value = '/variable-hub/external-data/archive'
   else if (path.startsWith('/variable-hub/external-data/evaluation')) activeSideMenu.value = '/variable-hub/external-data/evaluation'
   else if (path.startsWith('/variable-hub/external-data/service-scene')) activeSideMenu.value = '/variable-hub/external-data/service-scene'
+  else if (path.startsWith('/variable-hub/external-data/backtrack-persist')) activeSideMenu.value = '/variable-hub/external-data/backtrack-persist'
   else if (path.startsWith('/variable-hub/external-data/task-list')) activeSideMenu.value = '/variable-hub/external-data/task-list'
   else if (path.startsWith('/variable-hub/external-data/sample-preparation')) activeSideMenu.value = '/variable-hub/external-data/sample-preparation'
   else if (path.startsWith('/variable-hub/external-data/validation-template')) activeSideMenu.value = '/variable-hub/external-data/validation-template'

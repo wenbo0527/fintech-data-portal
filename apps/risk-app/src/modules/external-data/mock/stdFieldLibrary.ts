@@ -26,6 +26,7 @@ export interface StdField {
 export const stdFieldLibraryMock: StdField[] = [
   { field: 'id_md5', comment: '加密MD5字段（主体唯一标识，SM4 加密）', group: '主键标识', required: true },
   { field: 'review_date', comment: '回溯日期（按天分区写入 datax）', group: '主键标识', required: true },
+  { field: 'phone_md5', comment: '加密手机号字段（手机号 MD5 密文）', group: '主键标识', required: true },
   { field: 'std_loan_cnt_1m', comment: '近1月贷款审批次数', group: '借贷行为', required: false },
   { field: 'std_loan_cnt_3m', comment: '近3月贷款审批次数', group: '借贷行为', required: false },
   { field: 'std_loan_cnt_12m', comment: '近12月贷款审批次数', group: '借贷行为', required: false },
@@ -48,8 +49,8 @@ export const stdFieldLibraryMock: StdField[] = [
   { field: 'std_multiloan_idx', comment: '多头借贷指数', group: '信用评分', required: false },
 ]
 
-/** 强制绑定字段（R32）：IDMD5 与 review date，均需从 CSV 表头中选择 */
-export const REQUIRED_STD_FIELDS = ['id_md5', 'review_date']
+/** 强制绑定字段（R32）：IDMD5、review date、phone_md5，均需从 CSV 表头中选择 */
+export const REQUIRED_STD_FIELDS = ['id_md5', 'review_date', 'phone_md5']
 
 /** 非标准化字段占位值（R34/R38）：选中后原样透传，序列化写入 extraParam 列 */
 export const NON_STD_FIELD = '__non_standard__'

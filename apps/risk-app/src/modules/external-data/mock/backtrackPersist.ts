@@ -10,7 +10,11 @@
  */
 import type { NotifyRecord } from './notify'
 
-/** 落库状态机（3.1，共 9 态） */
+/**
+ * 落库状态机（3.1）
+ * 终点为「Hive已落库」：落 Hive 标准库即完成落库主流程，
+ * 行数验证与通知均为后台任务，由任务列表跟踪进度
+ */
 export type PersistStatus =
   | '待开始'
   | '文件已获取'
@@ -19,10 +23,8 @@ export type PersistStatus =
   | '任务已匹配'
   | '临时库已落库'
   | 'Hive已落库'
-  | '待通知'
-  | '已完成'
 
-/** 9 态顺序定义，供步骤条与状态徽标统一取值 */
+/** 状态顺序定义，供步骤条与状态徽标统一取值 */
 export const PERSIST_STATUS_FLOW: PersistStatus[] = [
   '待开始',
   '文件已获取',
@@ -31,8 +33,6 @@ export const PERSIST_STATUS_FLOW: PersistStatus[] = [
   '任务已匹配',
   '临时库已落库',
   'Hive已落库',
-  '待通知',
-  '已完成',
 ]
 
 /** 异步任务状态机（3.2） */
@@ -40,6 +40,46 @@ export type AsyncTaskStatus = '排队中' | '执行中' | '成功' | '失败' | 
 
 /** 异步任务类型（R85） */
 export type AsyncTaskType = '解析落库' | '推进Hive' | '行数验证' | '一致性校验'
+
+/**
+ * 批次阶段（R51：backid 为批次标识，批次所处阶段由批次内任务推导）
+ * 步骤序号与落库流程步骤条一致（0 基），子区块锚点用于页面内定位
+ */
+export interface BatchStage {
+  /** 落库流程步骤序号（0 基） */
+  stepIndex: number
+  /** 子区块锚点 key */
+  sectionKey: string
+  /** 子区块标题 */
+  sectionTitle: string
+  /** 该阶段对应的任务类型 */
+  taskType: AsyncTaskType
+}
+
+/** 任务类型 → 落库流程阶段映射 */
+const TASK_STAGE_MAP: Record<AsyncTaskType, Omit<BatchStage, 'taskType'>> = {
+  解析落库: { stepIndex: 2, sectionKey: 'sec-3-1', sectionTitle: '3.1 落临时库' },
+  一致性校验: { stepIndex: 2, sectionKey: 'sec-3-2', sectionTitle: '3.2 一致性抽样校验' },
+  推进Hive: { stepIndex: 2, sectionKey: 'sec-3-3', sectionTitle: '3.3 落 Hive 标准库' },
+  行数验证: { stepIndex: 2, sectionKey: 'sec-3-4', sectionTitle: '3.4 落库结果（后台任务）' },
+}
+
+/**
+ * 推导批次所处阶段
+ * 规则：存在未成功任务时定位到最早的未完成环节（流程串行，卡点即待办）；
+ * 全部成功时定位到通知记录环节，便于查看批次最终产出
+ * @param tasks 该 backid 关联的任务集合
+ */
+export function resolveBatchStage(tasks: AsyncTask[]): BatchStage | null {
+  if (!tasks.length) return null
+  const pending = tasks.filter((t) => t.status !== '成功')
+  if (pending.length) {
+    const target = pending.reduce((min, t) => (t.createTime < min.createTime ? t : min))
+    return { ...TASK_STAGE_MAP[target.taskType], taskType: target.taskType }
+  }
+  const last = tasks.reduce((max, t) => (t.createTime > max.createTime ? t : max))
+  return { stepIndex: 2, sectionKey: 'sec-3-5', sectionTitle: '3.5 通知记录', taskType: last.taskType }
+}
 
 /** 落库记录 - 计费要素（R54 最后一组，落库数据供外数费用计算模块使用） */
 export interface BillingElement {
@@ -180,6 +220,10 @@ export interface ValidationReport {
     /** 差异摘要 */
     diffSummary: string
   }
+  /** 一致性校验是否已跳过（未上线产品无线上数据可对比，跳过后标注「未执行」） */
+  consistencySkipped?: boolean
+  /** 一致性校验跳过原因 */
+  consistencySkipReason?: string
   /** 明细（分页由前端 mock 模拟后端分页 R71） */
   details: ValidationDetail[]
 }
@@ -198,6 +242,56 @@ export interface ValidationDetail {
   consistent: boolean
   /** review date（关联条件之一 R68） */
   reviewDate: string
+}
+
+/** 任务执行日志（R88：任务明细按时间顺序展示执行轨迹） */
+export interface TaskLogEntry {
+  /** 时间戳 */
+  time: string
+  /** 阶段名称 */
+  stage: string
+  /** 日志内容 */
+  message: string
+  /** 是否异常 */
+  error?: boolean
+}
+
+/**
+ * 任务续做上下文（支撑「从任务列表回到落库流程继续下一步」）
+ * 数据来源说明：落库流程提交执行动作时快照当前上下文，
+ * 任务列表据此定位到对应步骤并回填已完成的环节，避免用户重头再来。
+ */
+export interface TaskResumeContext {
+  /** 机构 ID */
+  agencyId: string
+  /** 机构编码 */
+  agencyCode: string
+  /** 机构名称 */
+  agencyName: string
+  /** 机构类型（个人征信 / 企业征信） */
+  agencyType: string
+  /** 文件名 */
+  fileName: string
+  /** 文件指纹（文件名 + 文件大小） */
+  fileFingerprint: string
+  /** 关联 backid */
+  backid: string
+  /** 外数产品 */
+  product: string
+  /** 接口号 */
+  interfaceId: string
+  /** Hive 目标表 */
+  hiveTable: string
+  /** 分区值 */
+  partitionValue: string
+  /** 回溯日期 */
+  reviewDate: string
+  /** 一致性校验目标表 */
+  consistencyTargetTable: string
+  /** 已匹配的前置外发任务 ID */
+  outboundTaskIds: string[]
+  /** 续做应落位的步骤序号（0 基） */
+  resumeStep: number
 }
 
 /** 异步任务（模块三 R85） */
@@ -228,6 +322,12 @@ export interface AsyncTask {
   writeOperation: boolean
   /** 疑似卡死阈值（R91） */
   stuckThresholdMinutes: number
+  /** 是否为跳过执行（一致性校验可跳过，跳过后验证报告标注「未执行」） */
+  skipped?: boolean
+  /** 执行日志（R88：任务明细展示执行轨迹） */
+  logs?: TaskLogEntry[]
+  /** 续做上下文（支撑从任务列表回到落库流程继续下一步） */
+  resumeContext?: TaskResumeContext
 }
 
 /** backid 生成器（R51：落临时库阶段生成，格式 BACK + yyyyMMdd + 3 位序号） */
@@ -243,7 +343,7 @@ export function generateBackid(seq: number, date?: Date): string {
 export const persistRecordsMock: PersistRecord[] = [
   {
     backid: 'BACK20260924017',
-    baseInfo: { operator: '王琳（风控数据组）', operateTime: '2026-09-24 10:32:05', status: '已完成' },
+    baseInfo: { operator: '王琳（风控数据组）', operateTime: '2026-09-24 10:32:05', status: 'Hive已落库' },
     agencyInfo: { agencyId: 'AG-001', agencyCode: 'BH', agencyName: '百行征信有限公司', agencyType: '个人征信', licenseNo: 'JC证-JXKP-2023-0001' },
     fileInfo: { fileName: 'BH_RETRO_20260922_01.csv', acquireMode: 'SFTP拉取', fileSize: 64159744, fileRows: 96210, encoding: 'UTF-8', delimiter: '逗号', encrypted: false, outboundTaskIds: ['OUT20260905'] },
     mappingInfo: { product: '百行-多头借贷汇总 V4', interfaceId: 'BH1023', mappingVersion: 'v1.3', stdFieldCount: 8, nonStdFieldCount: 2, nonStdFields: ['ext_score_v2', 'ext_tag_list'] },
@@ -252,27 +352,229 @@ export const persistRecordsMock: PersistRecord[] = [
   },
   {
     backid: 'BACK20260930003',
-    baseInfo: { operator: '陈昊（模型算法组）', operateTime: '2026-09-30 09:15:42', status: '已完成' },
+    baseInfo: { operator: '陈昊（模型算法组）', operateTime: '2026-09-30 09:15:42', status: 'Hive已落库' },
     agencyInfo: { agencyId: 'AG-002', agencyCode: 'PD', agencyName: '朴道征信有限公司', agencyType: '个人征信', licenseNo: 'JC证-JXKP-2022-0037' },
     fileInfo: { fileName: 'PD_BACK_0929_2.csv', acquireMode: 'SFTP拉取', fileSize: 47915008, fileRows: 45320, encoding: 'UTF-8', delimiter: '逗号', encrypted: false, outboundTaskIds: ['OUT20260912'] },
     mappingInfo: { product: '朴道-历史逾期明细', interfaceId: 'PD2048', mappingVersion: 'v1.1', stdFieldCount: 6, nonStdFieldCount: 1, nonStdFields: ['ext_ovd_level'] },
     storageInfo: { tempTable: 'tmp_ext_retro_raw', hiveTable: 'dw_ods.ods_ext_pd_retro_std', partitionField: 'datax', partitionValue: '2026-09-29', loadedRows: 45320, writeStrategy: '主键（身份证号+review_date）直接覆盖', tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理', uploadFileCleanup: '落库完成后 24 小时清理' },
     billing: { billingSubject: '贷中管理团队', billingType: '按条数', billingRows: 45320, billingFieldCount: 7, unitPrice: 0.4, estimatedAmount: 18128, billingStatus: '未计费' },
   },
+  {
+    // 上海数据集团批次：行数验证任务执行中，说明已完成落 Hive，故存在落库记录
+    backid: 'BACK20261021002',
+    baseInfo: { operator: '赵磊（模型算法组）', operateTime: '2026-10-21 08:55:12', status: 'Hive已落库' },
+    agencyInfo: { agencyId: 'AG-005', agencyCode: 'SHGJ', agencyName: '上海数据集团金融科技有限公司', agencyType: '企业征信', licenseNo: '沪ICP备备案-2020-1145' },
+    fileInfo: { fileName: 'SHGJ_CREDIT_20261020.csv', acquireMode: 'SFTP拉取', fileSize: 39845888, fileRows: 38000, encoding: 'UTF-8', delimiter: '逗号', encrypted: false, outboundTaskIds: ['OUT20260925'] },
+    mappingInfo: { product: '上海数据集团-工商司法信息回溯', interfaceId: 'SHGJ2006', mappingVersion: 'v1.0', stdFieldCount: 5, nonStdFieldCount: 1, nonStdFields: ['q_id'] },
+    storageInfo: { tempTable: 'tmp_ext_retro_raw', hiveTable: 'dw_ods.ods_ext_shgj_retro_std', partitionField: 'datax', partitionValue: '2026-10-20', loadedRows: 38000, writeStrategy: '主键（身份证号+review_date）直接覆盖', tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理', uploadFileCleanup: '落库完成后 24 小时清理' },
+    billing: { billingSubject: '贷中管理团队', billingType: '按条数', billingRows: 38000, billingFieldCount: 6, unitPrice: 0.5, estimatedAmount: 19000, billingStatus: '未计费' },
+  },
 ]
+
+/**
+ * 机构级续做上下文基线（供种子任务派生，避免重复书写机构 / 产品 / 落库目标信息）
+ * 数据来源说明：
+ *   1. 机构 ID / 编码 / 名称 / 类型取自 mock/creditAgencies.ts（AG-001 ~ AG-005）；
+ *   2. 外数产品与接口号取自 mock/backtrackProducts.ts，Hive 目标表取自 mock/hiveTables.ts；
+ *   3. 一致性校验目标表统一取线上存量样本表 dw_ods.ods_ext_retro_online_std；
+ *   4. 前置外发任务取自 mock/outboundTasks.ts（同机构同产品的外发任务）。
+ */
+const RESUME_BASE_BH: TaskResumeContext = {
+  agencyId: 'AG-001',
+  agencyCode: 'BH',
+  agencyName: '百行征信有限公司',
+  agencyType: '个人征信',
+  fileName: 'BH_RETRO_20260922_01.csv',
+  fileFingerprint: 'BH_RETRO_20260922_01.csv@64159744',
+  backid: 'BACK20260924017',
+  product: '百行-多头借贷汇总 V4',
+  interfaceId: 'BH1023',
+  hiveTable: 'dw_ods.ods_ext_bh_retro_std',
+  partitionValue: '2026-09-22',
+  reviewDate: '2026-09-22',
+  consistencyTargetTable: 'dw_ods.ods_ext_retro_online_std',
+  outboundTaskIds: ['OUT20260905'],
+  resumeStep: 2,
+}
+
+const RESUME_BASE_PD: TaskResumeContext = {
+  agencyId: 'AG-002',
+  agencyCode: 'PD',
+  agencyName: '朴道征信有限公司',
+  agencyType: '个人征信',
+  fileName: 'PD_BACK_0929_2.csv',
+  fileFingerprint: 'PD_BACK_0929_2.csv@47915008',
+  backid: 'BACK20260930003',
+  product: '朴道-历史逾期明细',
+  interfaceId: 'PD2048',
+  hiveTable: 'dw_ods.ods_ext_pd_retro_std',
+  partitionValue: '2026-09-29',
+  reviewDate: '2026-09-29',
+  consistencyTargetTable: 'dw_ods.ods_ext_retro_online_std',
+  outboundTaskIds: ['OUT20260912'],
+  resumeStep: 2,
+}
+
+const RESUME_BASE_QT: TaskResumeContext = {
+  agencyId: 'AG-003',
+  agencyCode: 'QT',
+  agencyName: '钱塘征信有限公司',
+  agencyType: '个人征信',
+  fileName: 'QT_resp_20261020.csv',
+  fileFingerprint: 'QT_resp_20261020.csv@23902208',
+  backid: 'BACK20261021001',
+  product: '钱塘-授信评分回溯',
+  interfaceId: 'QT3015',
+  hiveTable: 'dw_ods.ods_ext_qt_retro_std',
+  partitionValue: '2026-10-20',
+  reviewDate: '2026-10-20',
+  consistencyTargetTable: 'dw_ods.ods_ext_retro_online_std',
+  outboundTaskIds: ['OUT20260918'],
+  resumeStep: 2,
+}
+
+const RESUME_BASE_PBC: TaskResumeContext = {
+  agencyId: 'AG-004',
+  agencyCode: 'PBC',
+  agencyName: '中国人民银行征信中心',
+  agencyType: '个人征信',
+  fileName: 'PBC_BASE_20261020.csv',
+  fileFingerprint: 'PBC_BASE_20261020.csv@220200960',
+  backid: 'BACK20261021003',
+  product: '人行征信-公共基础信息回溯',
+  interfaceId: 'PBC1001',
+  hiveTable: 'dw_ods.ods_ext_pbcc_retro_std',
+  partitionValue: '2026-10-20',
+  reviewDate: '2026-10-20',
+  consistencyTargetTable: 'dw_ods.ods_ext_retro_online_std',
+  outboundTaskIds: ['OUT20260922'],
+  resumeStep: 2,
+}
+
+const RESUME_BASE_SHGJ: TaskResumeContext = {
+  agencyId: 'AG-005',
+  agencyCode: 'SHGJ',
+  agencyName: '上海数据集团金融科技有限公司',
+  agencyType: '企业征信',
+  fileName: 'SHGJ_CREDIT_20261020.csv',
+  fileFingerprint: 'SHGJ_CREDIT_20261020.csv@39845888',
+  backid: 'BACK20261021002',
+  product: '上海数据集团-工商司法信息回溯',
+  interfaceId: 'SHGJ2006',
+  hiveTable: 'dw_ods.ods_ext_shgj_retro_std',
+  partitionValue: '2026-10-20',
+  reviewDate: '2026-10-20',
+  consistencyTargetTable: 'dw_ods.ods_ext_retro_online_std',
+  outboundTaskIds: ['OUT20260925'],
+  resumeStep: 3,
+}
 
 /** 异步任务初始集合（模块三） */
 export const asyncTasksMock: AsyncTask[] = [
-  { taskId: 'TASK20261020001', taskType: '解析落库', backid: 'BACK20260924017', agencyName: '百行征信有限公司', fileName: 'BH_RETRO_20260922_01.csv', createTime: '2026-09-24 10:30:00', status: '成功', finishTime: '2026-09-24 10:44:12', operator: '王琳（风控数据组）', fileFingerprint: 'BH_RETRO_20260922_01.csv@64159744', writeOperation: true, stuckThresholdMinutes: 120 },
-  { taskId: 'TASK20261020002', taskType: '推进Hive', backid: 'BACK20260924017', agencyName: '百行征信有限公司', fileName: 'BH_RETRO_20260922_01.csv', createTime: '2026-09-24 10:44:20', status: '成功', finishTime: '2026-09-24 11:02:35', operator: '王琳（风控数据组）', fileFingerprint: 'BH_RETRO_20260922_01.csv@64159744', writeOperation: true, stuckThresholdMinutes: 120 },
-  { taskId: 'TASK20261020003', taskType: '行数验证', backid: 'BACK20260924017', agencyName: '百行征信有限公司', fileName: 'BH_RETRO_20260922_01.csv', createTime: '2026-09-24 11:02:40', status: '成功', finishTime: '2026-09-24 11:09:02', operator: '王琳（风控数据组）', fileFingerprint: 'BH_RETRO_20260922_01.csv@64159744', writeOperation: false, stuckThresholdMinutes: 30 },
-  { taskId: 'TASK20261020004', taskType: '一致性校验', backid: 'BACK20260924017', agencyName: '百行征信有限公司', fileName: 'BH_RETRO_20260922_01.csv', createTime: '2026-09-24 11:09:10', status: '成功', finishTime: '2026-09-24 11:22:47', operator: '王琳（风控数据组）', fileFingerprint: 'BH_RETRO_20260922_01.csv@64159744', writeOperation: false, stuckThresholdMinutes: 30 },
-  { taskId: 'TASK20261020005', taskType: '解析落库', backid: 'BACK20260930003', agencyName: '朴道征信有限公司', fileName: 'PD_BACK_0929_2.csv', createTime: '2026-09-30 09:10:00', status: '成功', finishTime: '2026-09-30 09:26:18', operator: '陈昊（模型算法组）', fileFingerprint: 'PD_BACK_0929_2.csv@47915008', writeOperation: true, stuckThresholdMinutes: 120 },
-  { taskId: 'TASK20261020006', taskType: '推进Hive', backid: 'BACK20260930003', agencyName: '朴道征信有限公司', fileName: 'PD_BACK_0929_2.csv', createTime: '2026-09-30 09:26:30', status: '失败', finishTime: '2026-09-30 09:31:55', operator: '陈昊（模型算法组）', failReason: '目标表 dw_ods.ods_ext_pd_retro_std 分区 datax=2026-09-29 已存在同名任务写入锁，等待人工处理', fileFingerprint: 'PD_BACK_0929_2.csv@47915008', writeOperation: true, stuckThresholdMinutes: 120 },
-  { taskId: 'TASK20261020007', taskType: '一致性校验', backid: 'BACK20260930003', agencyName: '朴道征信有限公司', fileName: 'PD_BACK_0929_2.csv', createTime: '2026-09-30 09:32:00', status: '失败', finishTime: '2026-09-30 09:36:12', operator: '陈昊（模型算法组）', failReason: '关联条件命中 0 条：目标表 dw_ods.ods_ext_retro_online_std 中无 SM4 身份证号匹配的存量样本', fileFingerprint: 'PD_BACK_0929_2.csv@47915008', writeOperation: false, stuckThresholdMinutes: 30 },
-  { taskId: 'TASK20261021008', taskType: '解析落库', backid: 'BACK20261021001', agencyName: '钱塘征信有限公司', fileName: 'QT_resp_20261020.csv', createTime: '2026-10-21 08:05:00', status: '疑似卡死', finishTime: '', operator: '李思远（贷中管理团队）', failReason: '执行时长已超过落库阈值 2 小时，疑似卡死（系统不自动重跑，需人工终止或重新发起）', fileFingerprint: 'QT_resp_20261020.csv@23902208', writeOperation: true, stuckThresholdMinutes: 120 },
-  { taskId: 'TASK20261021009', taskType: '行数验证', backid: 'BACK20261021002', agencyName: '上海数据集团金融科技有限公司', fileName: 'SHGJ_CREDIT_20261020.csv', createTime: '2026-10-21 09:00:00', status: '执行中', finishTime: '', operator: '赵磊（模型算法组）', fileFingerprint: 'SHGJ_CREDIT_20261020.csv@39845888', writeOperation: false, stuckThresholdMinutes: 30 },
-  { taskId: 'TASK20261021010', taskType: '解析落库', backid: 'BACK20261021003', agencyName: '人行征信中心', fileName: 'PBC_BASE_20261020.csv', createTime: '2026-10-21 09:40:00', status: '排队中', finishTime: '', operator: '刘敏（风控数据组）', fileFingerprint: 'PBC_BASE_20261020.csv@220200960', writeOperation: true, stuckThresholdMinutes: 120 },
+  {
+    taskId: 'TASK20261020001', taskType: '解析落库', backid: 'BACK20260924017', agencyName: '百行征信有限公司', fileName: 'BH_RETRO_20260922_01.csv',
+    createTime: '2026-09-24 10:30:00', status: '成功', finishTime: '2026-09-24 10:44:12', operator: '王琳（风控数据组）',
+    fileFingerprint: 'BH_RETRO_20260922_01.csv@64159744', writeOperation: true, stuckThresholdMinutes: 120,
+    logs: [
+      { time: '2026-09-24 10:30:00', stage: '任务创建', message: '解析落库任务已提交，进入执行中' },
+      { time: '2026-09-24 10:31:20', stage: '落临时库', message: '文件已落临时库 tmp_ext_retro_raw，生成 backid BACK20260924017' },
+      { time: '2026-09-24 10:44:12', stage: '任务结束', message: '解析落库完成，共写入 96210 行' },
+    ],
+    resumeContext: { ...RESUME_BASE_BH, resumeStep: 2 },
+  },
+  {
+    taskId: 'TASK20261020002', taskType: '推进Hive', backid: 'BACK20260924017', agencyName: '百行征信有限公司', fileName: 'BH_RETRO_20260922_01.csv',
+    createTime: '2026-09-24 10:44:20', status: '成功', finishTime: '2026-09-24 11:02:35', operator: '王琳（风控数据组）',
+    fileFingerprint: 'BH_RETRO_20260922_01.csv@64159744', writeOperation: true, stuckThresholdMinutes: 120,
+    logs: [
+      { time: '2026-09-24 10:44:20', stage: '任务创建', message: '推进 Hive 任务已提交，进入执行中' },
+      { time: '2026-09-24 10:45:05', stage: '写入 Hive', message: '写入目标表 dw_ods.ods_ext_bh_retro_std 分区 datax=2026-09-22' },
+      { time: '2026-09-24 11:02:35', stage: '任务结束', message: '已落 Hive 标准库，写入 96210 行' },
+    ],
+    resumeContext: { ...RESUME_BASE_BH, resumeStep: 2 },
+  },
+  {
+    taskId: 'TASK20261020003', taskType: '行数验证', backid: 'BACK20260924017', agencyName: '百行征信有限公司', fileName: 'BH_RETRO_20260922_01.csv',
+    createTime: '2026-09-24 11:02:40', status: '成功', finishTime: '2026-09-24 11:09:02', operator: '王琳（风控数据组）',
+    fileFingerprint: 'BH_RETRO_20260922_01.csv@64159744', writeOperation: false, stuckThresholdMinutes: 30,
+    logs: [
+      { time: '2026-09-24 11:02:40', stage: '任务创建', message: '行数验证任务已提交，进入执行中' },
+      { time: '2026-09-24 11:09:02', stage: '任务结束', message: '三重行数验证通过：入库 96210 = 源文件 96210 = 样本 96210' },
+    ],
+    resumeContext: { ...RESUME_BASE_BH, resumeStep: 3 },
+  },
+  {
+    taskId: 'TASK20261020004', taskType: '一致性校验', backid: 'BACK20260924017', agencyName: '百行征信有限公司', fileName: 'BH_RETRO_20260922_01.csv',
+    createTime: '2026-09-24 11:09:10', status: '成功', finishTime: '2026-09-24 11:22:47', operator: '王琳（风控数据组）',
+    fileFingerprint: 'BH_RETRO_20260922_01.csv@64159744', writeOperation: false, stuckThresholdMinutes: 30,
+    logs: [
+      { time: '2026-09-24 11:09:10', stage: '任务创建', message: '一致性校验任务已提交，进入执行中' },
+      { time: '2026-09-24 11:22:47', stage: '任务结束', message: '抽样 100 条全部关联成功且值一致，比对表 dw_ods.ods_ext_retro_online_std' },
+    ],
+    resumeContext: { ...RESUME_BASE_BH, resumeStep: 2 },
+  },
+  {
+    taskId: 'TASK20261020005', taskType: '解析落库', backid: 'BACK20260930003', agencyName: '朴道征信有限公司', fileName: 'PD_BACK_0929_2.csv',
+    createTime: '2026-09-30 09:10:00', status: '成功', finishTime: '2026-09-30 09:26:18', operator: '陈昊（模型算法组）',
+    fileFingerprint: 'PD_BACK_0929_2.csv@47915008', writeOperation: true, stuckThresholdMinutes: 120,
+    logs: [
+      { time: '2026-09-30 09:10:00', stage: '任务创建', message: '解析落库任务已提交，进入执行中' },
+      { time: '2026-09-30 09:11:15', stage: '落临时库', message: '文件已落临时库 tmp_ext_retro_raw，生成 backid BACK20260930003' },
+      { time: '2026-09-30 09:26:18', stage: '任务结束', message: '解析落库完成，共写入 45320 行' },
+    ],
+    resumeContext: { ...RESUME_BASE_PD, resumeStep: 2 },
+  },
+  {
+    taskId: 'TASK20261020006', taskType: '推进Hive', backid: 'BACK20260930003', agencyName: '朴道征信有限公司', fileName: 'PD_BACK_0929_2.csv',
+    createTime: '2026-09-30 09:26:30', status: '失败', finishTime: '2026-09-30 09:31:55', operator: '陈昊（模型算法组）',
+    failReason: '目标表 dw_ods.ods_ext_pd_retro_std 分区 datax=2026-09-29 已存在同名任务写入锁，等待人工处理',
+    fileFingerprint: 'PD_BACK_0929_2.csv@47915008', writeOperation: true, stuckThresholdMinutes: 120,
+    logs: [
+      { time: '2026-09-30 09:26:30', stage: '任务创建', message: '推进 Hive 任务已提交，进入执行中' },
+      { time: '2026-09-30 09:31:55', stage: '任务结束', message: '目标表 dw_ods.ods_ext_pd_retro_std 分区 datax=2026-09-29 已存在同名任务写入锁，等待人工处理', error: true },
+    ],
+    resumeContext: { ...RESUME_BASE_PD, resumeStep: 2 },
+  },
+  {
+    taskId: 'TASK20261020007', taskType: '一致性校验', backid: 'BACK20260930003', agencyName: '朴道征信有限公司', fileName: 'PD_BACK_0929_2.csv',
+    createTime: '2026-09-30 09:32:00', status: '失败', finishTime: '2026-09-30 09:36:12', operator: '陈昊（模型算法组）',
+    failReason: '关联条件命中 0 条：目标表 dw_ods.ods_ext_retro_online_std 中无 SM4 身份证号匹配的存量样本',
+    fileFingerprint: 'PD_BACK_0929_2.csv@47915008', writeOperation: false, stuckThresholdMinutes: 30,
+    logs: [
+      { time: '2026-09-30 09:32:00', stage: '任务创建', message: '一致性校验任务已提交，进入执行中' },
+      { time: '2026-09-30 09:36:12', stage: '任务结束', message: '关联条件命中 0 条：目标表 dw_ods.ods_ext_retro_online_std 中无 SM4 身份证号匹配的存量样本', error: true },
+    ],
+    resumeContext: { ...RESUME_BASE_PD, resumeStep: 2 },
+  },
+  {
+    taskId: 'TASK20261021008', taskType: '解析落库', backid: 'BACK20261021001', agencyName: '钱塘征信有限公司', fileName: 'QT_resp_20261020.csv',
+    createTime: '2026-10-21 08:05:00', status: '疑似卡死', finishTime: '', operator: '李思远（贷中管理团队）',
+    failReason: '执行时长已超过落库阈值 2 小时，疑似卡死（系统不自动重跑，需人工终止或重新发起）',
+    fileFingerprint: 'QT_resp_20261020.csv@23902208', writeOperation: true, stuckThresholdMinutes: 120,
+    logs: [
+      { time: '2026-10-21 08:05:00', stage: '任务创建', message: '解析落库任务已提交，进入执行中' },
+      { time: '2026-10-21 08:06:40', stage: '落临时库', message: '文件已落临时库 tmp_ext_retro_raw，生成 backid BACK20261021001' },
+      { time: '2026-10-21 10:20:00', stage: '卡死告警', message: '执行时长已超过落库阈值 120 分钟，标记为疑似卡死（不自动重跑）', error: true },
+    ],
+    resumeContext: { ...RESUME_BASE_QT, resumeStep: 2 },
+  },
+  {
+    taskId: 'TASK20261021009', taskType: '行数验证', backid: 'BACK20261021002', agencyName: '上海数据集团金融科技有限公司', fileName: 'SHGJ_CREDIT_20261020.csv',
+    createTime: '2026-10-21 09:00:00', status: '执行中', finishTime: '', operator: '赵磊（模型算法组）',
+    fileFingerprint: 'SHGJ_CREDIT_20261020.csv@39845888', writeOperation: false, stuckThresholdMinutes: 30,
+    logs: [
+      { time: '2026-10-21 09:00:00', stage: '任务创建', message: '行数验证任务已提交，进入执行中' },
+      { time: '2026-10-21 09:00:18', stage: '取数比对', message: '正在比对入库行数与源文件行数…' },
+    ],
+    resumeContext: { ...RESUME_BASE_SHGJ, resumeStep: 3 },
+  },
+  {
+    taskId: 'TASK20261021010', taskType: '解析落库', backid: 'BACK20261021003', agencyName: '中国人民银行征信中心', fileName: 'PBC_BASE_20261020.csv',
+    createTime: '2026-10-21 09:40:00', status: '排队中', finishTime: '', operator: '刘敏（风控数据组）',
+    fileFingerprint: 'PBC_BASE_20261020.csv@220200960', writeOperation: true, stuckThresholdMinutes: 120,
+    logs: [{ time: '2026-10-21 09:40:00', stage: '任务创建', message: '解析落库任务已提交，进入排队中' }],
+    resumeContext: { ...RESUME_BASE_PBC, resumeStep: 2 },
+  },
 ]
 
 /** 通知记录初始集合（R82，实体定义见 mock/notify.ts） */
@@ -318,6 +620,27 @@ export const notifyRecordsMock: NotifyRecord[] = [
     sentAt: '2026-09-30 09:37:05',
     failReason: '接收人未在数字社区订阅该 backid 批次（已重试 3 次）',
   },
+  {
+    // 上海数据集团批次：已落 Hive 并进入行数验证，通知尚未发送
+    notifyId: 'NOTIFY20261021001',
+    backid: 'BACK20261021002',
+    channel: '数据服务公众号',
+    receivers: ['赵磊（模型算法组）', '贷中管理团队值班'],
+    content: {
+      agency: '上海数据集团金融科技有限公司',
+      fileName: 'SHGJ_CREDIT_20261020.csv',
+      backid: 'BACK20261021002',
+      loadTime: '2026-10-21 08:55:12',
+      loadedRows: 38000,
+      validationResult: '行数验证执行中，尚未产出结论',
+      exceptionSummary: '无异常行',
+      consistencySummary: '尚未执行一致性校验',
+    },
+    maskEnabled: true,
+    sendStatus: '待发送',
+    retryCount: 0,
+    sentAt: '',
+  },
 ]
 
 /** 查询异步任务列表 */
@@ -332,6 +655,14 @@ export async function listAsyncTasks(params?: { status?: string; taskType?: stri
 }
 
 /**
+ * 按 backid 查询批次关联的任务（R51：backid 为批次标识，一个批次可关联多条任务）
+ * @param backid 批次标识
+ */
+export async function listAsyncTasksByBackid(backid: string) {
+  return asyncTasksMock.filter((t) => t.backid === backid)
+}
+
+/**
  * 按文件指纹判断是否存在未完成的写操作类任务（R90：写操作类判重并阻断，只读类放行）
  * 返回命中的任务，未命中返回 null
  */
@@ -341,6 +672,76 @@ export async function findDuplicateWriteTask(fileFingerprint: string, excludeTas
       (t) => t.fileFingerprint === fileFingerprint && t.writeOperation && t.status !== '失败' && t.status !== '成功' && t.taskId !== excludeTaskId
     ) ?? null
   )
+}
+
+/** 任务 ID 生成器（R85：格式 TASK + yyyyMMdd + 3 位序号） */
+export function generateTaskId(seq: number, date?: Date): string {
+  const d = date ?? new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `TASK${y}${m}${day}${String(seq).padStart(3, '0')}`
+}
+
+/**
+ * 新增异步任务（R86：所有执行类操作均创建任务）
+ * 任务写入后立即出现在服务任务列表，可查看明细并继续下一步
+ * @param task 任务主体（taskId 可缺省，由生成器补齐）
+ * @returns 写入后的完整任务
+ */
+export async function appendAsyncTask(task: Omit<AsyncTask, 'taskId'> & { taskId?: string }): Promise<AsyncTask> {
+  const full: AsyncTask = {
+    ...task,
+    taskId: task.taskId || generateTaskId(asyncTasksMock.length + 1),
+  }
+  asyncTasksMock.unshift(full)
+  return full
+}
+
+/**
+ * 更新任务状态与日志（R84 状态维护 / R88 执行轨迹）
+ * @param taskId 任务 ID
+ * @param patch 待更新字段
+ */
+export async function updateAsyncTask(
+  taskId: string,
+  patch: Partial<Pick<AsyncTask, 'status' | 'finishTime' | 'failReason' | 'skipped'>>
+): Promise<AsyncTask | null> {
+  const task = asyncTasksMock.find((t) => t.taskId === taskId)
+  if (!task) return null
+  Object.assign(task, patch)
+  return task
+}
+
+/**
+ * 追加任务执行日志（R88：任务明细展示执行轨迹）
+ * @param taskId 任务 ID
+ * @param entry 日志条目
+ */
+export async function appendTaskLog(taskId: string, entry: TaskLogEntry): Promise<void> {
+  const task = asyncTasksMock.find((t) => t.taskId === taskId)
+  if (!task) return
+  task.logs = [...(task.logs ?? []), entry]
+}
+
+/** 按任务 ID 查询任务 */
+export async function getAsyncTask(taskId: string): Promise<AsyncTask | undefined> {
+  return asyncTasksMock.find((t) => t.taskId === taskId)
+}
+
+/**
+ * 回写任务的关联 backid（R51：backid 在落临时库收尾时才生成）
+ * 同时同步续做上下文中的 backid，保证从任务续做时能定位到原批次
+ * @param taskId 任务 ID
+ * @param backid 批次标识
+ */
+export async function bindAsyncTaskBackid(taskId: string, backid: string): Promise<void> {
+  const task = asyncTasksMock.find((t) => t.taskId === taskId)
+  if (!task) return
+  task.backid = backid
+  if (task.resumeContext) {
+    task.resumeContext = { ...task.resumeContext, backid }
+  }
 }
 
 /** 查询落库记录（按 backid） */

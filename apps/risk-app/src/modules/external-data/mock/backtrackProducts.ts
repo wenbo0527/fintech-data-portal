@@ -45,6 +45,7 @@ export const backtrackProductsMock: BacktrackProduct[] = [
     registered: true,
     fields: [
       { name: 'id_md5', comment: '主体标识（MD5加密）' },
+      { name: 'phone_md5', comment: '手机号标识（MD5加密）' },
       { name: 'inst_cnt_1m', comment: '近1月申请机构数' },
       { name: 'loan_cnt_1m', comment: '近1月贷款审批次数' },
       { name: 'loan_cnt_3m', comment: '近3月贷款审批次数' },
@@ -61,6 +62,7 @@ export const backtrackProductsMock: BacktrackProduct[] = [
     registered: true,
     fields: [
       { name: 'id_md5', comment: '主体标识（MD5加密）' },
+      { name: 'phone_md5', comment: '手机号标识（MD5加密）' },
       { name: 'overdue_cnt_24m', comment: '近24月逾期次数' },
       { name: 'max_overdue_amt', comment: '最大逾期金额' },
       { name: 'review_data', comment: '回溯日期' },
@@ -73,6 +75,7 @@ export const backtrackProductsMock: BacktrackProduct[] = [
     registered: true,
     fields: [
       { name: 'id_md5', comment: '主体标识（MD5加密）' },
+      { name: 'phone_md5', comment: '手机号标识（MD5加密）' },
       { name: 'credit_score', comment: '授信评分' },
       { name: 'risk_band', comment: '风险分层档位' },
       { name: 'review_data', comment: '回溯日期' },
@@ -85,6 +88,7 @@ export const backtrackProductsMock: BacktrackProduct[] = [
     registered: true,
     fields: [
       { name: 'id_md5', comment: '主体标识（MD5加密）' },
+      { name: 'phone_md5', comment: '手机号标识（MD5加密）' },
       { name: 'credit_query_cnt_6m', comment: '近6月征信查询次数' },
       { name: 'card_cnt', comment: '名下银行卡数量' },
       { name: 'account_open_months', comment: '账户开户时长（月）' },
@@ -123,6 +127,7 @@ export const backtrackProductsMock: BacktrackProduct[] = [
 
 /** 外数出参字段 → 标准库字段的自动碰撞字典（R33） */
 export const collisionDict: Record<string, string> = {
+  phone_md5: 'phone_md5',
   inst_cnt_1m: 'std_apply_inst_cnt_1m',
   loan_cnt_1m: 'std_loan_cnt_1m',
   loan_cnt_3m: 'std_loan_cnt_3m',

@@ -1,11 +1,12 @@
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import type { UploadFile } from '@arco-design/web-vue'
 import { fetchEnabledAgencies } from '../api/creditAgency'
-import type { CreditAgency } from '../mock/creditAgencies'
+import type { CreditAgency, AgencyType } from '../mock/creditAgencies'
 import {
-  fetchRetroFiles,
-  fetchRetroDirs,
+  fetchRetroTree,
+  decryptArchivePackage,
+  fetchArchiveContent,
   fetchPreviewRows,
   fetchProcessedRecords,
   fetchOutboundTasks,
@@ -16,20 +17,28 @@ import {
   fetchConsistencyDetails,
   fetchConsistencySummary,
   fetchTripleRowCheck,
+  fetchReviewDateFromFileName,
   fetchNotifyConfig,
   createNotifyContent,
   dispatchNotification,
   createBackid,
   savePersistRecord,
+  fetchPersistRecord,
   fetchNotifyRecords,
+  createAsyncTask,
+  saveAsyncTask,
+  saveTaskLog,
+  bindTaskBackid as bindAsyncTaskBackid,
+  fetchTasksByBackid,
+  fetchBatchStage,
 } from '../api/backtrack'
-import type { RetroFile, PreviewRow, ProcessedFileRecord } from '../mock/retroFiles'
+import type { RetroFile, RetroTreeNode, PreviewRow, ProcessedFileRecord } from '../mock/retroFiles'
 import type { OutboundTask } from '../mock/outboundTasks'
 import type { BacktrackProduct } from '../mock/backtrackProducts'
 import type { HiveTableItem } from '../mock/hiveTables'
 import type { ValidationDetail, ConsistencySummary, TripleRowCheck } from '../mock/validation'
 import type { NotifyConfig, NotifyContent, NotifyRecord } from '../mock/notify'
-import type { PersistRecord, PersistStatus } from '../mock/backtrackPersist'
+import type { PersistRecord, PersistStatus, AsyncTask, AsyncTaskType, TaskResumeContext, BatchStage } from '../mock/backtrackPersist'
 import { PERSIST_STATUS_FLOW } from '../mock/backtrackPersist'
 
 /**
@@ -57,6 +66,22 @@ export interface FieldMapping {
 
 /** 非标准化字段占位符（R34/R38） */
 const NON_STD_FIELD = '__non_standard__'
+
+/** 必填映射规则项 */
+interface RequiredFieldRule {
+  /** 标准库字段名 */
+  std: string
+  /** 标准字段说明 */
+  stdLabel: string
+  /** 默认选中的文件出参字段 */
+  defaultSource: string
+  /** 等同判定规则说明 */
+  rule: string
+  /** 等同判定：出参字段名是否与该标准字段等同 */
+  matcher: (f: string) => boolean
+  /** 适用机构类型；缺省表示所有机构类型均适用 */
+  agencyTypes?: AgencyType[]
+}
 
 /**
  * 创建外数回溯落库的流程状态容器
@@ -90,28 +115,68 @@ export function useBacktrackPersist() {
 
   /** SFTP 目录（R14：目录路径 + 文件名 = 完整文件路径，末尾自动补 /） */
   const sftpDir = ref('')
-  /** SFTP 子目录 */
-  const sftpSubDir = ref('')
-  /** SFTP 文件名（R14） */
-  const sftpFileName = ref('')
 
-  /** 完整文件路径预览（R14） */
+  /** SFTP 目录树（R14：支持文件夹 / CSV / 压缩包三级节点，直接选路径） */
+  const retroTree = ref<RetroTreeNode[]>([])
+
+  /** 当前选中的目录树节点 */
+  const selectedTreeNode = ref<RetroTreeNode | null>(null)
+
+  /** 已解压的压缩包节点 */
+  const extractedArchive = ref<RetroTreeNode | null>(null)
+
+  /* ---------- 压缩包解密与解压（R17/R19） ---------- */
+  /** 已解密（密码校验通过）的压缩包节点 key 集合 */
+  const decryptedArchives = ref<string[]>([])
+
+  /** 已解压并已挂载包内文件的压缩包节点 key 集合 */
+  const extractedArchives = ref<string[]>([])
+
+  /** 压缩包解压中 */
+  const extractingArchive = ref(false)
+
+  /** 压缩包解密弹窗可见性 */
+  const archiveDecryptVisible = ref(false)
+
+  /** 压缩包解密进行中 */
+  const archiveDecrypting = ref(false)
+
+  /** 压缩包密码输入 */
+  const archivePassword = ref('')
+
+  /** 压缩包解密失败原因 */
+  const archiveDecryptFailed = ref('')
+
+  /** 当前待解密的压缩包节点 */
+  let archiveDecryptTarget: RetroTreeNode | null = null
+
+  /** 目录树展开的节点 key */
+  const expandedKeys = ref<string[]>([])
+
+  /** 目录树加载后默认展开顶层目录 */
+  watch(retroTree, (nodes) => {
+    expandedKeys.value = nodes.map((n) => n.key)
+  })
+
+  /** 目录树展开 / 收起 */
+  const onTreeExpand = (keys: (string | number)[]) => {
+    expandedKeys.value = keys.map((k) => String(k))
+  }
+
+  /** 完整文件路径预览（R14：目录路径 + 选中节点相对路径） */
   const fullFilePath = computed(() => {
     const a = selectedAgency.value
     if (!a) return ''
     const dir = (sftpDir.value || a.sftp.directory).replace(/\/+$/, '')
-    const sub = sftpSubDir.value ? `/${sftpSubDir.value}` : ''
-    return `${dir}${sub}/${sftpFileName.value || '<文件名>'}`
+    const node = selectedTreeNode.value
+    if (!node) return `${dir}/`
+    return `${dir}/${node.path}`
   })
 
   /** SFTP 参数自动带入（R13：只读展示机构配置） */
   const sftpParams = computed(() => selectedAgency.value?.sftp ?? null)
 
-  /** SFTP 子目录候选 */
-  const dirOptions = ref<string[]>([])
-
-  /** SFTP 返回文件列表 */
-  const fileList = ref<RetroFile[]>([])
+  /** SFTP 目录树加载中 */
   const querying = ref(false)
 
   /** 选中的文件 */
@@ -142,44 +207,178 @@ export function useBacktrackPersist() {
     if (!selectedAgencyId.value && agencies.value.length) selectedAgencyId.value = agencies.value[0].id
   }
 
-  /** 切换机构：重置目录与文件列表，自动带出 SFTP 配置（R13） */
+  /** 切换机构：重置目录树，自动带出 SFTP 配置（R13） */
   const onAgencyChange = async () => {
     sftpDir.value = selectedAgency.value?.sftp.directory ?? ''
-    sftpSubDir.value = ''
-    sftpFileName.value = ''
-    fileList.value = []
+    retroTree.value = []
+    selectedTreeNode.value = null
+    extractedArchive.value = null
+    decryptedArchives.value = []
+    extractedArchives.value = []
     selectedFile.value = null
     uploadedFile.value = null
     uploadFileList.value = []
     previewRows.value = []
-    dirOptions.value = await fetchRetroDirs(selectedAgency.value?.agencyCode ?? '')
+    await loadRetroTree()
     if (dataSourceMode.value === 'sftp') {
       setStatus('待开始')
     }
   }
 
-  /** 拉取机构 SFTP 目录下的返回文件 */
-  const queryFiles = async () => {
+  /** 加载机构 SFTP 目录树（R14：文件夹 / CSV / 压缩包三级节点） */
+  const loadRetroTree = async () => {
     if (!selectedAgency.value) {
       Message.warning('请先选择征信机构')
       return
     }
-    if (!sftpFileName.value.trim()) {
-      Message.warning('请输入要拉取的文件名（R14：目录路径 + 文件名 = 完整文件路径）')
-      return
-    }
     querying.value = true
-    selectedFile.value = null
     try {
-      const list = await fetchRetroFiles(selectedAgency.value.agencyCode)
-      // 演示：按输入的文件名做包含匹配，命中则返回该文件，未命中则返回机构目录下全部文件
-      const matched = list.filter((f) => f.name.includes(sftpFileName.value.trim()))
-      fileList.value = matched.length ? matched : list
-      setStatus('文件已获取')
-      if (!matched.length) Message.info(`目录 ${fullFilePath.value} 下未找到同名文件，已列出该目录全部返回文件`)
+      retroTree.value = await fetchRetroTree(selectedAgency.value.agencyCode)
     } finally {
       querying.value = false
     }
+  }
+
+  /** 目录树节点 → 回溯文件（供预览、解密与落库链路复用） */
+  const toRetroFile = (node: RetroTreeNode): RetroFile => ({
+    id: node.key,
+    agencyCode: selectedAgency.value?.agencyCode ?? '',
+    name: node.name,
+    size: node.size || 0,
+    rows: node.rows || 0,
+    updateTime: node.updateTime || '',
+    encrypted: !!node.encrypted,
+    encoding: node.encoding || 'UTF-8',
+    delimiter: node.delimiter || '逗号',
+    fieldCount: node.fieldCount || 0,
+    header: node.header || [],
+  })
+
+  /** 递归查找目录树节点（按 key） */
+  const findNodeByKey = (nodes: RetroTreeNode[], key: string): RetroTreeNode | null => {
+    for (const n of nodes) {
+      if (n.key === key) return n
+      if (n.children) {
+        const hit = findNodeByKey(n.children, key)
+        if (hit) return hit
+      }
+    }
+    return null
+  }
+
+  /** 递归查找目录树节点（按文件名） */
+  const findNodeByName = (nodes: RetroTreeNode[], name: string): RetroTreeNode | null => {
+    for (const n of nodes) {
+      if (n.name === name) return n
+      if (n.children) {
+        const hit = findNodeByName(n.children, name)
+        if (hit) return hit
+      }
+    }
+    return null
+  }
+
+  /** 判断压缩包是否已完成解密 */
+  const isArchiveDecrypted = (node: RetroTreeNode) => decryptedArchives.value.includes(node.key)
+
+  /** 判断压缩包是否已完成解压 */
+  const isArchiveExtracted = (node: RetroTreeNode) => extractedArchives.value.includes(node.key)
+
+  /**
+   * 解压压缩包（R17：包内仍只接受 CSV）
+   * 加密包必须先通过密码解密，否则拒绝解压
+   * @param node 压缩包节点
+   */
+  const extractArchive = async (node: RetroTreeNode) => {
+    if (node.encrypted && !isArchiveDecrypted(node)) {
+      openArchiveDecrypt(node)
+      return
+    }
+    if (isArchiveExtracted(node)) {
+      Message.info(`${node.name} 已解压`)
+      return
+    }
+    extractingArchive.value = true
+    try {
+      const inner = await fetchArchiveContent(node.key)
+      const csvFiles = inner.filter((c) => c.nodeType === 'csv')
+      if (!csvFiles.length) {
+        Message.warning('压缩包内没有可落库的 CSV 文件')
+        return
+      }
+      // 将包内文件挂回树节点，解压后可展开选择
+      node.children = inner
+      extractedArchive.value = node
+      if (!extractedArchives.value.includes(node.key)) {
+        extractedArchives.value = [...extractedArchives.value, node.key]
+      }
+      // 自动展开压缩包节点，展开后可直接选择包内 CSV 拉取
+      if (!expandedKeys.value.includes(node.key)) {
+        expandedKeys.value = [...expandedKeys.value, node.key]
+      }
+      Message.success(`已解压 ${node.name}，内含 ${csvFiles.length} 个 CSV 文件，请选择其一拉取`)
+    } finally {
+      extractingArchive.value = false
+    }
+  }
+
+  /** 打开压缩包解密弹窗 */
+  const openArchiveDecrypt = (node: RetroTreeNode) => {
+    archiveDecryptTarget = node
+    archivePassword.value = ''
+    archiveDecryptFailed.value = ''
+    archiveDecryptVisible.value = true
+  }
+
+  /**
+   * 确认压缩包解密：密码错误时阻断并保持弹窗打开（R19），成功后自动继续解压
+   * @returns 解密成功返回 true（关闭弹窗），失败返回 false（保持弹窗）
+   */
+  const confirmArchiveDecrypt = async (): Promise<boolean> => {
+    if (!archivePassword.value.trim()) {
+      Message.warning('请输入压缩包密码')
+      return false
+    }
+    archiveDecrypting.value = true
+    archiveDecryptFailed.value = ''
+    try {
+      const target = archiveDecryptTarget
+      if (!target) return false
+      const ok = await decryptArchivePackage(target.key, archivePassword.value)
+      if (!ok) {
+        archiveDecryptFailed.value = '解压失败，请检查压缩包密码是否正确'
+        Message.error('解压失败，请检查压缩包密码是否正确')
+        return false
+      }
+      if (!decryptedArchives.value.includes(target.key)) {
+        decryptedArchives.value = [...decryptedArchives.value, target.key]
+      }
+      archiveDecryptVisible.value = false
+      Message.success(`压缩包 ${target.name} 解密成功`)
+      await extractArchive(target)
+      return true
+    } finally {
+      archiveDecrypting.value = false
+    }
+  }
+
+  /**
+   * 选中目录树节点（key 来自 a-tree 的 select 事件）
+   * - CSV：直接拉取并进入预览（R20）
+   * - 压缩包：加密包先解密、再解压并展开包内文件
+   * - 文件夹：仅作为导航节点
+   */
+  const onTreeSelect = async (key: string | number) => {
+    const node = findNodeByKey(retroTree.value, String(key))
+    if (!node) return
+    selectedTreeNode.value = node
+    if (node.nodeType === 'archive') {
+      await extractArchive(node)
+      return
+    }
+    if (node.nodeType === 'folder') return
+    setStatus('文件已获取')
+    await onFileSelect(toRetroFile(node))
   }
 
   /** 选中文件并刷新结构识别与预览（R19/R20） */
@@ -194,6 +393,8 @@ export function useBacktrackPersist() {
     selectedFile.value = file
     uploadedFile.value = null
     applyFileStructure(file)
+    // 回溯日期由文件名自动解析（3.2 关联条件与 3.3 分区值同源）
+    await applyAutoReviewDate(file.name)
     if (!file.encrypted) {
       setStatus('文件就绪')
       await loadPreview(file)
@@ -246,8 +447,9 @@ export function useBacktrackPersist() {
       return
     }
     target.encrypted = false
-    const row = fileList.value.find((f) => f.id === target.id)
-    if (row) row.encrypted = false
+    // 同步目录树节点的加密标记，避免重新选中时重复提示解密
+    const treeNode = findNodeByKey(retroTree.value, target.id)
+    if (treeNode) treeNode.encrypted = false
     decryptVisible.value = false
     setStatus('文件就绪')
     await loadPreview(target)
@@ -292,6 +494,8 @@ export function useBacktrackPersist() {
     selectedFile.value = null
     uploadDecrypted.value = true
     applyFileStructure(uploadedFile.value)
+    // 回溯日期由文件名自动解析（3.2 关联条件与 3.3 分区值同源）
+    await applyAutoReviewDate(uploadedFile.value.name)
     setStatus('文件已获取')
     await loadPreview(uploadedFile.value)
   }
@@ -366,14 +570,14 @@ export function useBacktrackPersist() {
   /** 字段映射列表 */
   const fieldMappings = ref<FieldMapping[]>([])
 
-  /** 必填映射（R32：IDMD5 与 review date 强制绑定） */
-  const REQUIRED_FIELD_MATCH = [
+  /** 必填映射（R32：IDMD5、review date、phone_md5 强制绑定） */
+  const REQUIRED_FIELD_MATCH: RequiredFieldRule[] = [
     {
       std: 'id_md5',
       stdLabel: '加密MD5字段',
       defaultSource: 'id_md5',
-      rule: '主体标识密文字段（字段名含 md5 / hash）',
-      matcher: (f: string) => /md5|hash/i.test(f),
+      rule: '主体标识密文字段（字段名含 md5 / hash，且不含手机号）',
+      matcher: (f: string) => /md5|hash/i.test(f) && !/phone|mobile|tel/i.test(f),
     },
     {
       std: 'review_date',
@@ -382,12 +586,22 @@ export function useBacktrackPersist() {
       rule: '回溯基准日期字段（字段名含 date / time / review_data）',
       matcher: (f: string) => /date|time/i.test(f) || f === 'review_data',
     },
+    {
+      std: 'phone_md5',
+      stdLabel: '加密手机号字段',
+      defaultSource: 'phone_md5',
+      rule: '手机号密文字段（字段名含 phone / mobile / tel 且带 md5 / hash）',
+      matcher: (f: string) => /phone|mobile|tel/i.test(f) && /md5|hash/i.test(f),
+      // 三要素（身份证 + 姓名 + 手机号）仅个人征信适用，企业征信无手机号维度
+      agencyTypes: ['个人征信'],
+    },
   ]
 
   /** 必填区已选的文件出参字段 */
   const requiredSourceSelection = reactive<Record<string, string>>({
     id_md5: 'id_md5',
     review_date: 'review_data',
+    phone_md5: 'phone_md5',
   })
 
   /** 当前产品的出参字段清单 */
@@ -399,26 +613,39 @@ export function useBacktrackPersist() {
   /** 字段说明查询（R30：未收录产品显示「—」） */
   const sourceFieldComment = (f: string) => productFields.value.find((x) => x.name === f)?.comment || '—'
 
-  /** 必选区已占用的出参字段 */
-  const occupiedSourceFields = computed(() => Object.values(requiredSourceSelection).filter(Boolean))
+  /**
+   * 当前生效的必填映射规则
+   * 未收录产品（R31）走自由输入，不参与强制绑定；
+   * phone_md5 属三要素维度，仅个人征信机构适用。
+   */
+  const activeRequiredFieldMatch = computed(() => {
+    if (isCustomProduct.value) return []
+    const agencyType = selectedAgency.value?.agencyType
+    return REQUIRED_FIELD_MATCH.filter((r) => !r.agencyTypes || (!!agencyType && r.agencyTypes.includes(agencyType)))
+  })
+
+  /** 必选区已占用的出参字段（仅统计当前生效的必填项） */
+  const occupiedSourceFields = computed(() =>
+    activeRequiredFieldMatch.value.map((r) => requiredSourceSelection[r.std]).filter(Boolean)
+  )
 
   /** 必填映射校验状态 */
   const requiredMappingStatus = computed(() =>
-    REQUIRED_FIELD_MATCH.map((r) => {
+    activeRequiredFieldMatch.value.map((r) => {
       const sel = requiredSourceSelection[r.std]
       return { ...r, sel, ok: !!sel && catalogSourceFields.value.includes(sel) && r.matcher(sel) }
     })
   )
 
   /** 必填映射是否全部通过 */
-  const requiredTwoPassed = computed(() => requiredMappingStatus.value.every((r) => r.ok))
+  const requiredAllPassed = computed(() => requiredMappingStatus.value.every((r) => r.ok))
 
   /** 必填映射已通过数量 */
   const requiredPassedCount = computed(() => requiredMappingStatus.value.filter((r) => r.ok).length)
 
   /** 切换产品后校正必填区已选字段 */
   const ensureRequiredSelection = () => {
-    REQUIRED_FIELD_MATCH.forEach((r) => {
+    activeRequiredFieldMatch.value.forEach((r) => {
       const opts = catalogSourceFields.value
       const cur = requiredSourceSelection[r.std]
       if (!opts.includes(cur)) {
@@ -499,6 +726,7 @@ export function useBacktrackPersist() {
   /** 依据标准字段语义命中标准库字段 */
   const autoMatchStdField = (sourceField: string): string => {
     const dict: Record<string, string> = {
+      phone_md5: 'phone_md5',
       inst_cnt_1m: 'std_apply_inst_cnt_1m',
       loan_cnt_1m: 'std_loan_cnt_1m',
       loan_cnt_3m: 'std_loan_cnt_3m',
@@ -627,8 +855,23 @@ export function useBacktrackPersist() {
     }
   }
 
-  /** 回溯日期（写入 datax 分区，R40） */
+  /** 回溯日期（3.2 一致性校验关联条件 + 3.3 写入 datax 分区，R40/R68）：由回溯文件名自动解析 */
   const reviewDate = ref('')
+
+  /**
+   * 按回溯文件名自动解析回溯日期
+   * 解析规则（mock 文件命名口径见 mock/retroFiles.ts）：
+   *   1. 8 位 yyyyMMdd 直接取用，如 BH_RETRO_20261012_01.csv → 2026-10-12；
+   *   2. 4 位 MMdd 补当年，如 PD_BACK_0918_1.csv → 2026-09-18；
+   *   3. 解析不到时兜底为批次创建日期（当日）。
+   * @param fileName 回溯返回文件名
+   */
+  const applyAutoReviewDate = async (fileName: string) => {
+    const parsed = await fetchReviewDateFromFileName(fileName)
+    const d = new Date()
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    reviewDate.value = parsed || today
+  }
 
   /** 分区值预览（R40：分区字段固定 datax，值为 review date 格式转换结果） */
   const partitionValue = computed(() => {
@@ -657,6 +900,8 @@ export function useBacktrackPersist() {
     // R26：文件去重校验放在生成 backid / 落库前执行
     const duplicated = await checkFileDuplicate()
     if (duplicated) return
+    // R86：落临时库属写操作类执行动作，创建异步任务后再执行
+    const task = await createPersistTask('解析落库', '', true, 2)
     persisting.value = true
     persistPercent.value = 0
     const timer = setInterval(() => {
@@ -664,13 +909,13 @@ export function useBacktrackPersist() {
       if (persistPercent.value >= 100) {
         clearInterval(timer)
         persisting.value = false
-        void finalizePersist()
+        void finalizePersist(task.taskId)
       }
     }, 250)
   }
 
   /** 落临时库收尾：生成 backid 并登记批次 */
-  const finalizePersist = async () => {
+  const finalizePersist = async (taskId?: string) => {
     const file = activeFile.value!
     const backid = await createBackid(persistBatches.value.length + 1)
     persistBatches.value = [
@@ -684,6 +929,24 @@ export function useBacktrackPersist() {
       },
     ]
     setStatus('临时库已落库')
+    // 临时库数据已变更，需重新执行一致性校验后才可推进 Hive
+    consistencyChecked.value = false
+    consistencySkipped.value = false
+    consistencySkipReason.value = ''
+    consistencySummary.value = null
+    consistencyDetails.value = []
+    // 任务回填 backid 并置为成功，供任务列表查看明细与续做
+    if (taskId) {
+      const time = new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
+      await saveAsyncTask(taskId, { status: '成功', finishTime: time })
+      await saveTaskLog(taskId, {
+        time,
+        stage: '任务结束',
+        message: `已全量落临时库，生成 backid 批次 ${backid}`,
+      })
+      // backid 在落临时库收尾时才生成，需回写到任务与续做上下文
+      await bindTaskBackid(taskId, backid)
+    }
     Message.success(`已全量落临时库，生成 backid 批次 ${backid}`)
   }
 
@@ -730,9 +993,31 @@ export function useBacktrackPersist() {
   /** 三重行数验证结果 */
   const tripleRowCheck = ref<TripleRowCheck | null>(null)
 
+  /** 一致性校验是否已完成（推进 Hive 标准库的前置门槛：先比对确认，再落正式库） */
+  const consistencyChecked = ref(false)
+
+  /** 一致性校验是否已被跳过（未上线产品无线上数据可对比，可跳过校验直接推进落库） */
+  const consistencySkipped = ref(false)
+
+  /** 一致性校验跳过原因 */
+  const consistencySkipReason = ref('')
+
+  /** 回溯日期变更后需重新执行一致性校验（review date 是 R68 关联条件之一） */
+  watch(reviewDate, () => {
+    consistencyChecked.value = false
+  })
+
   /** 一致性校验目标表（R67） */
   const consistencyTargetOptions = ref<HiveTableItem[]>([])
   const consistencyTargetTable = ref('')
+
+  /** 校验目标表变更后需重新执行一致性校验（比对对象变化）；已跳过态不受影响 */
+  watch(consistencyTargetTable, () => {
+    consistencyChecked.value = false
+  })
+
+  /** 一致性校验结论是否已就绪（已执行通过 或 已跳过；两者均不阻断落 Hive 标准库） */
+  const consistencyReady = computed(() => consistencyChecked.value || consistencySkipped.value)
 
   /** 一致性校验明细 */
   const consistencyDetails = ref<ValidationDetail[]>([])
@@ -777,21 +1062,28 @@ export function useBacktrackPersist() {
       Message.warning('请先「落临时库」生成 backid 批次')
       return
     }
+    // R86：行数验证属只读类执行动作，创建异步任务后再执行
+    const task = await createPersistTask('行数验证', persistBatches.value[0]?.backid ?? '', false, 2)
     const loaded = persistBatches.value.reduce((s, b) => s + b.rows, 0)
     const source = activeFile.value?.rows ?? 0
     const sample = sampleFile.value?.size ? Math.round((sampleFile.value.size / 900)) : source
     tripleRowCheck.value = await fetchTripleRowCheck(loaded, source, sample)
     const c = tripleRowCheck.value
-    // 3.1：Hive已落库 →（行数验证完成）→ 待通知
-    setStatus('待通知')
+    // 落库主流程终点为「Hive已落库」，行数验证为后台任务，不再推进主流程状态
     if (c.matched) {
+      await finishPersistTask(task.taskId, '成功', '三重行数验证通过：入库行数 = 源文件行数 = 原样本文件行数')
       Message.success('三重行数验证通过：入库行数 = 源文件行数 = 原样本文件行数')
     } else {
+      await finishPersistTask(task.taskId, '失败', '三重行数验证未通过，请检查异常行并核对原始样本文件')
       Message.warning('三重行数验证未通过，请检查异常行并核对原始样本文件')
     }
   }
 
-  /** 执行一致性抽样校验（R68/R72） */
+  /**
+   * 执行一致性抽样校验（R68/R72）
+   * 位于「落临时库」与「落 Hive 标准库」之间：回溯值取自临时库，
+   * 线上值取自所选样本表；关联条件中的 review date 由回溯文件名自动解析，无需页面输入。
+   */
   const runConsistencyCheck = async () => {
     if (!persistBatches.value.length) {
       Message.warning('请先「落临时库」生成 backid 批次')
@@ -802,19 +1094,54 @@ export function useBacktrackPersist() {
       return
     }
     validating.value = true
+    // R86：一致性校验属只读类执行动作，创建异步任务后再执行
+    const task = await createPersistTask('一致性校验', persistBatches.value[0]?.backid ?? '', false, 2)
     try {
       const details = await fetchConsistencyDetails(100, reviewDate.value || '2026-09-30')
       consistencyDetails.value = details
       consistencySummary.value = await fetchConsistencySummary(details, consistencyTargetTable.value)
       consistencyPagination.total = sortedConsistencyDetails.value.length
       consistencyPagination.current = 1
+      consistencyChecked.value = true
+      consistencySkipped.value = false
+      consistencySkipReason.value = ''
       const s = consistencySummary.value
-      // 3.1：一致性校验完成后进入「待通知」，等待通知触发
-      setStatus('待通知')
+      await finishPersistTask(
+        task.taskId,
+        '成功',
+        `抽样 ${s.sampleTotal} 条：关联成功 ${s.matchedTotal} 条，关联失败 ${s.unmatchedTotal} 条，不一致 ${s.inconsistentTotal} 条`
+      )
       Message.info(`抽样 ${s.sampleTotal} 条：关联成功 ${s.matchedTotal} 条，关联失败 ${s.unmatchedTotal} 条，不一致 ${s.inconsistentTotal} 条`)
+    } catch (e) {
+      await finishPersistTask(task.taskId, '失败', e instanceof Error ? e.message : '一致性校验执行异常')
+      throw e
     } finally {
       validating.value = false
     }
+  }
+
+  /**
+   * 跳过一致性抽样校验
+   * 适用场景：未上线产品无线上数据可对比（需求文档「未上线产品跳过校验」），
+   * 跳过后不阻断落 Hive 标准库，验证报告中标注「未执行」
+   * @param reason 跳过原因
+   */
+  const skipConsistencyCheck = async (reason: string) => {
+    if (!persistBatches.value.length) {
+      Message.warning('请先「落临时库」生成 backid 批次')
+      return
+    }
+    // R86：跳过同样登记任务，保证任务列表可追溯
+    const task = await createPersistTask('一致性校验', persistBatches.value[0]?.backid ?? '', false, 2)
+    consistencyChecked.value = false
+    consistencySkipped.value = true
+    consistencySkipReason.value = reason
+    consistencySummary.value = null
+    consistencyDetails.value = []
+    consistencyPagination.total = 0
+    await finishPersistTask(task.taskId, '成功', `已跳过一致性抽样校验：${reason}（验证报告标注未执行）`)
+    await saveAsyncTask(task.taskId, { skipped: true })
+    Message.info(`已跳过一致性抽样校验：${reason}`)
   }
 
   /** 验证报告弹窗（R64） */
@@ -828,7 +1155,10 @@ export function useBacktrackPersist() {
   /* ---------- B5 落库文件通知 ---------- */
   const notifyConfig = ref<NotifyConfig>({ channels: [], receivers: [], maskEnabled: true, maxRetry: 3, configDesc: '' })
 
-  /** 加载通知配置（R77/R79/R80/R81） */
+  /**
+   * 加载通知配置（后台默认配置）
+   * 通知由后台按默认渠道与接收人自动推送，页面不再提供配置入口
+   */
   const loadNotifyConfig = async () => {
     notifyConfig.value = await fetchNotifyConfig()
   }
@@ -844,16 +1174,15 @@ export function useBacktrackPersist() {
   /** 通知发送结果 */
   const notifySent = ref(false)
 
-  /** 发送通知（R76 落库完成后自动触发 / R81 失败重试 3 次） */
+  /**
+   * 后台自动推送落库通知
+   * 通知渠道与接收人取后台默认配置，页面不提供配置入口；
+   * 落 Hive 标准库成功后由系统自动触发，失败按 R81 自动重试
+   */
   const sendNotify = async () => {
-    if (!notifyConfig.value.channels.length) {
-      Message.warning('请至少选择一个通知渠道')
-      return
-    }
-    if (!notifyConfig.value.receivers.length) {
-      Message.warning('请配置通知接收人')
-      return
-    }
+    // 后台默认配置兜底：渠道与接收人均由后台预置，缺失时不阻断落库主流程
+    const channels = notifyConfig.value.channels.length ? notifyConfig.value.channels : ['数据服务公众号']
+    const receivers = notifyConfig.value.receivers.length ? notifyConfig.value.receivers : ['风险数据团队值班']
     const backid = persistBatches.value[0]?.backid ?? ''
     const content: NotifyContent = await createNotifyContent({
       agency: selectedAgency.value?.agencyName ?? '—',
@@ -865,24 +1194,163 @@ export function useBacktrackPersist() {
       exceptionSummary: tripleRowCheck.value?.matched
         ? '无异常行'
         : `入库 ${tripleRowCheck.value?.loadedRows ?? 0} 行，源文件 ${tripleRowCheck.value?.sourceFileRows ?? 0} 行，差值 ${(tripleRowCheck.value?.loadedRows ?? 0) - (tripleRowCheck.value?.sourceFileRows ?? 0)} 行`,
-      consistencySummary: consistencySummary.value?.diffSummary ?? '未执行一致性校验',
+      consistencySummary: consistencySummary.value?.diffSummary
+        ?? (consistencySkipped.value ? `未执行一致性校验（已跳过：${consistencySkipReason.value}）` : '未执行一致性校验'),
     })
-    const records = await dispatchNotification(
-      notifyConfig.value.channels,
-      content,
-      notifyConfig.value.receivers,
-      notifyConfig.value.maskEnabled,
-      notifyConfig.value.maxRetry
-    )
+    const records = await dispatchNotification(channels, content, receivers, notifyConfig.value.maskEnabled, notifyConfig.value.maxRetry)
     notifyRecords.value = records
     notifySent.value = true
     const failed = records.filter((r) => r.sendStatus === '发送失败')
     if (failed.length) {
-      Message.warning(`通知发送完成，其中 ${failed.length} 条失败（已重试 ${notifyConfig.value.maxRetry} 次），可在通知记录中查看原因`)
+      Message.warning(`落库通知已由后台推送，其中 ${failed.length} 条失败（已重试 ${notifyConfig.value.maxRetry} 次），可在通知记录中查看原因`)
     } else {
-      Message.success('落库通知已发送')
+      Message.success('落库通知已由后台推送')
     }
-    setStatus('已完成')
+  }
+
+  /* ---------- 异步任务（R86：执行类操作均创建任务） ---------- */
+
+  /** 本次会话创建的任务列表（供任务明细抽屉展示执行轨迹） */
+  const createdTasks = ref<AsyncTask[]>([])
+
+  /**
+   * 构造任务续做上下文
+   * 记录当前机构、文件、映射与批次信息，任务列表据此回到落库流程继续下一步
+   * @param backid 关联批次
+   * @param resumeStep 续做应落位的步骤序号（0 基）
+   */
+  const buildResumeContext = (backid: string, resumeStep: number): TaskResumeContext => {
+    const file = activeFile.value
+    return {
+      agencyId: selectedAgency.value?.id ?? '',
+      agencyCode: selectedAgency.value?.agencyCode ?? '',
+      agencyName: selectedAgency.value?.agencyName ?? '',
+      agencyType: selectedAgency.value?.agencyType ?? '',
+      fileName: file?.name ?? '',
+      fileFingerprint: file ? `${file.name}@${file.size}` : '',
+      backid,
+      product: mappingProduct.value,
+      interfaceId: currentProduct.value?.interfaceId ?? '',
+      hiveTable: hiveTable.value,
+      partitionValue: partitionValue.value,
+      reviewDate: reviewDate.value,
+      consistencyTargetTable: consistencyTargetTable.value,
+      outboundTaskIds: [...matchedTaskIds.value],
+      resumeStep,
+    }
+  }
+
+  /**
+   * 创建异步任务（R86）
+   * 任务写入后立即出现在服务任务列表，可查看任务明细并继续下一步
+   * @param taskType 任务类型
+   * @param backid 关联 backid
+   * @param writeOperation 是否写操作类（写操作按文件指纹判重）
+   * @param resumeStep 续做应落位的步骤序号（0 基）
+   * @returns 新建的任务
+   */
+  const createPersistTask = async (
+    taskType: AsyncTaskType,
+    backid: string,
+    writeOperation: boolean,
+    resumeStep: number
+  ): Promise<AsyncTask> => {
+    const file = activeFile.value
+    const task = await createAsyncTask({
+      taskType,
+      backid,
+      agencyName: selectedAgency.value?.agencyName ?? '',
+      fileName: file?.name ?? '',
+      createTime: new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-'),
+      status: '执行中',
+      finishTime: '',
+      operator: '当前用户（风控数据组）',
+      fileFingerprint: file ? `${file.name}@${file.size}` : '',
+      writeOperation,
+      stuckThresholdMinutes: writeOperation ? 120 : 30,
+      logs: [
+        {
+          time: new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-'),
+          stage: '任务创建',
+          message: `${taskType}任务已提交，进入执行中`,
+        },
+      ],
+      resumeContext: buildResumeContext(backid, resumeStep),
+    })
+    createdTasks.value = [task, ...createdTasks.value]
+    return task
+  }
+
+  /**
+   * 结束异步任务（R84 状态维护：成功 / 失败）
+   * @param taskId 任务 ID
+   * @param status 终态
+   * @param message 结果描述
+   */
+  const finishPersistTask = async (taskId: string, status: '成功' | '失败', message: string) => {
+    const time = new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-')
+    await saveTaskLog(taskId, { time, stage: '任务结束', message, error: status === '失败' })
+    await saveAsyncTask(taskId, { status, finishTime: time, ...(status === '失败' ? { failReason: message } : {}) })
+  }
+
+  /**
+   * 回写任务的关联 backid（R51：backid 在落临时库收尾时才生成）
+   * @param taskId 任务 ID
+   * @param backid 批次标识
+   */
+  const bindTaskBackid = async (taskId: string, backid: string) => {
+    await bindAsyncTaskBackid(taskId, backid)
+  }
+
+  /**
+   * 按任务续做上下文回填流程状态
+   * 供任务列表「继续下一步」跳转后恢复已完成的环节，避免用户重头再来
+   * @param ctx 任务续做上下文
+   * @returns 回填后应落位的步骤序号（0 基）
+   */
+  const restoreFromResumeContext = async (ctx: TaskResumeContext): Promise<number> => {
+    // 1. 机构：切换机构后需重载该机构的产品与前置外发任务，否则映射区无可选项
+    selectedAgencyId.value = ctx.agencyId
+    sftpDir.value = selectedAgency.value?.sftp.directory ?? ''
+    dataSourceMode.value = 'sftp'
+    await loadRetroTree()
+    await loadProducts()
+    await loadOutboundTasks()
+    // 2. 文件：在目录树中定位并选中（节点 key 含月份目录，按文件名递归匹配更稳妥）
+    const node = findNodeByKey(retroTree.value, `${ctx.agencyCode}/${ctx.fileName}`)
+      ?? findNodeByKey(retroTree.value, ctx.fileName)
+      ?? findNodeByName(retroTree.value, ctx.fileName)
+    if (node) {
+      selectedTreeNode.value = node
+      await onFileSelect(toRetroFile(node))
+    }
+    // 3. 前置外发任务
+    if (ctx.outboundTaskIds.length) {
+      matchedTaskIds.value = [...ctx.outboundTaskIds]
+    }
+    // 4. 外数产品与字段映射
+    if (ctx.product) {
+      mappingProduct.value = ctx.product
+      await loadProductFields()
+    }
+    // 5. 落库目标与分区（分区值由回溯日期推导，只读 computed 不可直接赋值）
+    if (ctx.hiveTable) hiveTable.value = ctx.hiveTable
+    if (ctx.reviewDate) reviewDate.value = ctx.reviewDate
+    if (ctx.consistencyTargetTable) consistencyTargetTable.value = ctx.consistencyTargetTable
+    // 6. 批次：已落临时库则恢复批次信息
+    if (ctx.backid) {
+      persistBatches.value = [
+        {
+          backid: ctx.backid,
+          fileName: ctx.fileName,
+          taskIds: [...ctx.outboundTaskIds],
+          rows: activeFile.value?.rows ?? 0,
+          tempTable: 'tmp_ext_retro_raw',
+        },
+      ]
+      setStatus('临时库已落库')
+    }
+    return ctx.resumeStep
   }
 
   /* ---------- 落库记录（R54） ---------- */
@@ -954,6 +1422,30 @@ export function useBacktrackPersist() {
     recordVisible.value = true
   }
 
+  /**
+   * 按 backid 恢复批次上下文并定位到批次所处阶段
+   * 用于从服务任务列表点击 backid 跳回落库流程页：按批次标识反查关联任务，
+   * 取任一任务上下文回填机构 / 文件 / 映射 / 落库目标，再按批次阶段定位步骤
+   * @param backid 批次标识
+   * @returns 批次阶段信息；批次不存在时返回 null
+   */
+  const restoreFromBackid = async (backid: string): Promise<{ stage: BatchStage; tasks: AsyncTask[] } | null> => {
+    const tasks = await fetchTasksByBackid(backid)
+    if (!tasks.length) return null
+    const stage = await fetchBatchStage(tasks)
+    if (!stage) return null
+    // 取带续做上下文的任务回填流程状态（批次内任务共享同一机构 / 文件 / 映射）
+    const ctxTask = tasks.find((t) => t.resumeContext)
+    if (ctxTask?.resumeContext) {
+      await restoreFromResumeContext(ctxTask.resumeContext)
+    }
+    // 落库记录与通知记录按 backid 关联，此处一并载入，便于查看批次产出
+    const record = await fetchPersistRecord(backid)
+    if (record) persistRecord.value = record
+    await loadNotifyRecords()
+    return { stage, tasks }
+  }
+
   return {
     // 状态机
     currentStatus,
@@ -966,12 +1458,25 @@ export function useBacktrackPersist() {
     pathCleanupNotice,
     dataSourceMode,
     sftpDir,
-    sftpSubDir,
-    sftpFileName,
-    dirOptions,
+    retroTree,
+    selectedTreeNode,
+    extractedArchive,
+    decryptedArchives,
+    extractedArchives,
+    extractingArchive,
+    archiveDecryptVisible,
+    archiveDecrypting,
+    archivePassword,
+    archiveDecryptFailed,
+    openArchiveDecrypt,
+    confirmArchiveDecrypt,
+    isArchiveDecrypted,
+    isArchiveExtracted,
+    extractArchive,
+    expandedKeys,
+    onTreeExpand,
     fullFilePath,
     sftpParams,
-    fileList,
     querying,
     selectedFile,
     uploadFileList,
@@ -982,7 +1487,8 @@ export function useBacktrackPersist() {
     activeFile,
     loadAgencies,
     onAgencyChange,
-    queryFiles,
+    loadRetroTree,
+    onTreeSelect,
     onFileSelect,
     onUploadChange,
     onUploadRemove,
@@ -1006,13 +1512,8 @@ export function useBacktrackPersist() {
     isCustomProduct,
     stdFieldOptions,
     fieldMappings,
-    REQUIRED_FIELD_MATCH,
-    requiredSourceSelection,
-    catalogSourceFields,
-    sourceFieldComment,
-    requiredMappingStatus,
-    requiredTwoPassed,
-    requiredPassedCount,
+    REQUIRED_FIELD_MATCH, activeRequiredFieldMatch, requiredSourceSelection, catalogSourceFields, sourceFieldComment,
+    requiredMappingStatus, requiredAllPassed, requiredPassedCount,
     loadProducts,
     loadProductFields,
     onMappingProductChange,
@@ -1052,6 +1553,10 @@ export function useBacktrackPersist() {
     sampleFile,
     onSampleUpload,
     tripleRowCheck,
+    consistencyChecked,
+    consistencySkipped,
+    consistencySkipReason,
+    consistencyReady,
     consistencyTargetOptions,
     consistencyTargetTable,
     consistencyDetails,
@@ -1064,6 +1569,7 @@ export function useBacktrackPersist() {
     loadConsistencyTables,
     runTripleRowCheck,
     runConsistencyCheck,
+    skipConsistencyCheck,
     reportVisible,
     openReport,
     // B5
@@ -1078,5 +1584,12 @@ export function useBacktrackPersist() {
     recordVisible,
     buildPersistRecord,
     openPersistRecord,
+    // 异步任务（R86）
+    createdTasks,
+    createPersistTask,
+    finishPersistTask,
+    bindTaskBackid,
+    restoreFromResumeContext,
+    restoreFromBackid,
   }
 }

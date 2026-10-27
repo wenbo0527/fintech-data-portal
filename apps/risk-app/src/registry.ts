@@ -33,6 +33,7 @@ const registry: any = {
         { key: 'risk-external-data-archive', label: '外数档案', path: '/risk/variable-hub/external-data/archive' },
         { key: 'risk-external-data-evaluation', label: '外数评估', path: '/risk/variable-hub/external-data/evaluation' },
         { key: 'risk-external-data-service-scene', label: '服务场景入口', path: '/risk/variable-hub/external-data/service-scene' },
+        { key: 'risk-external-data-backtrack-persist', label: '外数回溯落库申请', path: '/risk/variable-hub/external-data/backtrack-persist' },
         { key: 'risk-external-data-task-list', label: '服务任务列表', path: '/risk/variable-hub/external-data/task-list' },
         { key: 'risk-external-data-sample', label: '样本表准备', path: '/risk/variable-hub/external-data/sample-preparation' },
         { key: 'risk-external-data-validation', label: '服务校验模版', path: '/risk/variable-hub/external-data/validation-template' },

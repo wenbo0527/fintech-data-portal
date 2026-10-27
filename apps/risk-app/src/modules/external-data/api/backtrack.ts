@@ -4,16 +4,31 @@ import { listOutboundTasks, getOutboundTasksByIds } from '../mock/outboundTasks'
 import type { OutboundTask } from '../mock/outboundTasks'
 import {
   listAsyncTasks,
+  listAsyncTasksByBackid,
+  resolveBatchStage,
   findDuplicateWriteTask,
+  appendAsyncTask,
+  updateAsyncTask,
+  appendTaskLog,
+  getAsyncTask,
+  bindAsyncTaskBackid,
   getPersistRecord,
   appendPersistRecord,
   listNotifyRecords,
   generateBackid,
 } from '../mock/backtrackPersist'
-import type { AsyncTask, PersistRecord, NotifyRecord } from '../mock/backtrackPersist'
+import type { AsyncTask, PersistRecord, NotifyRecord, TaskLogEntry, BatchStage } from '../mock/backtrackPersist'
 import { getStdFieldNames, getStdFieldComment } from '../mock/stdFieldLibrary'
-import { listRetroFiles, findProcessedRecords, retroDirCatalog, buildPreviewRows } from '../mock/retroFiles'
-import type { RetroFile, ProcessedFileRecord, PreviewRow } from '../mock/retroFiles'
+import {
+  listRetroFiles,
+  findProcessedRecords,
+  listRetroTree,
+  buildPreviewRows,
+  decryptArchive,
+  extractArchiveContent,
+  parseReviewDateFromFileName,
+} from '../mock/retroFiles'
+import type { RetroFile, RetroTreeNode, ProcessedFileRecord, PreviewRow } from '../mock/retroFiles'
 import { getBacktrackProduct, listBacktrackProducts } from '../mock/backtrackProducts'
 import type { BacktrackProduct } from '../mock/backtrackProducts'
 import { buildConsistencyDetails, summarizeConsistency, buildTripleRowCheck } from '../mock/validation'
@@ -63,10 +78,68 @@ export async function fetchAsyncTasks(params?: { status?: string; taskType?: str
   return []
 }
 
+/**
+ * 按 backid 查询批次关联的任务（R51：backid 为批次标识，一个批次可关联多条任务）
+ * @param backid 批次标识
+ */
+export async function fetchTasksByBackid(backid: string): Promise<AsyncTask[]> {
+  if (useMock) return listAsyncTasksByBackid(backid)
+  return []
+}
+
+/**
+ * 推导批次所处流程阶段（R51：按批次内任务状态定位卡点或最终产出）
+ * @param tasks 该 backid 关联的任务集合
+ */
+export async function fetchBatchStage(tasks: AsyncTask[]): Promise<BatchStage | null> {
+  if (useMock) return resolveBatchStage(tasks)
+  return null
+}
+
 /** 文件指纹判重（R90：写操作类命中则阻断，只读类放行） */
 export async function checkDuplicateWriteTask(fileFingerprint: string, excludeTaskId?: string): Promise<AsyncTask | null> {
   if (useMock) return findDuplicateWriteTask(fileFingerprint, excludeTaskId)
   return null
+}
+
+/**
+ * 新增异步任务（R86：所有执行类操作均创建任务）
+ * @param task 任务主体，taskId 可缺省由生成器补齐
+ */
+export async function createAsyncTask(
+  task: Omit<AsyncTask, 'taskId'> & { taskId?: string }
+): Promise<AsyncTask> {
+  if (useMock) return appendAsyncTask(task)
+  throw new Error('未接入后端服务，无法创建异步任务')
+}
+
+/** 更新任务状态与完成时间（R84 状态维护） */
+export async function saveAsyncTask(
+  taskId: string,
+  patch: Partial<Pick<AsyncTask, 'status' | 'finishTime' | 'failReason' | 'skipped'>>
+): Promise<AsyncTask | null> {
+  if (useMock) return updateAsyncTask(taskId, patch)
+  return null
+}
+
+/** 追加任务执行日志（R88：任务明细展示执行轨迹） */
+export async function saveTaskLog(taskId: string, entry: TaskLogEntry): Promise<void> {
+  if (useMock) return appendTaskLog(taskId, entry)
+}
+
+/** 按任务 ID 查询任务详情（R88） */
+export async function fetchAsyncTask(taskId: string): Promise<AsyncTask | undefined> {
+  if (useMock) return getAsyncTask(taskId)
+  return undefined
+}
+
+/**
+ * 回写任务的关联 backid（R51：backid 在落临时库收尾时生成）
+ * @param taskId 任务 ID
+ * @param backid 批次标识
+ */
+export async function bindTaskBackid(taskId: string, backid: string): Promise<void> {
+  if (useMock) return bindAsyncTaskBackid(taskId, backid)
 }
 
 /** 查询落库记录 */
@@ -117,14 +190,26 @@ export async function fetchProcessedRecords(fileName: string, fileSize: number):
   return []
 }
 
-/** 查询机构 SFTP 目录下的子目录（R14 目录路径拼接） */
-export async function fetchRetroDirs(agencyCode: string): Promise<string[]> {
-  if (useMock) return retroDirCatalog[agencyCode] || []
+/** 查询机构 SFTP 目录树（R14：支持文件夹 / CSV / 压缩包三级节点） */
+export async function fetchRetroTree(agencyCode: string): Promise<RetroTreeNode[]> {
+  if (useMock) return listRetroTree(agencyCode)
+  return []
+}
+
+/** 解密压缩包（R19：密码由机构线下提供，密码错误时返回 false） */
+export async function decryptArchivePackage(archiveKey: string, password: string): Promise<boolean> {
+  if (useMock) return decryptArchive(archiveKey, password)
+  return false
+}
+
+/** 解压压缩包并返回包内文件（R17：包内仍只接受 CSV） */
+export async function fetchArchiveContent(archiveKey: string): Promise<RetroTreeNode[]> {
+  if (useMock) return extractArchiveContent(archiveKey)
   return []
 }
 
 /** 生成文件前 5 行原始内容（R20 预览） */
-export async function fetchPreviewRows(file: RetroFile): Promise<PreviewRow[]> {
+export async function fetchPreviewRows(file: { rows?: number; header?: string[] }): Promise<PreviewRow[]> {
   if (useMock) return buildPreviewRows(file)
   return []
 }
@@ -145,6 +230,16 @@ export async function fetchBacktrackProducts(agencyCode?: string): Promise<Backt
 export async function fetchConsistencyDetails(count = 100, reviewDate?: string): Promise<ValidationDetail[]> {
   if (useMock) return buildConsistencyDetails(count, reviewDate)
   return []
+}
+
+/**
+ * 从回溯文件名解析回溯日期（R68 关联条件之一）
+ * 页面不再要求用户输入回溯日期，校验关联条件由文件名自动推导
+ * @param fileName 回溯返回文件名
+ */
+export async function fetchReviewDateFromFileName(fileName: string): Promise<string> {
+  if (useMock) return parseReviewDateFromFileName(fileName)
+  return ''
 }
 
 /** 汇总一致性校验结果 */

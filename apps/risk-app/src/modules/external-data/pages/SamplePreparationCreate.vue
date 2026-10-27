@@ -140,7 +140,108 @@
       </div>
     </a-card>
 
-    <!-- 4. 数据逻辑配置 -->
+    <!-- 4. 样本校验：加密字段支持用户选择加密逻辑 -->
+    <a-card title="样本校验配置" :bordered="false" class="section-card">
+      <template #extra>
+        <a-space>
+          <a-button type="text" size="small" @click="addEncryptedField">
+            <template #icon><icon-plus /></template>
+            添加加密字段
+          </a-button>
+          <a-button type="text" size="small" @click="runEncryptionValidate">
+            <template #icon><icon-check-circle /></template>
+            执行加密校验
+          </a-button>
+        </a-space>
+      </template>
+
+      <a-alert type="info" class="mb-4">
+        <icon-info-circle />
+        加密字段需指定加密逻辑，系统按所选算法校验密文格式。R02 口径：主流加密方式为 SM3 与 SHA256，MD5 不再推荐，仅用于存量样本兼容。
+      </a-alert>
+
+      <a-table :data="encryptionConfigs" :pagination="false" size="mini">
+        <template #columns>
+          <a-table-column title="加密字段" data-index="fieldName" :width="150">
+            <template #cell="{ record }">
+              <a-input v-model="record.fieldName" size="mini" placeholder="如 id_no" />
+            </template>
+          </a-table-column>
+          <a-table-column title="是否加密" :width="90" align="center">
+            <template #cell="{ record }">
+              <a-switch v-model="record.encrypted" size="mini" />
+            </template>
+          </a-table-column>
+          <a-table-column title="加密逻辑" :width="180">
+            <template #cell="{ record }">
+              <a-select v-model="record.algorithm" size="mini" :disabled="!record.encrypted">
+                <a-option v-for="alg in ENCRYPTION_ALGORITHMS" :key="alg.value" :value="alg.value">
+                  {{ alg.label }}{{ alg.recommended ? '' : '（不推荐）' }}
+                </a-option>
+              </a-select>
+            </template>
+          </a-table-column>
+          <a-table-column title="密文长度" :width="90" align="center">
+            <template #cell="{ record }">
+              <span v-if="record.encrypted" class="mono">
+                {{ getEncryptionAlgorithm(record.algorithm).digestLength }} 位
+              </span>
+              <span v-else>—</span>
+            </template>
+          </a-table-column>
+          <a-table-column title="归一化" :width="90" align="center">
+            <template #cell="{ record }">
+              <a-checkbox v-model="record.normalized" :disabled="!record.encrypted" />
+            </template>
+          </a-table-column>
+          <a-table-column title="算法说明">
+            <template #cell="{ record }">
+              <span class="alg-remark">
+                {{ record.encrypted ? getEncryptionAlgorithm(record.algorithm).remark : '未加密' }}
+              </span>
+            </template>
+          </a-table-column>
+          <a-table-column title="操作" :width="60" align="center">
+            <template #cell="{ rowIndex }">
+              <a-button type="text" status="danger" size="mini" @click="removeEncryptedField(rowIndex)">
+                <template #icon><icon-delete /></template>
+              </a-button>
+            </template>
+          </a-table-column>
+        </template>
+      </a-table>
+
+      <!-- 加密校验结果 -->
+      <template v-if="encryptionCheckResult">
+        <a-divider style="margin: 16px 0 12px" />
+        <a-alert :type="encryptionCheckResult.passed ? 'success' : 'warning'" style="margin-bottom: 12px">
+          <template #title>
+            加密校验{{ encryptionCheckResult.passed ? '通过' : '存在异常' }}：通过率
+            {{ (encryptionCheckResult.passRate * 100).toFixed(2) }}%
+            （加密字段 {{ encryptionCheckResult.encryptedFieldCount }} 个，通过
+            {{ encryptionCheckResult.passedFieldCount }} 个，失败 {{ encryptionCheckResult.failedFieldCount }} 个）
+          </template>
+        </a-alert>
+        <a-table :data="encryptionCheckResult.details" :pagination="false" size="mini">
+          <template #columns>
+            <a-table-column title="加密字段" data-index="fieldName" />
+            <a-table-column title="加密逻辑" :width="130">
+              <template #cell="{ record }">{{ getEncryptionAlgorithm(record.algorithm).label }}</template>
+            </a-table-column>
+            <a-table-column title="校验结果" :width="90" align="center">
+              <template #cell="{ record }">
+                <a-tag :color="record.passed ? 'green' : 'red'" size="mini">
+                  {{ record.passed ? '通过' : '失败' }}
+                </a-tag>
+              </template>
+            </a-table-column>
+            <a-table-column title="说明" data-index="message" />
+          </template>
+        </a-table>
+      </template>
+    </a-card>
+
+    <!-- 5. 数据逻辑配置 -->
     <a-card title="数据逻辑配置" :bordered="false" class="section-card">
       <template #extra>
         <a-button type="text" size="small" @click="parseSelect">
@@ -239,18 +340,33 @@
             Mock校验: 字段 [mobile] 数据格式不符合正则表达式 ^1[3-9]\d{9}$
           </div>
         </a-descriptions-item>
+        <a-descriptions-item label="加密校验">
+          <a-tag :color="validationResult.encryptionCheck ? 'green' : 'red'">
+            {{ validationResult.encryptionCheck ? '通过' : '失败 (密文不符合所选加密逻辑)' }}
+          </a-tag>
+          <div style="margin-top: 4px; font-size: 12px; color: var(--color-text-3);">
+            通过率 {{ (validationResult.encryptionPassRate * 100).toFixed(2) }}%
+          </div>
+        </a-descriptions-item>
       </a-descriptions>
     </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, onMounted, defineEmits, defineExpose } from 'vue'
+import { reactive, ref, watch, onMounted, defineEmits, defineExpose } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { IconImport, IconPlus, IconDelete, IconCode, IconRefresh, IconCheckCircle, IconInfoCircle } from '@arco-design/web-vue/es/icon'
 import { getActiveSupplierProducts, getExternalDataFields, externalDataFieldsMap } from '../mock/supplierProducts'
 import type { SupplierProduct, ExternalDataField } from '../mock/supplierProducts'
+import {
+  ENCRYPTION_ALGORITHMS,
+  getEncryptionAlgorithm,
+  runEncryptionCheck,
+  defaultFieldEncryptionConfigs,
+} from '../mock/encryptionAlgorithm'
+import type { FieldEncryptionConfig, EncryptionCheckSummary } from '../mock/encryptionAlgorithm'
 import { 
   getStorageClustersByType, 
   getDatabasesByCluster, 
@@ -300,8 +416,56 @@ const validationResult = reactive({
   fieldsCheck: false,
   typeCheck: false,
   dataCheck: false,
-  hasDataRules: false
+  hasDataRules: false,
+  encryptionCheck: false,
+  encryptionPassRate: 1
 })
+
+/** 加密字段配置（用户可选择加密逻辑） */
+const encryptionConfigs = ref<FieldEncryptionConfig[]>(
+  defaultFieldEncryptionConfigs.map((c) => ({ ...c }))
+)
+
+/** 加密校验结果 */
+const encryptionCheckResult = ref<EncryptionCheckSummary | null>(null)
+
+/**
+ * 加密配置（算法 / 开关 / 归一化 / 字段名）发生变更时，作废已有校验结果
+ * 避免提交时复用与当前配置不匹配的过期结论
+ */
+watch(
+  encryptionConfigs,
+  () => {
+    encryptionCheckResult.value = null
+  },
+  { deep: true }
+)
+
+/** 添加一个加密字段 */
+const addEncryptedField = () => {
+  encryptionConfigs.value.push({ fieldName: '', encrypted: true, algorithm: 'SM3', normalized: true })
+  encryptionCheckResult.value = null
+}
+
+/** 删除一个加密字段 */
+const removeEncryptedField = (index: number) => {
+  encryptionConfigs.value.splice(index, 1)
+  encryptionCheckResult.value = null
+}
+
+/** 执行加密校验：按各字段所选算法校验并输出通过率 */
+const runEncryptionValidate = () => {
+  const invalid = encryptionConfigs.value.filter((c) => c.encrypted && !c.fieldName.trim())
+  if (invalid.length) {
+    Message.warning('存在未填写字段名的加密字段，请先补全')
+    return
+  }
+  if (!encryptionConfigs.value.some((c) => c.encrypted)) {
+    Message.warning('请至少配置一个加密字段')
+    return
+  }
+  encryptionCheckResult.value = runEncryptionCheck(encryptionConfigs.value, 1000)
+}
 
 const loadClusters = async (type: string) => {
   clustersLoading.value = true
@@ -485,7 +649,18 @@ const handleSubmit = () => {
       validationResult.dataCheck = true
     }
 
-    validationResult.success = validationResult.pkCheck && validationResult.fieldsCheck && validationResult.typeCheck && validationResult.dataCheck
+    // 加密校验：按用户为各加密字段选择的加密逻辑校验密文格式
+    // 校验结果由当前配置确定性推导，确保与区块内展示结论一致
+    encryptionCheckResult.value = runEncryptionCheck(encryptionConfigs.value, 1000)
+    validationResult.encryptionCheck = encryptionCheckResult.value.passed
+    validationResult.encryptionPassRate = encryptionCheckResult.value.passRate
+
+    validationResult.success =
+      validationResult.pkCheck &&
+      validationResult.fieldsCheck &&
+      validationResult.typeCheck &&
+      validationResult.dataCheck &&
+      validationResult.encryptionCheck
     
     validationVisible.value = true
   }, 1500)
@@ -525,5 +700,11 @@ defineExpose({
 
 .mt-4 {
   margin-top: 16px;
+}
+
+/* 加密逻辑说明文案 */
+.alg-remark {
+  font-size: 12px;
+  color: var(--color-text-3);
 }
 </style>

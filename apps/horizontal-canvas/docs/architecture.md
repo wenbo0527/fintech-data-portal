@@ -8,7 +8,7 @@
 - 图形引擎：AntV X6（横向布局规则）
 - 路由：`src/router.ts`
 - 别名：`@` → `/src`（`apps/horizontal-canvas/vite.config.ts:8`）
-- 端口：`5175`
+- 端口：`5175`（开发基址 `http://localhost:5175/horizontal-canvas/`）
 
 ## 模块划分
 - 页面（完整罗列）
@@ -91,7 +91,7 @@ graph LR
 
 ## 部署架构与依赖
 - 本地开发：
-  - `npm run dev`（端口 `5175`）
+  - `npm run dev`（端口 `5175`，访问 `http://localhost:5175/horizontal-canvas/`）
   - 别名 `@` 指向 `/src`
 - 主要依赖：
   - `@antv/x6`、`@antv/x6-vue-shape`

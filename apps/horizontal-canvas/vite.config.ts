@@ -45,6 +45,7 @@ export default defineConfig(async () => {
     },
     server: { host: '0.0.0.0', port: 5175, strictPort: true },
     resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
+    base: '/horizontal-canvas/',
     build: {
       rollupOptions: {
         output: {

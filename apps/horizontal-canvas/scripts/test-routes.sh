@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # 用法：bash scripts/test-routes.sh
-# 用途：对开发服务器（默认 http://localhost:5175）的所有关键模块做 HTTP 200 transform 校验
+# 用途：对开发服务器（默认 http://localhost:5175/horizontal-canvas）的所有关键模块做 HTTP 200 transform 校验
 # 退出码：0 全部 200；非 0 存在 4xx/5xx
 set -uo pipefail
-BASE="${BASE:-http://localhost:5175}"
+BASE="${BASE:-http://localhost:5175/horizontal-canvas}"
 
 ROUTES=(
   "/src/pages/marketing/tasks/index.vue"

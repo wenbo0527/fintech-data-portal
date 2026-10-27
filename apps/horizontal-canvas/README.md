@@ -8,8 +8,8 @@
 - 安装依赖：`npm install`
 - 启动：`npm run dev`（默认端口 5175）
 - 访问：
-  - 列表：`http://localhost:5175/tasks`
-  - 画布：`http://localhost:5175/editor?mode=edit&id=xxx&version=1`
+  - 列表：`http://localhost:5175/horizontal-canvas/tasks`
+  - 画布：`http://localhost:5175/horizontal-canvas/editor?mode=edit&id=xxx&version=1`
 
 ## 主要功能
 - 画布：节点添加/配置、端口布局、历史撤销重做、边插入与右键菜单、调试/统计面板、最小地图

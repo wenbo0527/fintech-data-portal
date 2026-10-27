@@ -9,7 +9,7 @@ const MarketingHorizontal = () => import('./pages/marketing/tasks/horizontal/ind
 
 // DocRef: 架构文档「关键代码片段/路由定义」
 export const router = createRouter({
-  history: createWebHistory(),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/', redirect: '/marketing/tasks' },
     { path: '/tasks', name: 'tasks-list', component: TasksList },

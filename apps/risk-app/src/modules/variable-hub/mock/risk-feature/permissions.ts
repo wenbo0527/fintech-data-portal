@@ -51,7 +51,10 @@ export const PERMISSIONS = {
   DUPLICATE_CHECK: 'duplicate_check',              // 重复备案校验
   PARAM_MAPPING: 'param_mapping',                  // 参数映射
   PARAM_VALIDATION: 'param_validation',              // 参数有效性验证
-  CORRECT_STATUS: 'correct_status'                   // v2.1 管理员状态修正
+  CORRECT_STATUS: 'correct_status',                  // v2.1 管理员状态修正
+  MARK_EFFECT: 'mark_effect',                        // 变量效果评估：人工标记
+  COMMENT_EFFECT: 'comment_effect',                  // 变量效果评估：发表意见
+  RUN_EFFECT_TASK: 'run_effect_task'                 // 变量效果评估：触发跑批/试跑
 }
 
 // ============ 角色 × 权限 矩阵（D.2）============
@@ -68,7 +71,9 @@ const ROLE_MATRIX = {
     PERMISSIONS.EXPORT_LIST,
     PERMISSIONS.BUSINESS_ACCEPTANCE,
     PERMISSIONS.VIEW_ALL_VARIABLES,
-    PERMISSIONS.DUPLICATE_CHECK
+    PERMISSIONS.DUPLICATE_CHECK,
+    PERMISSIONS.MARK_EFFECT,
+    PERMISSIONS.COMMENT_EFFECT
   ]),
   // 风险数据管理员：超管（全部能力 + 重新同步 + 手动触发下线重试）
   // 2026-08-10 新增全部新权限：需求审核、业务验收、全量特征、重复备案、参数映射/验证
@@ -89,7 +94,10 @@ const ROLE_MATRIX = {
     PERMISSIONS.DUPLICATE_CHECK,
     PERMISSIONS.PARAM_MAPPING,
     PERMISSIONS.PARAM_VALIDATION,
-    PERMISSIONS.CORRECT_STATUS
+    PERMISSIONS.CORRECT_STATUS,
+    PERMISSIONS.MARK_EFFECT,
+    PERMISSIONS.COMMENT_EFFECT,
+    PERMISSIONS.RUN_EFFECT_TASK
   ]),
   // 数字社区管理员：仅查看 + 断开数据
   // 2026-08-10 新增：全量特征开放查看
@@ -97,7 +105,8 @@ const ROLE_MATRIX = {
     PERMISSIONS.VIEW_SYNC_LOG,
     PERMISSIONS.VIEW_OFFLINE_RECORD,
     PERMISSIONS.DISCONNECT_DATA,
-    PERMISSIONS.VIEW_ALL_VARIABLES
+    PERMISSIONS.VIEW_ALL_VARIABLES,
+    PERMISSIONS.COMMENT_EFFECT
   ])
 }
 

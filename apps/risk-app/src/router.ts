@@ -17,6 +17,7 @@ console.log('[Risk] routerBase:', routerBase)
  *  /                              → /variable-hub（风险要素工作台）
  *  /variable-hub                  → 风险要素（特征一体化）
  *    /variable-hub/external-data  → 外数生命周期管理（子模块）
+ *  /effect-tasks/*                → 变量效果评估 · 任务管理（列表 / 详情 / 阈值配置）
  *  /budget/*                      → 预算管理
  *  /model-offline-analysis/*      → 离线模型分析
  *  /accompany/*                   → 陪跑计划
@@ -95,6 +96,27 @@ const routes: RouteRecordRaw[] = [
         name: 'EvaluationTasks',
         component: () => import('./modules/variable-hub/pages/evaluation/tasks/index.vue'),
         meta: { title: '评估任务中心' }
+      },
+
+      // ========== 变量效果评估 · 任务域（评估文档 §9-Q1：任务管理独立成域）==========
+      {
+        path: '/effect-tasks',
+        name: 'EffectTasks',
+        component: () => import('./modules/variable-hub/pages/effect-tasks/index.vue'),
+        meta: { title: '效果任务管理' }
+      },
+      // 注意：静态路径必须声明在 /effect-tasks/:id 之前，否则 settings 会被当成任务 ID
+      {
+        path: '/effect-tasks/settings',
+        name: 'EffectTaskSettings',
+        component: () => import('./modules/variable-hub/pages/effect-tasks/settings.vue'),
+        meta: { title: '判定阈值与推送配置' }
+      },
+      {
+        path: '/effect-tasks/:id',
+        name: 'EffectTaskDetail',
+        component: () => import('./modules/variable-hub/pages/effect-tasks/detail.vue'),
+        meta: { title: '效果任务详情' }
       },
 
       // ========== 外数生命周期管理（作为风险要素的子模块）==========

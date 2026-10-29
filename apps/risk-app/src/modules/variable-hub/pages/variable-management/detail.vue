@@ -17,8 +17,13 @@
         <div class="title-section">
           <div class="title-wrapper">
             <h1 class="title">{{ variableData.name || '特征详情' }}</h1>
-            <!-- 文档 v2.1 K1 R08：详情页展示「阶段 · 状态」格式 -->
-            <template v-if="variableData.category === 'midloan_behavior' && variableData.midloanStatus">
+            <!-- 头部状态：文档 v2.1 K1 R08「阶段 · 状态」；合成档案单标 -->
+            <template v-if="isSynthetic">
+              <a-tag color="orange" class="status-tag" size="medium">演示合成档案</a-tag>
+              <span style="color: #86909c; margin-left: 4px;">{{ effectProfile?.statusLabel }}</span>
+            </template>
+            <!-- 贷中行为品类：展示「阶段 · 状态」格式 -->
+            <template v-else-if="variableData.category === 'midloan_behavior' && variableData.midloanStatus">
               <a-tag v-if="getPhaseByStatus(variableData.midloanStatus)" color="gray" size="small">
                 {{ getPhaseByStatus(variableData.midloanStatus)?.label }}
               </a-tag>
@@ -75,6 +80,8 @@
             <template #icon><IconArrowLeft /></template>
             返回列表
           </a-button>
+          <!-- 合成档案只读：台账外样本不可发起上线申请 / 编辑 / 启停 -->
+          <template v-if="!isSynthetic">
           <a-button
             v-if="['draft', 'pending'].includes(String(variableData.status || ''))"
             type="primary"
@@ -97,6 +104,7 @@
               <a-doption value="delete">删除</a-doption>
             </template>
           </a-dropdown>
+          </template>
         </div>
       </div>
     </div>
@@ -118,6 +126,15 @@
           <a-tag v-for="f in lockedFields" :key="f.field" color="gray" size="mini" style="margin-left: 4px">
             {{ f.label }}
           </a-tag>
+        </div>
+      </a-alert>
+
+      <!-- ========== 合成 ID 兜底说明（评估文档 §9-Q3 方案 A）============ -->
+      <a-alert v-if="isSynthetic" type="warning" :show-icon="true" style="margin-bottom: 16px">
+        <template #title>演示合成样本 · 不在特征台账内</template>
+        <div>
+          {{ coverageNote }} 本页基础信息为跑批侧最小档案，因此不提供编辑、上下线与生命周期 Tab；
+          效果数据与正式变量同口径。
         </div>
       </a-alert>
 
@@ -292,7 +309,7 @@
         </a-tab-pane>
 
         <!-- ========== 离线分析状态（阶段 1-3：注册/开发/验证）============ -->
-        <a-tab-pane key="offline_lifecycle" title="离线分析状态（阶段1-3）">
+        <a-tab-pane v-if="!isSynthetic" key="offline_lifecycle" title="离线分析状态（阶段1-3）">
           <template v-if="isMidloanBehavior">
             <a-card title="离线分析状态链路（阶段1·注册 / 阶段2·开发 / 阶段3·验证）" class="detail-card">
               <StatusStepFlow
@@ -324,7 +341,7 @@
         </a-tab-pane>
 
         <!-- ========== API 调用状态（阶段 4-5：上线/汰换）============ -->
-        <a-tab-pane key="api_lifecycle" title="API调用状态（阶段4-5）">
+        <a-tab-pane v-if="!isSynthetic" key="api_lifecycle" title="API调用状态（阶段4-5）">
           <template v-if="isMidloanBehavior">
             <a-card title="API 调用状态链路（阶段4·上线 / 阶段5·汰换）" class="detail-card">
               <StatusStepFlow
@@ -358,7 +375,7 @@
           </template>
         </a-tab-pane>
 
-        <a-tab-pane key="evaluation" title="特征评估">
+        <a-tab-pane v-if="!isSynthetic" key="evaluation" title="特征评估">
           <EvaluationCard
             :analysis-reports="analysisReports"
             :analysis-report-columns="analysisReportColumns"
@@ -374,7 +391,12 @@
           />
         </a-tab-pane>
 
-        <a-tab-pane key="lineage-usage" title="血缘与使用">
+        <!-- ========== 效果评估（变量效果评估落位，见评估文档 §5.2）========== -->
+        <a-tab-pane key="effect" title="效果评估">
+          <EffectCard :variable-id="variableId" />
+        </a-tab-pane>
+
+        <a-tab-pane v-if="!isSynthetic" key="lineage-usage" title="血缘与使用">
           <LineageUsageCard
             :upstream-lineage="upstreamLineage"
             :downstream-lineage="downstreamLineage"
@@ -383,7 +405,7 @@
           />
         </a-tab-pane>
 
-        <a-tab-pane key="versions" title="变更记录">
+        <a-tab-pane v-if="!isSynthetic" key="versions" title="变更记录">
           <ChangeRecordCard
             :version-list="versionList"
             :version-columns="versionColumns"
@@ -764,6 +786,8 @@ import StatusChangeTable from '@/modules/variable-hub/components/risk-feature/St
 import LineageUsageCard from '@/modules/variable-hub/components/risk-feature/LineageUsageCard.vue'
 import ChangeRecordCard from '@/modules/variable-hub/components/risk-feature/ChangeRecordCard.vue'
 import EvaluationCard from '@/modules/variable-hub/components/risk-feature/EvaluationCard.vue'
+import EffectCard from '@/modules/variable-hub/components/effect/EffectCard.vue'
+import { effectStore } from '@/modules/variable-hub/mock/effect-evaluation/effect-store'
 import StatusStepFlow from '@/modules/variable-hub/components/risk-feature/StatusStepFlow.vue'
 import StatusTimeline11 from '@/modules/variable-hub/components/risk-feature/StatusTimeline11.vue'
 import { allowedActionsByStatus, isRetryableFailedStatus, midloanStatusLabel, midloanStatusColor, getEditLockReason, getLockedFields, getPhaseByStatus, midloanStatusDataForm, getStatusCategory, canEdit } from '@/modules/variable-hub/constants/midloanStatusMap'
@@ -778,9 +802,36 @@ const variableStore = useVariableStore()
 const variableId = computed(() => String(route.params.id || ''))
 // 404 标识（文档 B2 E1 · 特征ID不存在）
 const notFound = ref(false)
+/**
+ * 合成 ID 兜底标识（评估文档 §9-Q3 方案 A）
+ * 台账里没有的 VAR-EFF-xxxx 也允许进详情页：基础信息用 effectStore.profile() 兜底，
+ * 生命周期 / 血缘 / 变更等台账专属 Tab 隐藏，只保留「特征基础信息」与「效果评估」。
+ */
+const isSynthetic = ref(false)
 
-// 当前激活的标签页
-const activeTab = ref('basic')
+// 详情页 Tab 白名单：?tab= 只接受这些值，非法值回落 basic
+const DETAIL_TABS = ['basic', 'offline_lifecycle', 'api_lifecycle', 'evaluation', 'effect', 'lineage-usage', 'versions']
+
+// 当前激活的标签页：URL ?tab= 优先，便于从效果总览页深链直达
+const activeTab = ref(DETAIL_TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'basic')
+
+/** Tab 变化回写 URL：刷新 / 前进后退 / 复制链接都能停在同一个 Tab */
+watch(activeTab, (v) => {
+  if (String(route.query.tab || 'basic') === v) return
+  const next = { ...route.query }
+  if (v === 'basic') delete next.tab
+  else next.tab = v
+  router.replace({ query: next })
+})
+
+/** 外部改 URL（浏览器前进后退）时同步回 Tab */
+watch(
+  () => route.query.tab,
+  (v) => {
+    const next = DETAIL_TABS.includes(String(v)) ? String(v) : 'basic'
+    if (next !== activeTab.value) activeTab.value = next
+  }
+)
 
 // 头部辅助信息（创建人/更新时间）默认折叠，避免首屏过密
 const headerInfoExpanded = ref([])
@@ -857,8 +908,29 @@ const typedProfileTitle = computed(() => {
   return '行为特征基础信息'
 })
 
-/** 当前品类的 profile 原始对象（方便各分层卡直接取字段） */
-const profile = computed(() => (variableStore.currentVariable || {}).profile || {})
+/** 效果域最小档案（仅合成 ID 兜底时有值） */
+const effectProfile = ref(null)
+
+/** 当前品类的 profile 原始对象；合成档案用 EffectProfile 映射兜底 */
+const profile = computed(() => {
+  const p = (variableStore.currentVariable || {}).profile
+  if (p && Object.keys(p).length) return p
+  // 合成档案：把 EffectProfile 映射成头部用的展示字段，避免公共信息区整片空值
+  if (isSynthetic.value && effectProfile.value) {
+    const ep = effectProfile.value
+    return {
+      categoryLevel1: ep.l1CategoryLabel,
+      categoryLevel2: '—',
+      fieldType: ep.type || '—',
+      defaultValue: '—',
+      meaning: ep.description || '',
+      processingLogic: '',
+      tags: [],
+      dimensions: []
+    }
+  }
+  return {}
+})
 
 // 顶部公共信息（永久可见 · 注册即确定 · 全品类公共）
 const headerPublic = computed(() => {
@@ -1549,6 +1621,44 @@ const fieldMappingColumns = [
   { title: '描述', dataIndex: 'description' }
 ]
 
+/**
+ * 合成 ID 兜底渲染：台账查不到、但效果域存在该样本时，
+ * 用 effectStore.profile() 的最小档案填充头部与基础信息，并强制停在效果 Tab。
+ * @param {string} id 路由上的特征 ID
+ * @returns {boolean} 是否命中兜底（false 表示走原 404 分支）
+ */
+const applySyntheticProfile = (id) => {
+  if (!effectStore.hasVariable(id)) return false
+  const p = effectStore.profile(id)
+  if (!p) return false
+  isSynthetic.value = true
+  effectProfile.value = p
+  variableData.value = {
+    ...EMPTY_VARIABLE,
+    id: p.variableId,
+    name: p.name,
+    code: p.code,
+    type: p.type,
+    status: p.status,
+    description: p.description,
+    dataSource: p.dataSource,
+    dataSourceName: p.dataSourceName,
+    dataTableName: p.dataTableName,
+    updateFrequency: p.updateFrequency,
+    sourceType: p.sourceType,
+    category: p.category,
+    creator: p.creator,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+    quality: p.quality,
+    missingRate: p.missingRate,
+    profile: {}
+  }
+  // 合成档案没有台账生命周期，直接落在效果 Tab
+  if (activeTab.value !== 'effect') activeTab.value = 'effect'
+  return true
+}
+
 // 获取特征详情
 const fetchVariableDetail = async () => {
   try {
@@ -1560,6 +1670,13 @@ const fetchVariableDetail = async () => {
     }
     
     await variableStore.fetchVariableDetail(variableId)
+    // 合成 ID 兜底：台账没有但效果域有样本，用最小档案渲染详情页 + 效果 Tab
+    if (!variableStore.currentVariable && applySyntheticProfile(String(variableId))) {
+      notFound.value = false
+      return
+    }
+    isSynthetic.value = false
+    effectProfile.value = null
     // 404 处理：特征ID不存在（文档 B2 E1）
     if (!variableStore.currentVariable) {
       notFound.value = true
@@ -1695,9 +1812,30 @@ const fetchVersionHistory = async () => {
   }
 }
 
-// 返回列表
+/** ?from= 来路标识 → 列表页路径 */
+const FROM_PATHS = { 'variable-hub': '/variable-hub', 'variable-management': '/variable-management' }
+
+/** 覆盖范围说明：文案唯一来源是 effectStore.overview()，页面不自己拼样本数 */
+const coverageNote = computed(() => effectStore.overview().coverageNote)
+
+/**
+ * 返回列表：
+ * 1) 带 ?from= 且历史里有上一页 → 后退，完整保留列表的页签 / 筛选 / 页码状态；
+ * 2) 带 ?from= 但无历史（深链直达）→ 按来路跳转；
+ * 3) 无 ?from= → 回特征台账。
+ */
 const handleBackToList = () => {
-  router.push('/variable-management')
+  const from = String(route.query.from || '')
+  const target = FROM_PATHS[from]
+  if (!target) {
+    router.push('/variable-management')
+    return
+  }
+  if (window.history.length > 1) {
+    router.back()
+    return
+  }
+  router.push(target)
 }
 
 const handleMoreSelect = (val) => {
@@ -1825,6 +1963,11 @@ const handleVersionPageChange = (page) => {
 // 初始化
 onMounted(() => {
   fetchVariableDetail().then(() => {
+    // 合成档案没有台账侧的使用场景与变更记录，跳过避免无意义的报错提示
+    if (!isSynthetic.value) {
+      fetchUsageScenarios()
+      fetchVersionHistory()
+    }
     // 加载完整状态历史（用户反馈）
     if (variableId.value && isMidloanBehavior.value) {
       MidloanStateEngine.initMockStatusHistory(variableId.value)
@@ -1836,8 +1979,6 @@ onMounted(() => {
       openSupplementTable()
     }
   })
-  fetchUsageScenarios()
-  fetchVersionHistory()
 })
 
 // ============ 11 状态机相关（midloan_behavior）============

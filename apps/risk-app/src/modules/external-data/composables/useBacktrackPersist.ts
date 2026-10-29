@@ -1001,16 +1001,7 @@ export function useBacktrackPersist() {
   })
 
   /* ---------- B4 三重行数验证与一致性校验 ---------- */
-  /** 原样本文件（R62：原样本文件行数参与三重行数比对） */
-  const sampleFile = ref<UploadFile | null>(null)
-
-  /** 处理原样本文件上传 */
-  const onSampleUpload = (files: UploadFile[]) => {
-    const f = files[files.length - 1]
-    sampleFile.value = f ?? null
-  }
-
-  /** 三重行数验证结果 */
+  /** 三重行数验证结果（由后台任务产出，供落库通知取验证结论） */
   const tripleRowCheck = ref<TripleRowCheck | null>(null)
 
   /** 一致性校验是否已完成（推进 Hive 标准库的前置门槛：先比对确认，再落正式库） */
@@ -1086,7 +1077,8 @@ export function useBacktrackPersist() {
     const task = await createPersistTask('行数验证', persistBatches.value[0]?.backid ?? '', false, 2)
     const loaded = persistBatches.value.reduce((s, b) => s + b.rows, 0)
     const source = activeFile.value?.rows ?? 0
-    const sample = sampleFile.value?.size ? Math.round((sampleFile.value.size / 900)) : source
+    // 页面已移除原样本文件上传入口（R62），原样本行数按源文件行数取值
+    const sample = source
     tripleRowCheck.value = await fetchTripleRowCheck(loaded, source, sample)
     const c = tripleRowCheck.value
     // 落库主流程终点为「Hive已落库」，行数验证为后台任务，不再推进主流程状态
@@ -1094,8 +1086,8 @@ export function useBacktrackPersist() {
       await finishPersistTask(task.taskId, '成功', '三重行数验证通过：入库行数 = 源文件行数 = 原样本文件行数')
       Message.success('三重行数验证通过：入库行数 = 源文件行数 = 原样本文件行数')
     } else {
-      await finishPersistTask(task.taskId, '失败', '三重行数验证未通过，请检查异常行并核对原始样本文件')
-      Message.warning('三重行数验证未通过，请检查异常行并核对原始样本文件')
+      await finishPersistTask(task.taskId, '失败', '三重行数验证未通过，差异明细见服务任务列表')
+      Message.warning('行数验证未通过，差异明细可在服务任务列表中查看')
     }
   }
 
@@ -1159,17 +1151,9 @@ export function useBacktrackPersist() {
     consistencySummary.value = null
     consistencyDetails.value = []
     consistencyPagination.total = 0
-    await finishPersistTask(task.taskId, '成功', `已跳过一致性抽样校验：${reason}（验证报告标注未执行）`)
+    await finishPersistTask(task.taskId, '成功', `已跳过一致性抽样校验：${reason}（服务任务列表标注未执行）`)
     await saveAsyncTask(task.taskId, { skipped: true })
     Message.info(`已跳过一致性抽样校验：${reason}`)
-  }
-
-  /** 验证报告弹窗（R64） */
-  const reportVisible = ref(false)
-
-  /** 打开验证报告 */
-  const openReport = () => {
-    reportVisible.value = true
   }
 
   /* ---------- B5 落库文件通知 ---------- */
@@ -1577,9 +1561,6 @@ export function useBacktrackPersist() {
     tempPreviewRows,
     tempPreviewColumns,
     // B4
-    sampleFile,
-    onSampleUpload,
-    tripleRowCheck,
     consistencyChecked,
     consistencySkipped,
     consistencySkipReason,
@@ -1597,8 +1578,6 @@ export function useBacktrackPersist() {
     runTripleRowCheck,
     runConsistencyCheck,
     skipConsistencyCheck,
-    reportVisible,
-    openReport,
     // B5
     notifyConfig,
     loadNotifyConfig,

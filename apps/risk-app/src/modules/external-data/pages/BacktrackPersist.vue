@@ -729,69 +729,12 @@
             需先完成 3.2 一致性抽样校验，或在无线上数据可对比时选择跳过，方可推进 Hive 标准库。
           </div>
 
-          <!-- 落库结果：行数验证与通知由后台任务自动执行，落 Hive 后在此展示结果 -->
+          <!-- 落库结果：行数验证与通知均由后台任务自动执行，本页只说明去向，结果在服务任务列表查看 -->
           <a-divider id="sec-3-4" :class="{ 'section-active': batchContext?.sectionKey === 'sec-3-4' }" orientation="left">3.4 落库结果（后台任务）</a-divider>
           <a-alert type="info" style="margin-bottom: 12px">
             落 Hive 成功后，行数验证与落库通知均由后台任务自动执行，完成后经站内信和数据服务公众号推送，无需手工触发。
             执行进度可在「服务任务列表」中查看。
           </a-alert>
-
-          <a-space align="end" wrap style="margin-bottom: 12px">
-            <div class="inline-field">
-              <span class="inline-field-label">原样本文件（R62）</span>
-              <a-upload :auto-upload="false" :limit="1" :show-file-list="true" accept=".csv" @change="onSampleUpload">
-                <a-button>
-                  <template #icon><icon-upload /></template>
-                  上传原样本文件
-                </a-button>
-              </a-upload>
-            </div>
-            <a-button type="primary" :disabled="!persistBatches.length" @click="runTripleRowCheck">
-              <template #icon><icon-safe /></template>
-              重新执行三重行数验证
-            </a-button>
-            <a-button v-if="tripleRowCheck" @click="openReport">
-              <template #icon><icon-file /></template>
-              查看验证报告
-            </a-button>
-          </a-space>
-
-          <a-table v-if="tripleRowCheck" :data="[tripleRowCheck]" :pagination="false" size="small" row-key="loadedRows">
-            <template #columns>
-              <a-table-column title="入库行数" :width="130">
-                <template #cell="{ record }">{{ record.loadedRows.toLocaleString() }}</template>
-              </a-table-column>
-              <a-table-column title="源文件行数" :width="130">
-                <template #cell="{ record }">{{ record.sourceFileRows.toLocaleString() }}</template>
-              </a-table-column>
-              <a-table-column title="原样本文件行数" :width="150">
-                <template #cell="{ record }">{{ record.sampleFileRows.toLocaleString() }}</template>
-              </a-table-column>
-              <a-table-column title="差值" :width="100">
-                <template #cell="{ record }">
-                  <span :class="record.matched ? 'ok-text' : 'err-text'">
-                    {{ record.loadedRows - record.sourceFileRows }}
-                  </span>
-                </template>
-              </a-table-column>
-              <a-table-column title="必填字段非空校验" :width="160">
-                <template #cell="{ record }">
-                  <a-tag size="small" :color="record.requiredFieldPass ? 'green' : 'red'">
-                    {{ record.requiredFieldPass ? '通过' : `异常 ${record.requiredFieldErrorCount} 条` }}
-                  </a-tag>
-                </template>
-              </a-table-column>
-              <a-table-column title="比对结果" :width="130">
-                <template #cell="{ record }">
-                  <a-tag size="small" :color="record.matched ? 'green' : 'red'">
-                    {{ record.matched ? '一致' : '不一致' }}
-                  </a-tag>
-                </template>
-              </a-table-column>
-            </template>
-          </a-table>
-          <a-empty v-else description="尚未落 Hive，后台行数验证任务未启动" />
-          <div class="table-tip">三重行数 = 入库行数 + 源文件行数 + 原样本文件行数，三者一致方为通过；不一致时给出差值并标记异常行。</div>
         </div>
       </div>
 
@@ -907,45 +850,6 @@
           </a-table-column>
         </template>
       </a-table>
-    </a-modal>
-
-    <!-- 验证报告（R64） -->
-    <a-modal v-model:visible="reportVisible" title="验证报告" :width="780" :footer="false">
-      <a-descriptions :column="2" bordered size="small">
-        <a-descriptions-item label="报告编号">
-          <span class="mono">VR{{ currentBackid || 'NA' }}</span>
-        </a-descriptions-item>
-        <a-descriptions-item label="关联backid">
-          <span class="mono">{{ currentBackid || '—' }}</span>
-        </a-descriptions-item>
-        <a-descriptions-item label="验证类型">三重行数验证 + 一致性校验</a-descriptions-item>
-        <a-descriptions-item label="生成时间">{{ reportTime }}</a-descriptions-item>
-        <a-descriptions-item label="操作人">当前用户（风控数据组）</a-descriptions-item>
-        <a-descriptions-item label="一致性校验">
-          <a-tag v-if="consistencyChecked" size="small" color="green">已执行</a-tag>
-          <a-tag v-else-if="consistencySkipped" size="small" color="orange">未执行</a-tag>
-          <span v-else class="table-tip">未执行</span>
-        </a-descriptions-item>
-        <a-descriptions-item label="差异摘要">
-          {{ consistencySummary?.diffSummary || (consistencySkipped ? `未执行（已跳过：${consistencySkipReason}）` : '—') }}
-        </a-descriptions-item>
-      </a-descriptions>
-      <a-table v-if="tripleRowCheck" :data="[tripleRowCheck]" :pagination="false" size="small" style="margin-top: 12px" row-key="loadedRows">
-        <template #columns>
-          <a-table-column title="入库行数" data-index="loadedRows" />
-          <a-table-column title="源文件行数" data-index="sourceFileRows" />
-          <a-table-column title="原样本行数" data-index="sampleFileRows" />
-          <a-table-column title="差值" :width="90">
-            <template #cell="{ record }">{{ record.loadedRows - record.sourceFileRows }}</template>
-          </a-table-column>
-          <a-table-column title="比对结果" :width="100">
-            <template #cell="{ record }">
-              <a-tag size="small" :color="record.matched ? 'green' : 'red'">{{ record.matched ? '一致' : '不一致' }}</a-tag>
-            </template>
-          </a-table-column>
-        </template>
-      </a-table>
-      <a-empty v-else style="margin-top: 12px" description="尚未执行验证" />
     </a-modal>
 
     <!-- 落库记录抽屉（R54） -->
@@ -1081,11 +985,10 @@ const {
   hiveTableOptions, hiveTable, loadHiveTables, reviewDate, partitionValue,
   persistBatches, persisting, persistPercent, persistToTemp,
   tempPreviewVisible, openTempPreview, tempPreviewRows, tempPreviewColumns,
-  sampleFile, onSampleUpload, tripleRowCheck,
   consistencyChecked, consistencySkipped, consistencySkipReason, consistencyReady,
   consistencyTargetOptions, consistencyTargetTable, consistencyDetails, consistencySummary,
   validating, consistencyPagination, pagedConsistencyDetails, onConsistencyPageChange,
-  loadConsistencyTables, runTripleRowCheck, runConsistencyCheck, skipConsistencyCheck, reportVisible, openReport,
+  loadConsistencyTables, runTripleRowCheck, runConsistencyCheck, skipConsistencyCheck,
   notifyConfig, loadNotifyConfig, notifySent, sendNotify,
   persistRecord, recordVisible, buildPersistRecord, openPersistRecord,
   createdTasks, createPersistTask, finishPersistTask, restoreFromResumeContext, restoreFromBackid,
@@ -1155,9 +1058,6 @@ const nodeTypeLabel = (type: RetroNodeType) =>
 /** 节点类型标签色 */
 const nodeTypeColor = (type: RetroNodeType) =>
   ({ folder: 'arcoblue', csv: 'green', archive: 'purple' })[type] || 'gray'
-
-/** 报告生成时间 */
-const reportTime = computed(() => new Date().toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-'))
 
 /* ---------- 落 Hive ---------- */
 const writing = ref(false)

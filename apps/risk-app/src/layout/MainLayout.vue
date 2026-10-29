@@ -32,6 +32,8 @@
             <a-menu-item key="/variable-management">特征台账</a-menu-item>
             <a-menu-item key="/explore/map">特征全景</a-menu-item>
             <a-menu-item key="/evaluation/tasks">评估任务中心</a-menu-item>
+            <a-menu-item key="/effect-tasks">效果任务管理</a-menu-item>
+            <a-menu-item key="/effect-tasks/settings">效果判定配置</a-menu-item>
           </a-sub-menu>
           <a-sub-menu key="risk-factor-explore">
             <template #title>探索过程</template>
@@ -138,6 +140,9 @@ function updateMenuState(path: string) {
   else if (path.startsWith('/explore/taxonomy')) activeSideMenu.value = '/explore/taxonomy'
   else if (path.startsWith('/explore/map')) activeSideMenu.value = '/explore/map'
   else if (path.startsWith('/evaluation/')) activeSideMenu.value = '/evaluation/tasks'
+  // 效果评估任务域（静态路径 settings 必须判在通配之前）
+  else if (path.startsWith('/effect-tasks/settings')) activeSideMenu.value = '/effect-tasks/settings'
+  else if (path.startsWith('/effect-tasks')) activeSideMenu.value = '/effect-tasks'
   // 外数
   else if (path.startsWith('/variable-hub/external-data/lifecycle')) activeSideMenu.value = '/variable-hub/external-data/lifecycle'
   else if (path.startsWith('/variable-hub/external-data/credit-agency')) activeSideMenu.value = '/variable-hub/external-data/credit-agency'

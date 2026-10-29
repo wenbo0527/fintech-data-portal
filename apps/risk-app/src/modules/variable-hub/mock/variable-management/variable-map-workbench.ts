@@ -365,3 +365,37 @@ export const buildVariableWorkbenchSummary = (variableIds: string[]): Record<str
     return acc
   }, {})
 }
+
+/** 台账视角四数 + 治理焦点列表（聚合口径全部留在 mock 层） */
+export interface VariableWorkbenchAggregate {
+  /** 特征总数 */
+  total: number
+  /** 高风险特征数 */
+  high: number
+  /** 待处理动作数 */
+  pending: number
+  /** 已形成结论数 */
+  resolved: number
+  /** 治理焦点：高风险或存在待处理动作，按待处理数降序取前 5 */
+  focusItems: VariableWorkbenchSummary[]
+}
+
+/**
+ * 工作台聚合：把「四张数字卡 + 治理焦点前 5」的计算从页面里下沉到 mock 层
+ * 页面与组件只负责渲染，不再自行 filter / reduce / sort / slice
+ * @param variableIds 台账在册变量 ID 列表
+ * @returns 四数与焦点列表
+ */
+export const summarizeWorkbench = (variableIds: string[]): VariableWorkbenchAggregate => {
+  const summaries = Object.values(buildVariableWorkbenchSummary(variableIds))
+  return {
+    total: variableIds.length,
+    high: summaries.filter((item) => item.riskLevel === 'high').length,
+    pending: summaries.reduce((acc, item) => acc + item.pendingActionCount, 0),
+    resolved: summaries.reduce((acc, item) => acc + item.resolvedInsightCount, 0),
+    focusItems: summaries
+      .filter((item) => item.riskLevel === 'high' || item.pendingActionCount > 0)
+      .sort((a, b) => b.pendingActionCount - a.pendingActionCount)
+      .slice(0, 5)
+  }
+}

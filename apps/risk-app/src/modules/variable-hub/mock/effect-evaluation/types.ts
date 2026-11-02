@@ -8,6 +8,8 @@
  * 是两个口径；台账数据不在此处修改，效果域只引用台账的真实 ID。
  */
 
+import type { ContractIssue } from '../task-center/io-contract'
+
 /** 效果结论：offline = 汰换（原「该退」）/ online = 推荐（原「该用」）/ neutral = 观察 */
 export type EffectVerdict = 'offline' | 'online' | 'neutral'
 
@@ -611,6 +613,29 @@ export interface EffectTask {
   enabled: boolean
   /** 进度百分比（轮询推进） */
   progress: number
+  /**
+   * 任务级判定配置（阈值 + 推送对象）
+   * 缺省时取全局默认模板（effectRuleStore.getRule()），保证历史预置任务口径不变；
+   * 一旦在任务里保存过，本任务的口径就与全局脱钩，历史批次仍按快照回看
+   */
+  rule?: RuleConfig
+  /** 任务级阈值变更历史（用户在任务判定配置里保存时追加，与预置派生历史合并展示） */
+  ruleHistory?: ParamHistory[]
+  /**
+   * 输入来源引用：效果任务与评估任务打通的落点
+   * 缺省 = 用本域全量效果宽表；填了就表示输入引用某个评估任务的产出字段，
+   * 跑批作用域收窄到上游实际覆盖的变量数（upstreamCount），字段 key 与评估契约的 output 完全一致
+   */
+  inputRef?: {
+    /** 上游评估任务 id */
+    upstreamTaskId: string
+    /** 上游任务名（血缘展示用，避免每次回查评估域 store） */
+    upstreamTaskName?: string
+    /** 引用的产出字段 key，取值范围由 io-contract 里本类型契约的 upstream.fields 决定 */
+    upstreamField: string
+    /** 上游实际覆盖的变量数，决定本任务扫描范围 */
+    upstreamCount?: number
+  }
 }
 
 /** 任务实例（批次） */
@@ -632,6 +657,11 @@ export interface TaskInstance {
   operator: string
   /** 触发方式 */
   trigger: string
+  /**
+   * 执行后产出校验的不符项（契约第三段）：非空表示本轮产出与效果契约对不上，
+   * 原本 success 的会降级成 partial；空数组 = 必产字段齐备
+   */
+  contractIssues?: ContractIssue[]
 }
 
 /** 入参历史 */

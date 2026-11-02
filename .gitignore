@@ -124,3 +124,6 @@ data_community/
 *.zip
 apps/*.zip
 apps/*/dist-ssr/
+
+# 浏览器验证截图（临时产物，不入库）
+.screenshots/.tmp/

@@ -1,21 +1,24 @@
+<!--
+  效果任务 · 任务级判定配置面板（效果域自封装）
+  - 判定配置不再是全局一个 Tab：每个效果任务带自己的阈值与推送对象，新建时就配，详情页可改
+  - 两种载体共用本组件：
+    · 新建（不传 taskId）：阈值与推送在草稿里编辑，由创建页整体提交，此时没有真实批次，不提供试跑
+    · 详情（传 taskId）：读写都走 effectBatchStore.saveTaskRule / getTaskRule，并追加任务级变更历史
+  - 字段清单、文案、取值格式、合法性判定全部来自 mock 层，页面零硬编码口径、零自算聚合
+  - 全局默认模板（effectRuleStore）只作为新建时的预填值，不再单独出入口
+-->
 <template>
-  <div class="effect-settings-page">
-    <DmtPageHeader
-      title="阈值与推送配置"
-      subtitle="「汰换 / 推荐」名单的判定阈值与推送对象；改这里影响后续所有跑批批次，不回溯已发布名单。"
-    >
-      <template #extra>
-        <a-space>
-          <a-button @click="router.push('/effect-tasks')">返回任务列表</a-button>
-          <a-button @click="router.push('/variable-hub')">效果总览</a-button>
-        </a-space>
-      </template>
-    </DmtPageHeader>
+  <div class="effect-rule-panel">
+    <a-alert v-if="taskId" type="info" class="scope-alert">
+      本任务口径独立生效：保存只影响「{{ taskName }}」后续批次，不改全局默认模板，也不回溯已发布名单与历史批次快照。
+      <a-tag v-if="inherited" size="small" color="gray">当前沿用全局默认模板</a-tag>
+      <a-tag v-else size="small" color="orange">已自定义（与全局模板脱钩）</a-tag>
+    </a-alert>
+    <a-alert v-else type="info" class="scope-alert">
+      新建时先给一套默认阈值（来自全局模板），保存任务后仍可在详情页「判定配置」里改。
+    </a-alert>
 
-    <!-- 口径说明：与总览页同一句话，唯一来源仍是 effectStore.overview() -->
-    <a-alert type="info" class="coverage-alert">{{ coverageNote }}</a-alert>
-
-    <a-tabs v-model:active-key="activeTab" type="rounded" size="small" class="settings-tabs">
+    <a-tabs v-model:active-key="activeTab" type="rounded" size="small">
       <!-- ================= 判定阈值 ================= -->
       <a-tab-pane key="rule" title="判定阈值">
         <a-row :gutter="16">
@@ -26,7 +29,7 @@
                 <span class="panel-tip">字段与文案来自 mock 层 RULE_FIELD_METAS，页面不硬编码</span>
               </template>
 
-              <a-alert v-if="!canRun" type="warning" class="perm-alert">
+              <a-alert v-if="!editable" type="warning" class="perm-alert">
                 当前角色（风险数据成员）只能查看与预览阈值，保存需「触发跑批」权限。
               </a-alert>
 
@@ -41,7 +44,7 @@
                     :max="m.max"
                     :step="m.step"
                     :precision="m.step < 1 ? 3 : 0"
-                    :disabled="!canRun"
+                    :disabled="!editable"
                     size="small"
                     class="field-input"
                   />
@@ -52,15 +55,15 @@
                 </a-form-item>
 
                 <a-form-item v-for="m in switchMetas" :key="m.key" :label="m.label">
-                  <a-switch v-model="form[m.key]" :disabled="!canRun" />
+                  <a-switch v-model="form[m.key]" :disabled="!editable" />
                   <div class="field-hint">{{ m.hint }}</div>
                 </a-form-item>
 
                 <a-space class="form-actions">
-                  <a-button type="primary" size="small" :disabled="!canRun || !check.ok" @click="save">
+                  <a-button v-if="taskId" type="primary" size="small" :disabled="!editable || !check.ok" @click="save">
                     保存配置
                   </a-button>
-                  <a-button size="small" :disabled="!canRun" @click="resetDefault">恢复默认值</a-button>
+                  <a-button size="small" :disabled="!editable" @click="resetDefault">恢复默认值</a-button>
                   <a-button size="small" type="text" @click="revertToSaved">撤销未保存改动</a-button>
                 </a-space>
               </a-form>
@@ -100,10 +103,10 @@
                   :data="preview.sampleRows || []"
                   :pagination="false"
                   size="small"
-                  :scroll="{ x: 560 }"
+                  :scroll="{ x: 520 }"
                 >
                   <template #columns>
-                    <a-table-column title="变量" data-index="name" :width="200">
+                    <a-table-column title="变量" data-index="name" :width="180">
                       <template #cell="{ record }">
                         <div class="cell-name">
                           <a-link @click="goVariable(record)">{{ record.name }}</a-link>
@@ -112,17 +115,11 @@
                       </template>
                     </a-table-column>
                     <a-table-column title="结论" data-index="verdictLabel" :width="80" />
-                    <a-table-column title="效果指数" :width="100">
+                    <a-table-column title="效果指数" :width="90">
                       <template #cell="{ record }"><span class="num strong">{{ record.effectIndex }}</span></template>
                     </a-table-column>
-                    <a-table-column title="月调用量" :width="100">
+                    <a-table-column title="月调用量" :width="90">
                       <template #cell="{ record }"><span class="num">{{ record.callCount }} 万</span></template>
-                    </a-table-column>
-                    <a-table-column title="口径" :width="120">
-                      <template #cell="{ record }">
-                        <a-tag v-if="record.synthetic" size="small">演示合成</a-tag>
-                        <a-tag v-else size="small" color="green">台账正式</a-tag>
-                      </template>
                     </a-table-column>
                   </template>
                   <template #empty>
@@ -140,62 +137,52 @@
         <a-card :bordered="false" class="panel-card">
           <a-form :model="form" layout="vertical" class="push-form">
             <a-form-item label="推送开关">
-              <a-switch v-model="form.pushEnabled" :disabled="!canRun" />
+              <a-switch v-model="form.pushEnabled" :disabled="!editable" />
               <span class="field-hint inline">
                 关闭后跑批照常产出名单，只是不推送；当前草稿阈值下为
-                {{ pushSummary.offline }} 个汰换 / {{ pushSummary.online }} 个推荐
+                {{ preview.offlineHit }} 个汰换 / {{ preview.onlineHit }} 个推荐
               </span>
             </a-form-item>
 
             <!-- 候选项来自 store 字典，页面不维护协作对象清单 -->
             <a-form-item label="推送对象">
-              <a-checkbox-group
-                v-model="form.pushTargets"
-                :disabled="!canRun || !form.pushEnabled"
-                class="push-group"
-              >
+              <a-checkbox-group v-model="form.pushTargets" :disabled="!editable || !form.pushEnabled" class="push-group">
                 <a-checkbox v-for="c in candidates" :key="c.id" :value="c.id" class="push-item">
                   <div class="push-item-name">{{ c.name }}</div>
                   <div class="push-item-id">{{ c.id }}</div>
                 </a-checkbox>
               </a-checkbox-group>
-              <div class="field-hint">
-                已选 {{ chosenText }} ；推送对象只在批次产出后接收名单，不代表可查看全库数据。
-              </div>
+              <div class="field-hint">已选 {{ chosenText }} ；推送对象只在批次产出后接收名单，不代表可查看全库数据。</div>
             </a-form-item>
 
-            <a-space>
-              <a-button type="primary" size="small" :disabled="!canRun || !check.ok" @click="save">保存配置</a-button>
+            <a-space v-if="taskId">
+              <a-button type="primary" size="small" :disabled="!editable || !check.ok" @click="save">保存配置</a-button>
               <a-button size="small" @click="revertToSaved">撤销未保存改动</a-button>
             </a-space>
           </a-form>
         </a-card>
       </a-tab-pane>
 
-      <!-- ================= 抽样试跑 ================= -->
-      <a-tab-pane key="trial" title="抽样试跑">
+      <!-- ================= 抽样试跑（只有已存在的任务才能跑） ================= -->
+      <a-tab-pane v-if="taskId" key="trial" title="抽样试跑">
         <a-card :bordered="false" class="panel-card">
           <template #title>
             <span class="panel-title">用草稿阈值做一次抽样试跑</span>
             <span class="panel-tip">试跑不落正式批次、不影响名单推送，只用于保存前验证阈值松紧</span>
           </template>
 
-          <a-alert v-if="!canRun" type="warning" class="perm-alert">
-            当前角色无「触发跑批」权限，试跑按钮不可用。
-          </a-alert>
-
           <a-form :model="trial" layout="inline" class="trial-form">
             <a-form-item label="抽样比例(%)">
-              <a-input-number v-model="trial.sampleRatio" :min="1" :max="100" :step="5" size="small" :disabled="!canRun" />
+              <a-input-number v-model="trial.sampleRatio" :min="1" :max="100" :step="5" size="small" :disabled="!editable" />
             </a-form-item>
             <a-form-item label="抽样上限(个)">
-              <a-input-number v-model="trial.sampleLimit" :min="5" :max="200" :step="5" size="small" :disabled="!canRun" />
+              <a-input-number v-model="trial.sampleLimit" :min="5" :max="200" :step="5" size="small" :disabled="!editable" />
             </a-form-item>
             <a-form-item>
               <a-button
                 type="primary"
                 size="small"
-                :disabled="!canRun || check.previewBlocked"
+                :disabled="!editable || check.previewBlocked"
                 :loading="trialing"
                 @click="runTrial"
               >
@@ -212,7 +199,7 @@
             :data="trialResult.rows"
             :pagination="false"
             size="small"
-            :scroll="{ x: 700 }"
+            :scroll="{ x: 620 }"
           >
             <template #columns>
               <a-table-column title="变量" data-index="name" :width="220" />
@@ -240,19 +227,15 @@
 
 <script setup>
 /**
- * 效果任务管理 · 阈值与推送配置页
- *
- * 约束（见评估文档 §5 / §6）：
- * 1. 字段清单、文案、取值格式、合法性判定全部来自 mock 层，页面零硬编码口径、零自算聚合；
- * 2. 命中预览与试跑的数字一律由 store 计算返回，组件只渲染；
- * 3. Tab 进 URL（?tab=rule|push|trial），前进后退可还原；
- * 4. 输入停止 300ms 后防抖重算预览；区间冲突时禁止保存与试跑；
- * 5. 写权限 RUN_EFFECT_TASK：默认演示角色为风险数据成员，保存与试跑不可用。
+ * 约定：
+ * 1. 命中预览与试跑的数字一律由 store 计算返回，组件只渲染，输入停止 300ms 后防抖重算；
+ * 2. 区间冲突时禁止保存与试跑（validateRule 下发 previewBlocked / message）；
+ * 3. 写权限 RUN_EFFECT_TASK：无权限时表单只读，草稿仍可预览；
+ * 4. 子 Tab 只在本组件内切，不写 URL —— 外层 URL 的 ?tab= 归宿主页面（详情/创建）占用。
  */
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
-import DmtPageHeader from '@/modules/variable-hub/components/PageHeader.vue'
 import {
   effectRuleStore,
   RULE_NUMBER_METAS,
@@ -262,33 +245,46 @@ import {
   validateRule
 } from '@/modules/variable-hub/mock/effect-evaluation/rule-store'
 import { effectBatchStore } from '@/modules/variable-hub/mock/effect-evaluation/batch-store'
-import { effectStore } from '@/modules/variable-hub/mock/effect-evaluation/effect-store'
 import { UserContext, PERMISSIONS } from '@/modules/variable-hub/mock/risk-feature/permissions'
 
+const props = defineProps({
+  /** 已存在的任务 ID；缺省即新建草稿模式 */
+  taskId: { type: String, default: '' },
+  /** 草稿模式下的配置对象（v-model），由创建页整体提交 */
+  modelValue: { type: Object, default: null }
+})
+const emit = defineEmits(['update:modelValue', 'saved'])
+
 const router = useRouter()
-const route = useRoute()
 
-/** 三个子 Tab 的合法值 */
-const SETTING_TABS = ['rule', 'push', 'trial']
-const activeTab = ref(SETTING_TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'rule')
+const activeTab = ref('rule')
+const editable = computed(() => UserContext.has(PERMISSIONS.RUN_EFFECT_TASK))
 
-const canRun = computed(() => UserContext.has(PERMISSIONS.RUN_EFFECT_TASK))
+/** 读任务级已存配置：任务不存在时回退到全局模板，不让面板因为脏链接白屏 */
+function loadSaved(id) {
+  const payload = id ? effectBatchStore.getTaskRule(id) : null
+  return payload ? payload.rule : effectBatchStore.defaultTaskRule()
+}
 
-/** 已保存的配置（对照与撤销的基准） */
-const saved = ref(effectRuleStore.getRule())
+/** 已保存基准：任务级配置或全局默认模板（草稿模式） */
+const saved = ref(loadSaved(props.taskId))
+const taskName = ref(props.taskId ? effectBatchStore.getTask(props.taskId)?.name || '' : '')
+/** 没保存过任务级配置的任务跟全局模板，面板上明确标出来 */
+const inherited = computed(() => {
+  if (!props.taskId) {
+    return true
+  }
+  const t = effectBatchStore.getTask(props.taskId)
+  return !!(t && !t.rule)
+})
 
-/** 草稿表单：数值 + 开关 + 推送对象 */
-const form = reactive({ ...saved.value, pushTargets: [...saved.value.pushTargets] })
+/** 表单初值：草稿模式取创建页传入的对象，任务模式取已保存配置 */
+const initial = props.modelValue || saved.value
+const form = reactive({ ...initial, pushTargets: [...(initial.pushTargets || [])] })
 
-/** 表单分区：由 mock 层拆好的两组元数据驱动渲染 */
 const numberMetas = RULE_NUMBER_METAS
 const switchMetas = RULE_SWITCH_METAS
-
-/** 推送候选项：store 下发 */
 const candidates = computed(() => effectRuleStore.pushCandidates())
-
-/** 口径说明：与总览页 / 任务列表页同一来源 */
-const coverageNote = computed(() => effectStore.overview().coverageNote)
 
 /** 已保存值的展示文案（key → 文案） */
 const savedText = computed(() => {
@@ -299,11 +295,11 @@ const savedText = computed(() => {
   return out
 })
 
-/** 草稿与已保存的差异：比对逻辑在 store，页面只显示结果 */
-const diff = computed(() => effectRuleStore.diffRule({ ...form }))
-
 /** 合法性判定：文案与拦截位都由 validateRule 下发 */
 const check = computed(() => validateRule({ ...form }))
+
+/** 差异计数交给 store，组件不自己比字段 */
+const diff = computed(() => effectBatchStore.diffTaskRule(props.taskId || undefined, { ...form }))
 
 /** 预览结果：store 返回，组件只渲染 */
 const preview = ref(effectRuleStore.previewHit({ ...form }))
@@ -317,19 +313,12 @@ const hitCards = computed(() => [
   { label: '样本剔除', value: preview.value.excludedTotal }
 ])
 
-/** 推送摘要数字：直接取预览结果 */
-const pushSummary = computed(() => ({
-  offline: preview.value.offlineHit,
-  online: preview.value.onlineHit
-}))
-
 /** 已选推送对象的中文名串（字典与格式在 mock 层） */
 const chosenText = computed(() => {
   const meta = RULE_FIELD_METAS.find((m) => m.key === 'pushTargets')
   return meta ? formatRuleValue(meta, form.pushTargets) : '—'
 })
 
-/** 最近保存信息 */
 const savedMeta = computed(() => ({ updatedAt: saved.value.updatedAt, updatedBy: saved.value.updatedBy }))
 
 const trial = reactive({ sampleRatio: 10, sampleLimit: 50 })
@@ -338,14 +327,13 @@ const trialing = ref(false)
 
 let previewTimer = null
 
-/**
- * 防抖重算命中预览
- * mock 为同步计算，用极短延时把 loading 态表达出来
- */
+/** 防抖重算命中预览：mock 为同步计算，用极短延时把 loading 态表达出来 */
 function schedulePreview() {
   clearTimeout(previewTimer)
   previewTimer = window.setTimeout(() => {
-    if (check.value.previewBlocked) return
+    if (check.value.previewBlocked) {
+      return
+    }
     previewLoading.value = true
     previewTimer = window.setTimeout(() => {
       preview.value = effectRuleStore.previewHit({ ...form })
@@ -357,43 +345,59 @@ function schedulePreview() {
 // 表单任何一项变化都重新预览
 watch(() => RULE_FIELD_METAS.map((m) => form[m.key]), schedulePreview, { deep: true })
 
-/** Tab 变化回写 URL */
-watch(activeTab, (v) => {
-  const next = { ...route.query }
-  if (v === 'rule') delete next.tab
-  else next.tab = v
-  router.replace({ query: next })
-})
-
-/** 外部改 URL（前进后退）时同步回 Tab */
+// 草稿模式：任何改动都同步回创建页，提交时随任务一起落库
 watch(
-  () => route.query.tab,
+  () => ({ ...form, pushTargets: [...form.pushTargets] }),
   (v) => {
-    const next = SETTING_TABS.includes(String(v)) ? String(v) : 'rule'
-    if (next !== activeTab.value) activeTab.value = next
-  }
+    if (!props.taskId) {
+      emit('update:modelValue', v)
+    }
+  },
+  { deep: true }
 )
 
-/**
- * 保存配置：写 localStorage，同步刷新已保存快照与预览
- */
-function save() {
-  if (!canRun.value || !check.value.ok) return
-  const next = effectRuleStore.saveRule({ ...form, pushTargets: [...form.pushTargets] })
-  saved.value = next
-  preview.value = effectRuleStore.previewHit(next)
-  Message.success(`阈值已保存，将应用于后续批次（${next.updatedAt}）`)
+/** 载入任务级已保存配置（切换 taskId 时重新对齐基准） */
+function reload() {
+  if (!props.taskId) {
+    return
+  }
+  const payload = effectBatchStore.getTaskRule(props.taskId)
+  if (!payload) {
+    return
+  }
+  saved.value = payload.rule
+  taskName.value = effectBatchStore.getTask(props.taskId)?.name || ''
+  RULE_FIELD_METAS.forEach((m) => {
+    form[m.key] = Array.isArray(payload.rule[m.key]) ? [...payload.rule[m.key]] : payload.rule[m.key]
+  })
+  preview.value = effectRuleStore.previewHit({ ...form })
 }
 
-/**
- * 恢复默认值：只改草稿，仍需保存才生效
- */
+watch(() => props.taskId, reload)
+
+/** 保存任务级配置：只写本任务，并追加一条任务级变更历史 */
+function save() {
+  if (!editable.value || !check.value.ok || !props.taskId) {
+    return
+  }
+  const next = effectBatchStore.saveTaskRule(props.taskId, { ...form, pushTargets: [...form.pushTargets] })
+  if (!next) {
+    Message.error('保存失败：任务不存在')
+    return
+  }
+  saved.value = loadSaved(props.taskId)
+  preview.value = effectRuleStore.previewHit({ ...form })
+  Message.success(`本任务阈值已保存（${next.rule ? next.rule.updatedAt : ''}），只影响后续批次`)
+  emit('saved', next)
+}
+
+/** 恢复默认值：只改草稿，仍需保存才生效 */
 function resetDefault() {
   const d = effectRuleStore.defaultRule()
   RULE_FIELD_METAS.forEach((m) => {
     form[m.key] = Array.isArray(d[m.key]) ? [...d[m.key]] : d[m.key]
   })
-  Message.info('已填入默认阈值，保存后生效')
+  Message.info('已填入全局默认阈值，保存后生效')
 }
 
 /** 草稿回退到最近一次已保存的配置 */
@@ -404,20 +408,14 @@ function revertToSaved() {
   })
 }
 
-/**
- * 试跑：把草稿阈值作为 patch 传入 store，结果不入库
- * 载体取一个已启用的临时任务，仅用于复用 store 的试跑口径
- */
+/** 试跑：把草稿阈值作为 patch 传入 store，结果不入库 */
 function runTrial() {
-  if (!canRun.value || check.value.previewBlocked) return
-  const carrier = effectBatchStore.listTasks({ type: 'adhoc' }).rows.find((t) => t.enabled)
-  if (!carrier) {
-    Message.error('没有可用于试跑的临时任务，请先在任务列表新建')
+  if (!editable.value || check.value.previewBlocked || !props.taskId) {
     return
   }
   trialing.value = true
   window.setTimeout(() => {
-    const payload = effectBatchStore.trialRun(carrier.id, {
+    const payload = effectBatchStore.trialRun(props.taskId, {
       sampleRatio: trial.sampleRatio,
       sampleLimit: trial.sampleLimit,
       rule: { ...form }
@@ -426,16 +424,13 @@ function runTrial() {
       // 缺失率文案由 mock 层的 missingRateText 下发，页面不做百分比换算
       trialResult.value = payload
     } else {
-      Message.error('试跑失败：载体任务不存在')
+      Message.error('试跑失败：任务不存在')
     }
     trialing.value = false
   }, 200)
 }
 
-/**
- * 跳转变量详情效果 Tab
- * @param {object} record 预览样例行
- */
+/** 跳转变量详情效果 Tab */
 function goVariable(record) {
   router.push({
     path: `/variable-management/detail/${record.variableId}`,
@@ -444,21 +439,20 @@ function goVariable(record) {
 }
 
 onMounted(() => {
-  saved.value = effectRuleStore.getRule()
+  reload()
   preview.value = effectRuleStore.previewHit({ ...form })
 })
 
 onUnmounted(() => {
   clearTimeout(previewTimer)
 })
+
+defineExpose({ reload })
 </script>
 
 <style scoped>
-.coverage-alert {
+.scope-alert {
   margin-bottom: 12px;
-}
-.settings-tabs {
-  margin-top: 4px;
 }
 .panel-card {
   margin-bottom: 12px;

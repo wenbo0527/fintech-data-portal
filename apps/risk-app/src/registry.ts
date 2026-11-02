@@ -6,6 +6,18 @@
 // dev 立即修复 + skipLibCheck + P0 跳过 + per-command --author
 // G 选项 = G + 9 mock + 7 stores/types = 110 errors
 
+/**
+ * 旧「评估任务中心」Tab 键 → 新「任务管理」Tab 键
+ * 任务管理只有 tasks / scripts 两 Tab，判定配置已下沉为任务级配置（旧 settings 链接落回任务列表）
+ */
+const LEGACY_TASK_TABS: Record<string, string> = {
+  tasks: 'tasks',
+  evaluation: 'tasks',
+  effect: 'tasks',
+  scripts: 'scripts',
+  settings: 'tasks'
+}
+
 const registry: any = {
   app: {
     name: 'risk-app',
@@ -25,7 +37,9 @@ const registry: any = {
         { key: 'risk-factor-workbench', label: '风险要素工作台', path: '/risk/variable-hub' },
         { key: 'risk-factor-variable-mgmt', label: '特征台账', path: '/risk/variable-management' },
         { key: 'risk-factor-variable-map', label: '特征全景', path: '/risk/explore/map' },
-        { key: 'risk-factor-eval', label: '评估任务中心', path: '/risk/evaluation/tasks' },
+        // 评估任务 / 效果任务 / 脚本管理 / 判定配置 合入一个任务管理入口
+        { key: 'risk-factor-task-center', label: '任务管理', path: '/risk/tasks' },
+        { key: 'risk-factor-run-record', label: '执行记录', path: '/risk/runs' },
         { key: 'risk-factor-topics', label: '探索课题', path: '/risk/explore/topics' },
         { key: 'risk-factor-taxonomy', label: '探索分类管理', path: '/risk/explore/taxonomy' },
         { key: 'risk-external-data-lifecycle', label: '外数生命周期', path: '/risk/variable-hub/external-data/lifecycle' },
@@ -70,7 +84,41 @@ const registry: any = {
     { path: 'explore/map',                   name: 'ExploreMap',             component: './modules/variable-hub/pages/explore/map/index.vue', meta: { title: '特征全景' } },
     { path: 'explore/taxonomy',              name: 'ExploreTaxonomy',        component: './modules/variable-hub/pages/explore/taxonomy/index.vue', meta: { title: '探索分类管理' } },
     { path: 'explore/audit',                 name: 'ExploreAudit',           component: './modules/variable-hub/pages/explore/audit/index.vue', meta: { title: '决策审计' } },
-    { path: 'evaluation/tasks',              name: 'EvaluationTasks',        component: './modules/variable-hub/pages/evaluation/tasks/index.vue', meta: { title: '评估任务中心' } },
+    // 任务管理（两 Tab：任务列表 / 脚本管理；判定配置已下沉为任务级配置）
+    { path: 'tasks',                        name: 'TaskCenter',             component: './modules/variable-hub/pages/task-center/index.vue', meta: { title: '任务管理' } },
+    { path: 'tasks/evaluation/create',      name: 'EvaluationTaskCreate',   component: './modules/variable-hub/pages/evaluation/tasks/create.vue', meta: { title: '新建常态性评估' } },
+    { path: 'tasks/evaluation/edit/:id',    name: 'EvaluationTaskEdit',     component: './modules/variable-hub/pages/evaluation/tasks/create.vue', meta: { title: '编辑常态性评估' } },
+    { path: 'tasks/scripts/:id',            name: 'EvaluationScriptDetail', component: './modules/variable-hub/pages/evaluation/scripts/detail.vue', meta: { title: '脚本详情' } },
+    { path: 'tasks/effect/create',          name: 'EffectTaskCreate',       component: './modules/variable-hub/pages/effect-tasks/create.vue', meta: { title: '新建效果任务' } },
+    { path: 'tasks/effect/:id',             name: 'EffectTaskDetail',       component: './modules/variable-hub/pages/effect-tasks/detail.vue', meta: { title: '效果任务详情' } },
+    // 执行记录（特征评估 + 效果运营的全域跑批实例）
+    { path: 'runs',                         name: 'RunRecordList',          component: './modules/variable-hub/pages/run-record/index.vue', meta: { title: '执行记录' } },
+    { path: 'runs/:id',                     name: 'RunRecordDetail',        component: './modules/variable-hub/pages/run-record/detail.vue', meta: { title: '执行实例详情' } },
+    // 旧路径兼容：菜单收敛前后的外链与收藏一律重定向，Tab 键同步迁移（runs 已升为一级页面）
+    {
+      path: 'evaluation/tasks',
+      redirect: (to: any) => {
+        const query: Record<string, unknown> = { ...(to.query || {}) }
+        const legacy = String(query.tab || 'tasks')
+        delete query.tab
+        if (legacy === 'runs') {
+          return { path: '/risk/runs', query }
+        }
+        const tab = LEGACY_TASK_TABS[legacy] || 'tasks'
+        return { path: '/risk/tasks', query: { ...query, tab } }
+      }
+    },
+    { path: 'evaluation/tasks/create',   redirect: '/risk/tasks/evaluation/create' },
+    { path: 'evaluation/tasks/edit/:id', redirect: (to: any) => ({ path: `/risk/tasks/evaluation/edit/${to.params.id}`, query: to.query }) },
+    { path: 'evaluation/scripts',        redirect: '/risk/tasks?tab=scripts' },
+    { path: 'evaluation/scripts/:id',    redirect: (to: any) => ({ path: `/risk/tasks/scripts/${to.params.id}`, query: to.query }) },
+    { path: 'evaluation/runs',           redirect: '/risk/runs' },
+    { path: 'evaluation/runs/:id',       redirect: (to: any) => ({ path: `/risk/runs/${to.params.id}`, query: to.query }) },
+    { path: 'effect-tasks',              redirect: '/risk/tasks?tab=tasks' },
+    // 旧「判定配置」独立入口已废弃：落回任务列表，改阈值去各任务详情的「判定配置」Tab
+    { path: 'effect-tasks/settings',     redirect: '/risk/tasks?tab=tasks' },
+    { path: 'effect-tasks/create',       redirect: (to: any) => ({ path: '/risk/tasks/effect/create', query: to.query }) },
+    { path: 'effect-tasks/:id',          redirect: (to: any) => ({ path: `/risk/tasks/effect/${to.params.id}`, query: to.query }) },
     // 外数生命周期
     {
       path: 'variable-hub/external-data',

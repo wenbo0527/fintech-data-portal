@@ -6,6 +6,10 @@
     :show-back="showBack"
     :breadcrumb="breadcrumb"
   >
+    <!-- 支持传入副标题节点（富文本、标签等），优先于 subtitle 字符串 -->
+    <template v-if="$slots.subtitle" #subtitle>
+      <slot name="subtitle" />
+    </template>
     <template #extra>
       <a-space :size="8" wrap>
         <slot name="extra" />

@@ -2108,7 +2108,7 @@ const submitBatchEvaluation = () => {
   Message.success(`已创建评估任务 ${task.id}`)
   batchEvaluationVisible.value = false
   clearSelection()
-  router.push('/evaluation/tasks')
+  router.push({ path: '/tasks', query: { tab: 'tasks' } })
 }
 
 const parseExcelFile = async (file) => {

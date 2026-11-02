@@ -17,11 +17,28 @@ console.log('[Risk] routerBase:', routerBase)
  *  /                              → /variable-hub（风险要素工作台）
  *  /variable-hub                  → 风险要素（特征一体化）
  *    /variable-hub/external-data  → 外数生命周期管理（子模块）
- *  /effect-tasks/*                → 变量效果评估 · 任务管理（列表 / 详情 / 阈值配置）
+ *  /tasks                         → 任务管理（两 Tab：任务列表 / 脚本管理）
+ *    /tasks/evaluation/create     → 新建常态性评估（独立页）
+ *    /tasks/effect/create         → 新建效果任务（独立页，判定配置在新建时就填）
+ *    /tasks/effect/:id            → 效果任务详情（含任务级「判定配置」Tab）
+ *    /tasks/scripts/:id           → 脚本详情
+ *  /runs                          → 执行记录（两域全部跑批实例）
+ *    /runs/:id                    → 执行实例详情
  *  /budget/*                      → 预算管理
  *  /model-offline-analysis/*      → 离线模型分析
  *  /accompany/*                   → 陪跑计划
+ *  旧路径 /evaluation/*、/effect-tasks/* 全部 redirect 到新结构，外部链接不失效
  */
+
+/** 旧「评估任务中心」Tab 键 → 新「任务管理」Tab 键（runs 已升为一级页面） */
+const LEGACY_TASK_TABS: Record<string, string> = {
+  tasks: 'tasks',
+  evaluation: 'tasks',
+  effect: 'tasks',
+  scripts: 'scripts',
+  /** 判定配置已下沉为任务级配置（在新建 / 效果任务详情里），旧链接落回任务列表 */
+  settings: 'tasks'
+}
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
@@ -91,32 +108,99 @@ const routes: RouteRecordRaw[] = [
         component: () => import('./modules/variable-hub/pages/explore/audit/index.vue'),
         meta: { title: '决策审计' }
       },
+      // ========== 任务管理（两 Tab：任务列表 / 脚本管理，判定配置下沉到任务级）==========
       {
-        path: '/evaluation/tasks',
-        name: 'EvaluationTasks',
-        component: () => import('./modules/variable-hub/pages/evaluation/tasks/index.vue'),
-        meta: { title: '评估任务中心' }
-      },
-
-      // ========== 变量效果评估 · 任务域（评估文档 §9-Q1：任务管理独立成域）==========
-      {
-        path: '/effect-tasks',
-        name: 'EffectTasks',
-        component: () => import('./modules/variable-hub/pages/effect-tasks/index.vue'),
-        meta: { title: '效果任务管理' }
-      },
-      // 注意：静态路径必须声明在 /effect-tasks/:id 之前，否则 settings 会被当成任务 ID
-      {
-        path: '/effect-tasks/settings',
-        name: 'EffectTaskSettings',
-        component: () => import('./modules/variable-hub/pages/effect-tasks/settings.vue'),
-        meta: { title: '判定阈值与推送配置' }
+        path: '/tasks',
+        name: 'TaskCenter',
+        component: () => import('./modules/variable-hub/pages/task-center/index.vue'),
+        meta: { title: '任务管理' }
       },
       {
-        path: '/effect-tasks/:id',
+        path: '/tasks/evaluation/create',
+        name: 'EvaluationTaskCreate',
+        component: () => import('./modules/variable-hub/pages/evaluation/tasks/create.vue'),
+        meta: { title: '新建常态性评估' }
+      },
+      {
+        path: '/tasks/evaluation/edit/:id',
+        name: 'EvaluationTaskEdit',
+        component: () => import('./modules/variable-hub/pages/evaluation/tasks/create.vue'),
+        meta: { title: '编辑常态性评估' }
+      },
+      // 注意：静态路径必须声明在动态段之前，否则 create / scripts 会被当成任务 ID
+      {
+        path: '/tasks/scripts/:id',
+        name: 'EvaluationScriptDetail',
+        component: () => import('./modules/variable-hub/pages/evaluation/scripts/detail.vue'),
+        meta: { title: '脚本详情' }
+      },
+      {
+        path: '/tasks/effect/create',
+        name: 'EffectTaskCreate',
+        component: () => import('./modules/variable-hub/pages/effect-tasks/create.vue'),
+        meta: { title: '新建效果任务' }
+      },
+      // 注意：create 必须声明在 :id 之前，否则会被当成任务 ID
+      {
+        path: '/tasks/effect/:id',
         name: 'EffectTaskDetail',
         component: () => import('./modules/variable-hub/pages/effect-tasks/detail.vue'),
         meta: { title: '效果任务详情' }
+      },
+
+      // ========== 执行记录（特征评估 + 效果运营的全域跑批实例）==========
+      {
+        path: '/runs',
+        name: 'RunRecordList',
+        component: () => import('./modules/variable-hub/pages/run-record/index.vue'),
+        meta: { title: '执行记录' }
+      },
+      {
+        path: '/runs/:id',
+        name: 'RunRecordDetail',
+        component: () => import('./modules/variable-hub/pages/run-record/detail.vue'),
+        meta: { title: '执行实例详情' }
+      },
+
+      // ========== 旧路径兼容：菜单收敛前后的外链与收藏全部走重定向 ==========
+      {
+        // 旧「评估任务中心」带 ?tab= 深链，迁到 /tasks 并同步改 Tab 键（runs 已升为一级页面）
+        path: '/evaluation/tasks',
+        redirect: (to) => {
+          const query = { ...to.query }
+          const legacy = String(query.tab || 'tasks')
+          delete query.tab
+          if (legacy === 'runs') {
+            return { path: '/runs', query }
+          }
+          return { path: '/tasks', query: { ...query, tab: LEGACY_TASK_TABS[legacy] || 'tasks' } }
+        }
+      },
+      { path: '/evaluation/tasks/create', redirect: '/tasks/evaluation/create' },
+      {
+        path: '/evaluation/tasks/edit/:id',
+        redirect: (to) => ({ path: `/tasks/evaluation/edit/${to.params.id}`, query: to.query })
+      },
+      { path: '/evaluation/scripts', redirect: '/tasks?tab=scripts' },
+      {
+        path: '/evaluation/scripts/:id',
+        redirect: (to) => ({ path: `/tasks/scripts/${to.params.id}`, query: to.query })
+      },
+      { path: '/evaluation/runs', redirect: '/runs' },
+      {
+        path: '/evaluation/runs/:id',
+        redirect: (to) => ({ path: `/runs/${to.params.id}`, query: to.query })
+      },
+      { path: '/effect-tasks', redirect: '/tasks?tab=tasks' },
+      { path: '/effect-tasks/settings', redirect: '/tasks?tab=tasks' },
+      {
+        // 旧效果任务新建入口：带上原类型参数落回新的类型路由
+        path: '/effect-tasks/create',
+        redirect: (to) => ({ path: '/tasks/effect/create', query: to.query })
+      },
+      {
+        path: '/effect-tasks/:id',
+        redirect: (to) => ({ path: `/tasks/effect/${to.params.id}`, query: to.query })
       },
 
       // ========== 外数生命周期管理（作为风险要素的子模块）==========

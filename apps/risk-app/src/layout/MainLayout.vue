@@ -31,9 +31,10 @@
             <a-menu-item key="/variable-hub">一体化总览</a-menu-item>
             <a-menu-item key="/variable-management">特征台账</a-menu-item>
             <a-menu-item key="/explore/map">特征全景</a-menu-item>
-            <a-menu-item key="/evaluation/tasks">评估任务中心</a-menu-item>
-            <a-menu-item key="/effect-tasks">效果任务管理</a-menu-item>
-            <a-menu-item key="/effect-tasks/settings">效果判定配置</a-menu-item>
+            <!-- 评估任务与效果任务合入一张任务列表，加上脚本管理共两 Tab；判定配置下沉为任务级配置 -->
+            <a-menu-item key="/tasks">任务管理</a-menu-item>
+            <!-- 执行记录是跳两域的全域跑批实例视图 -->
+            <a-menu-item key="/runs">执行记录</a-menu-item>
           </a-sub-menu>
           <a-sub-menu key="risk-factor-explore">
             <template #title>探索过程</template>
@@ -139,10 +140,10 @@ function updateMenuState(path: string) {
   else if (path.startsWith('/explore/topics')) activeSideMenu.value = '/explore/topics'
   else if (path.startsWith('/explore/taxonomy')) activeSideMenu.value = '/explore/taxonomy'
   else if (path.startsWith('/explore/map')) activeSideMenu.value = '/explore/map'
-  else if (path.startsWith('/evaluation/')) activeSideMenu.value = '/evaluation/tasks'
-  // 效果评估任务域（静态路径 settings 必须判在通配之前）
-  else if (path.startsWith('/effect-tasks/settings')) activeSideMenu.value = '/effect-tasks/settings'
-  else if (path.startsWith('/effect-tasks')) activeSideMenu.value = '/effect-tasks'
+  // 任务管理：两 Tab 与页内新建评估 / 新建效果任务 / 效果任务详情 / 脚本详情都归属它
+  else if (path === '/tasks' || path.startsWith('/tasks/')) activeSideMenu.value = '/tasks'
+  // 执行记录：全域列表与实例详情
+  else if (path.startsWith('/runs')) activeSideMenu.value = '/runs'
   // 外数
   else if (path.startsWith('/variable-hub/external-data/lifecycle')) activeSideMenu.value = '/variable-hub/external-data/lifecycle'
   else if (path.startsWith('/variable-hub/external-data/credit-agency')) activeSideMenu.value = '/variable-hub/external-data/credit-agency'

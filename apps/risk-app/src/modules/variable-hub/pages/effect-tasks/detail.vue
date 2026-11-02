@@ -10,7 +10,8 @@
         <a-tag v-if="task" :color="statusColor(task.status)">{{ task.statusLabel }}</a-tag>
       </a-space>
       <a-space v-if="task">
-        <a-button size="small" @click="router.push('/effect-tasks/settings')">阈值与推送配置</a-button>
+        <a-button size="small" @click="activeTab = 'rule'">判定配置</a-button>
+        <a-button size="small" @click="goRuns">执行记录</a-button>
         <template v-if="canRun">
           <a-button size="small" :disabled="task.status === 'running'" @click="runTask">立即执行</a-button>
           <a-button size="small" @click="toggleEnabled">{{ task.enabled ? '停用' : '启用' }}</a-button>
@@ -41,15 +42,18 @@
           <!-- ===== 任务配置 ===== -->
           <a-tab-pane key="config" title="任务配置">
             <a-spin :loading="tabLoading" class="pane-spin">
-              <div class="block-title">判定阈值（只读，修改请去配置页）</div>
+              <!-- 输入输出契约：本页的效果任务同样只看聚合层算好的结果，血缘与不符项都在卡里 -->
+              <TaskContractCard v-if="contractView" :contract="contractView" :kind="contractKind" />
+
+              <div class="block-title">判定阈值（只读，修改请切到「判定配置」Tab）</div>
               <a-descriptions :column="3" size="small" :data="ruleFacts" />
 
               <div class="block-title">当前阈值命中预览</div>
               <a-row :gutter="12" class="hit-row">
-                <a-col v-for="h in hitCards" :key="h.label" :span="6">
+                <a-col v-for="card in hitCards" :key="card.label" :span="6">
                   <div class="hit-card">
-                    <div class="hit-value">{{ h.value }}</div>
-                    <div class="hit-label">{{ h.label }}</div>
+                    <div class="hit-value">{{ card.value }}</div>
+                    <div class="hit-label">{{ card.label }}</div>
                   </div>
                 </a-col>
               </a-row>
@@ -133,8 +137,11 @@
 
           <!-- ===== 执行实例 ===== -->
           <a-tab-pane key="instances" title="执行实例">
+            <a-alert type="info" class="pane-note">
+              每个批次都锁定了当时的阈值口径，点「执行详情」可看日志与命中清单；全域批次列表在一级菜单「执行记录」。
+            </a-alert>
             <a-spin :loading="tabLoading" class="pane-spin">
-              <a-table row-key="id" :data="detail.instances || []" :pagination="false" size="small" :scroll="{ x: 1080 }">
+              <a-table row-key="id" :data="detail.instances || []" :pagination="false" size="small" :scroll="{ x: 1180 }">
                 <template #columns>
                   <a-table-column title="批次号" data-index="batchNo" :width="150" />
                   <a-table-column title="开始时间" data-index="startedAt" :width="150" />
@@ -157,12 +164,22 @@
                   </a-table-column>
                   <a-table-column title="触发方式" data-index="trigger" :width="110" />
                   <a-table-column title="执行人" data-index="operator" :width="110" />
+                  <a-table-column title="操作" :width="110" fixed="right">
+                    <template #cell="{ record }">
+                      <a-link @click="goRunDetail(record)">执行详情</a-link>
+                    </template>
+                  </a-table-column>
                 </template>
                 <template #empty>
                   <a-empty :image="false" description="该任务暂无执行批次" />
                 </template>
               </a-table>
             </a-spin>
+          </a-tab-pane>
+
+          <!-- ===== 判定配置（任务级阈值 + 推送 + 试跑，与新建页共用同一个面板）===== -->
+          <a-tab-pane key="rule" title="判定配置">
+            <EffectRulePanel :task-id="taskId" @saved="onRuleSaved" />
           </a-tab-pane>
 
           <!-- ===== 入参历史 ===== -->
@@ -201,20 +218,25 @@
 
 <script setup>
 /**
- * 效果任务管理 · 详情页
+ * 任务管理 · 效果任务详情页
  *
  * 约束（见评估文档 §6）：
- * 1. 三个 Tab 的数据由 effectBatchStore.taskDetail(taskId, tab) 分 Tab 返回，切 Tab 才请求并缓存；
+ * 1. 各 Tab 的数据由 effectBatchStore.taskDetail(taskId, tab) 分 Tab 返回，切 Tab 才请求并缓存；
+ *    「判定配置」Tab 的数据由面板自己按 taskId 读写，本页不重复取；
  * 2. ?tab= 进 URL，双向同步（前进后退能还原当前 Tab）；
  * 3. 页面不做任何聚合，命中预览 / 清单 / 实例数字全部来自 store；
- * 4. 写操作（执行、启停、试跑）受 RUN_EFFECT_TASK 权限控制，且只落 localStorage。
+ * 4. 写操作（执行、启停、试跑）受 RUN_EFFECT_TASK 权限控制，且只落 localStorage；
+ * 5. 执行实例只列批次，日志与命中清单统一由「执行记录」详情页承载。
  */
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Message } from '@arco-design/web-vue'
+import { Message, Modal } from '@arco-design/web-vue'
 import { IconLeft, IconArrowRight } from '@arco-design/web-vue/es/icon'
 import { effectBatchStore } from '@/modules/variable-hub/mock/effect-evaluation/batch-store'
+import taskRecordStore from '@/modules/variable-hub/mock/task-center/task-record'
+import TaskContractCard from '@/modules/variable-hub/pages/task-center/TaskContractCard.vue'
 import { RULE_FIELD_METAS, RULE_FIELD_LABELS, formatRuleValue } from '@/modules/variable-hub/mock/effect-evaluation/rule-store'
+import EffectRulePanel from '@/modules/variable-hub/pages/task-center/effect/EffectRulePanel.vue'
 import { UserContext, PERMISSIONS } from '@/modules/variable-hub/mock/risk-feature/permissions'
 
 const router = useRouter()
@@ -225,7 +247,7 @@ const POLL_INTERVAL = 30000
 const taskId = computed(() => String(route.params.id || ''))
 const canRun = computed(() => UserContext.has(PERMISSIONS.RUN_EFFECT_TASK))
 
-const TASK_TABS = ['config', 'instances', 'params']
+const TASK_TABS = ['config', 'rule', 'instances', 'params']
 
 /** 当前 Tab：URL 优先，非法值回落 config */
 const activeTab = ref(TASK_TABS.includes(String(route.query.tab)) ? String(route.query.tab) : 'config')
@@ -236,6 +258,19 @@ const detail = ref({})
 const tabLoading = ref(false)
 /** 已加载过的 Tab 数据缓存，返回同一 Tab 不重复请求 */
 const tabCache = reactive({})
+
+/**
+ * 契约视图：效果域自己不知道上游评估任务存不存在，所以回聚合层取算好的行
+ * store 无响应式，写操作后必须 reloadContract() 重新装载
+ */
+const contractView = ref(null)
+const contractKind = ref('')
+
+function reloadContract() {
+  const row = taskRecordStore.get(taskId.value)
+  contractView.value = row ? row.contract : null
+  contractKind.value = row ? row.kind : ''
+}
 
 const trial = reactive({ sampleRatio: 10, sampleLimit: 50 })
 const trialResult = ref(null)
@@ -298,9 +333,13 @@ const hitCards = computed(() => {
 
 /**
  * 加载当前 Tab 数据（带缓存）
- * @param {string} tab config / instances / params
+ * @param {string} tab config / rule / instances / params
  */
 function loadTab(tab) {
+  /** 判定配置面板自己读 taskId，无需本页取数，也不清其他 Tab 的缓存 */
+  if (tab === 'rule') {
+    return
+  }
   if (tabCache[tab]) {
     detail.value = tabCache[tab]
     return
@@ -366,15 +405,53 @@ function goBack() {
     router.back()
     return
   }
-  router.push('/effect-tasks')
+  router.push({ path: '/tasks', query: { tab: 'tasks' } })
 }
 
+/** 任务级口径改完：只读快照与入参历史都跟着变，作废缓存重取 */
+function onRuleSaved() {
+  delete tabCache.config
+  delete tabCache.params
+  task.value = effectBatchStore.getTask(taskId.value)
+  reloadContract()
+}
+/** 全域执行记录，带域筛选只看本域批次 */
+const goRuns = () => router.push({ path: '/runs', query: { domain: 'effect' } })
+/** 批次详情统一走执行记录详情页（与评估域同一个页面） */
+const goRunDetail = (record) => router.push(`/runs/${record.id}`)
+
 /**
- * 立即执行：置为执行中，交给轮询推进
+ * 立即执行：先跑执行前预检（契约第二段），只给 warning，用户确认后才真跑
  */
 function runTask() {
-  effectBatchStore.saveTask({ ...task.value, status: 'running', progress: 5 })
-  Message.success(`已触发「${task.value.name}」`)
+  const check = taskRecordStore.preflight(taskId.value)
+  if (check && check.issues.length) {
+    Modal.warning({
+      title: '执行前预检',
+      content: () =>
+        h('div', [
+          h('p', `本次执行有 ${check.issues.length} 项提示，不阻断执行，但结果可能不完整：`),
+          ...check.issues.map((i) => h('p', { key: i.message }, `· ${i.message}`))
+        ]),
+      okText: '仍然执行',
+      hideCancel: false,
+      cancelText: '回去看看配置',
+      onOk: startRun
+    })
+    return
+  }
+  startRun()
+}
+
+/** 真正落一条 running 批次，后续进度交给轮询 */
+function startRun() {
+  const started = effectBatchStore.startRun(taskId.value, { trigger: 'manual', operator: UserContext.get().name })
+  if (!started) {
+    Message.warning('该任务已有批次在执行中，请等本轮跑完再试')
+    refreshTask()
+    return
+  }
+  Message.success(`已触发「${task.value.name}」（批次 ${started.batchNo}）`)
   refreshTask()
 }
 
@@ -392,6 +469,7 @@ function toggleEnabled() {
 function refreshTask() {
   task.value = effectBatchStore.getTask(taskId.value)
   notFound.value = !task.value
+  reloadContract()
   if (task.value) loadTab(activeTab.value)
 }
 
@@ -412,6 +490,7 @@ onMounted(() => {
     task.value = effectBatchStore.getTask(taskId.value)
     notFound.value = !task.value
   }
+  reloadContract()
   if (task.value) loadTab(activeTab.value)
   pollTimer = window.setInterval(pollOnce, POLL_INTERVAL)
 })

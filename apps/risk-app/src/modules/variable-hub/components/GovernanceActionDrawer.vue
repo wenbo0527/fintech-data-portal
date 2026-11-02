@@ -154,7 +154,7 @@ async function handleWriteBack() {
 }
 
 function handleViewTasks() {
-  router.push('/evaluation/tasks')
+  router.push('/tasks')
 }
 </script>
 

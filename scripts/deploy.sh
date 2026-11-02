@@ -77,6 +77,44 @@ else
   HEALTH_URL="https://${REMOTE_HOST}:${REMOTE_PORT}/${NGINX_PATH}/"
 fi
 
+# ============================================================
+# 深度健康检查（DA0D2650）：SPA catch-all 下任何路径都 200，
+# 只 curl index.html 的 HTTP 码是假绿（10/27 HC 白屏即此因：入口 200 但
+# entry chunk 被 portal-shell 吞成 404/HTML → 页面白屏）。
+# 判据 = 从 index.html 抓真实 entry chunk，按浏览器实际请求 URL 拉取，
+# 要求 200 且 content-type 含 javascript。
+# ============================================================
+health_check_deep() {
+  local url="$1" label="$2" origin
+  origin="$(printf '%s' "$url" | sed -E 's#^(https?://[^/]+).*#\1#')"
+  local page_code src chunk_url chunk_code chunk_ctype
+  page_code=$(curl -sk -o /dev/null -w '%{http_code}' "$url")
+  echo "    ${label}: HTTP ${page_code}"
+  if [[ "${page_code}" != "200" ]]; then
+    echo "    ❌ ${label}: 入口 HTTP 非 200"
+    return 1
+  fi
+  src=$(curl -sk "$url" | grep -oE 'src="[^"]*\.js"' | head -1 | sed 's/^src="//; s/"$//')
+  if [[ -z "$src" ]]; then
+    echo "    ⚠️  ${label}: index.html 未找到 js entry，跳过 content-type 校验"
+    return 0
+  fi
+  case "$src" in
+    http*)  chunk_url="$src" ;;
+    /*)     chunk_url="${origin}${src}" ;;
+    *)      chunk_url="$(printf '%s' "$url" | sed 's#[^/]*$##')$src" ;;
+  esac
+  chunk_code=$(curl -sk -o /dev/null -w '%{http_code}' "$chunk_url")
+  chunk_ctype=$(curl -sk -o /dev/null -w '%{content_type}' "$chunk_url")
+  echo "    ${label} entry: ${chunk_url} -> HTTP ${chunk_code} ${chunk_ctype}"
+  if [[ "${chunk_code}" != "200" ]] || [[ "${chunk_ctype}" != *javascript* ]]; then
+    echo "    ❌ ${label}: entry chunk 不可用或 content-type 非 javascript"
+    echo "       （base 缺失/资源被兜底吞掉 → 页面白屏，HTTP 200 查不出来）"
+    return 1
+  fi
+  return 0
+}
+
 echo "==> [${NGINX_PATH}@${VERSION} · app=${APP_DIR}] 构建中..."
 cd "$(dirname "$0")/../apps/${APP_DIR}" && npm run build
 
@@ -109,8 +147,7 @@ ssh ${SSH_OPTS} root@${REMOTE_HOST} "
 "
 
 echo "==> [${APP}@${VERSION}] 切换前健康检查（指向旧版本）..."
-http_old=$(curl -sk -o /dev/null -w '%{http_code}' "${HEALTH_URL}")
-echo "    旧版本: HTTP ${http_old}"
+health_check_deep "${HEALTH_URL}" "旧版本" || echo "    (旧版本不健康，继续切换)"
 
 echo "==> [${APP}@${VERSION}] 原子切换符号链接（ln -sfn）..."
 ssh ${SSH_OPTS} root@${REMOTE_HOST} "ln -sfn ${REMOTE_VERSION_DIR} ${REMOTE_DIR}"
@@ -118,10 +155,7 @@ ssh ${SSH_OPTS} root@${REMOTE_HOST} "ln -sfn ${REMOTE_VERSION_DIR} ${REMOTE_DIR}
 echo "==> [${APP}@${VERSION}] 切换后健康检查..."
 # 给 nginx 一点时间感知符号链接变化
 sleep 2
-http_new=$(curl -sk -o /dev/null -w '%{http_code}' "${HEALTH_URL}")
-echo "    新版本: HTTP ${http_new}"
-
-if [[ "${http_new}" != "200" ]]; then
+if ! health_check_deep "${HEALTH_URL}" "新版本"; then
   echo "❌ 切换后健康检查失败！回滚..."
   # 找上一版本（按 mtime 倒序第一个非当前）
   PREV=$(ssh ${SSH_OPTS} root@${REMOTE_HOST} "ls -dt ${REMOTE_BASE}/${APP}-* 2>/dev/null | grep -v '${VERSION}' | head -1")
@@ -149,7 +183,7 @@ echo ""
 echo "==> [${APP}@${VERSION}] ✅ 部署完成"
 echo "    远程版本: ${REMOTE_VERSION_DIR}"
 echo "    符号链接: ${REMOTE_DIR} -> ${REMOTE_VERSION_DIR}"
-echo "    健康检查: HTTP ${http_new}"
+echo "    健康检查: HTTP 200 + entry chunk content-type=application/javascript（深度校验通过）"
 echo "    回滚命令: scripts/rollback.sh ${APP}"
 if [[ -n "${STAGING}" ]]; then
   echo "    ⚠️ staging 部署（端口 ${REMOTE_PORT}）"

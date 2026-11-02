@@ -178,3 +178,15 @@ jobs:
       - name: depcheck
         run: pnpm exec depcheck
         continue-on-error: true
+
+  base-consistency:
+    name: base consistency (vite base ↔ nginx 挂载前缀)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      # 纯 grep 校验，无需 pnpm install / node_modules
+      # 防止子应用缺 vite base → 产物引根级 /assets/ → 被 portal-shell 吞 → 白屏
+      # （2026-10-27 HC 白屏事故沉淀）
+      - name: Check each deployed app's vite base matches its nginx path
+        run: bash scripts/check-base-consistency.sh

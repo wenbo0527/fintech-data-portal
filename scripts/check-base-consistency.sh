@@ -49,14 +49,14 @@ for cfg in apps/*/vite.config.ts; do
   checked=$((checked+1))
 
   if [ -z "$actual" ]; then
-    echo "  ❌ $dir：vite.config.ts 缺 base 字段（应为 '$expected'）"
+    echo "  ❌ ${dir}：vite.config.ts 缺 base 字段（应为 '$expected'）"
     echo "     → 产物资源会引根级 /assets/ → 被 portal-shell 吞 → 白屏"
     fail=1
   elif [ "$actual" != "$expected" ]; then
-    echo "  ❌ $dir：base='$actual' 与 nginx 挂载 '$expected' 不一致"
+    echo "  ❌ ${dir}：base='$actual' 与 nginx 挂载 '$expected' 不一致"
     fail=1
   else
-    echo "  ✅ $dir：base='$actual'"
+    echo "  ✅ ${dir}：base='$actual'"
   fi
 done
 

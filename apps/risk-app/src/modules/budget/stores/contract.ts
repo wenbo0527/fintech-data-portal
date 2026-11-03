@@ -6,7 +6,11 @@ export interface ContractItem {
   id: string
   contractNo: string
   contractName: string
+  /** 签约主体（签报/定价/结算沿用的键），2026-11-03 起由两轴派生 */
   supplier: string
+  /** 2026-11-03 两轴整合：与外数档案同名的两轴，字段定义以 api/contract.ts 为准 */
+  cooperationOrg?: string
+  dataSupplier?: string
   amount: number
   startDate: string
   endDate: string

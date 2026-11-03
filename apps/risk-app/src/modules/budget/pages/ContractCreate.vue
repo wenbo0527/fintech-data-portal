@@ -52,14 +52,39 @@
                   <a-col :span="8"><a-form-item field="isGroupPurchase" label="总行代采" required><a-switch v-model="form.isGroupPurchase" /></a-form-item></a-col>
                 </a-row>
                 <a-row :gutter="12">
-                  <a-col :span="12">
-                    <a-form-item field="supplier" label="合作机构" required>
-                      <a-select v-model="form.supplier" allow-clear allow-search placeholder="选择合作机构" :options="partnerOrgOptions" />
+                  <!-- 2026-11-03 两轴整合：原来只有一个「合作机构」字段存十二家工商全称，
+                       里面既混持牌征信机构（百行/朴道/钱塘）又混实际出数方（学信网/上海数据集团等），
+                       一个字段承了两套语义 —— 正是档案侧刚拆掉的那个问题。
+                       现改为与外数档案同名的两轴输入，签约主体由两轴派生（subjectOfAxes），
+                       签报 / 框架合同 / 定价 / 结算继续只认主体这一个键，链路零改动 -->
+                  <a-col :span="8">
+                    <a-form-item field="cooperationOrg" label="合作机构" required>
+                      <a-select v-model="form.cooperationOrg" allow-clear allow-search placeholder="选择合作机构（持牌四档）">
+                        <a-option v-for="o in cooperationOrgOptions" :key="o" :value="o">{{ o }}</a-option>
+                      </a-select>
                     </a-form-item>
                   </a-col>
+                  <a-col :span="8">
+                    <a-form-item field="dataSupplier" label="供应商">
+                      <a-select v-model="form.dataSupplier" allow-clear allow-create allow-search placeholder="选择或输入供应商">
+                        <a-option v-for="s in dataSupplierOptions" :key="s" :value="s">{{ s }}</a-option>
+                      </a-select>
+                    </a-form-item>
+                  </a-col>
+                  <a-col :span="8">
+                    <a-form-item field="supplier" label="签约主体（两轴派生）">
+                      <!-- 只读：主体不再手选，避免“合同上的机构”与“档案的两轴”又各自漂 -->
+                      <a-input :model-value="derivedSubject" disabled :placeholder="form.cooperationOrg ? '两轴推不出已登记主体' : '先选合作机构'" />
+                    </a-form-item>
+                  </a-col>
+                </a-row>
+                <a-alert v-if="form.cooperationOrg && !derivedSubject" type="warning" style="margin-bottom: 12px">
+                  <template #default>「{{ form.cooperationOrg }} / {{ form.dataSupplier || '未选' }}」推不出已登记的签约主体（该供应商不是签约主体本身）；签报额度与定价档案需要主体才能匹配，请改用已登记主体或补录供应商字典。</template>
+                </a-alert>
+                <a-row :gutter="12">
                   <a-col :span="12" v-if="form.contractType === 'supplement'">
                     <a-form-item field="frameworkIds" label="关联框架合同" required>
-                      <a-select v-model="form.frameworkIds" multiple :disabled="!form.supplier" placeholder="先选择合作机构后展示其有效框架合同">
+                      <a-select v-model="form.frameworkIds" multiple :disabled="!form.supplier" placeholder="先选两轴得到签约主体后展示其有效框架合同">
                         <a-option v-for="f in filteredFrameworkOptions" :key="f.value" :value="f.value">{{ f.label }}</a-option>
                       </a-select>
                     </a-form-item>
@@ -158,8 +183,17 @@
                           全选（{{ externalCheckOptions.length }} 项）
                         </a-checkbox>
                         <span class="ext-filter-hint">
-                          共 {{ externalCandidateProducts.length }} 项可选{{ form.supplier ? `，已按合作机构「${form.supplier}」过滤` : '' }}
+                          共 {{ externalCandidateProducts.length }} 项可选{{ form.cooperationOrg ? `，已按合作机构「${form.cooperationOrg}」${form.dataSupplier ? `与供应商「${form.dataSupplier}」` : ''}过滤` : '' }}
                         </span>
+                        <!-- 两轴都是人工选的，切机构时不顺手抹掉供应商轴（万一是有意保留的写法），
+                             但筛出 0 条时得给一条不用回头找下拉的出口 -->
+                        <a-link
+                          v-if="!externalCandidateProducts.length && form.cooperationOrg && form.dataSupplier"
+                          class="ext-filter-relax"
+                          @click="form.dataSupplier = ''"
+                        >
+                          该两轴组合下暂无档案，点此清空供应商轴
+                        </a-link>
                       </div>
                       <!-- 多选框列表 -->
                       <a-checkbox-group v-if="externalCheckOptions.length" v-model="selectedExternalIds" class="ext-checkbox-group">
@@ -172,7 +206,7 @@
                         >
                           <span class="ext-check-main">
                             <span class="ext-check-name">{{ opt.name }}</span>
-                            <span class="ext-check-meta">{{ opt.supplier }} · {{ opt.channel }}</span>
+                            <span class="ext-check-meta">{{ opt.cooperationOrg }} · {{ opt.supplier }}</span>
                           </span>
                           <span v-if="opt.interfaceNo" class="ext-check-ifno">{{ opt.interfaceNo }}</span>
                         </a-checkbox>
@@ -382,7 +416,7 @@ import { IconUpload, IconDownload, IconThunderbolt, IconSearch } from '@arco-des
 import * as XLSX from 'xlsx'
 import { useContractStore } from '@/modules/budget/stores/contract'
 import { useExternalDataStore } from '@/modules/external-data/stores/external-data'
-import { partnerOrgNames } from '@/modules/budget/api/supplierDictionary'
+import { axesOfSubject, subjectOfAxes, orgAxisOptions, supplierAxisOptions } from '@/modules/budget/api/supplierDictionary'
 import { useSignReportStore } from '@/modules/budget/stores/signReport'
 
 const router = useRouter()
@@ -404,7 +438,19 @@ watch(() => externalStore.products, (val) => {
 }, { deep: true })
 
 // PRD R01: 合作机构选项列表
-const partnerOrgOptions = computed(() => partnerOrgNames.map(n => ({ label: n, value: n })))
+// 2026-11-03 两轴整合：合同不再直接选十二家工商全称，改选与外数档案同名的两轴；
+// 签约主体由两轴派生，仅用于喂签报 / 框架合同 / 定价 / 结算这些按主体取值的老链路
+const cooperationOrgOptions = orgAxisOptions
+const dataSupplierOptions = supplierAxisOptions
+const derivedSubject = computed(() => subjectOfAxes(form.cooperationOrg, form.dataSupplier))
+/** 档案是否命中当前两轴（未填的那一轴不参与过滤，保持从前的宽松行为） */
+const matchesAxes = (p: any) => {
+  const org = String(form.cooperationOrg || '').trim()
+  const sup = String(form.dataSupplier || '').trim()
+  if (org && String(p?.cooperationOrg || '').trim() !== org) {return false}
+  if (sup && String(p?.supplier || '').trim() !== sup) {return false}
+  return true
+}
 // PRD R10: 签报搜索选项
 const signReportOptions = computed(() => signReportStore.list)
 // PRD: 选择签报后展示的剩余未占用金额信息
@@ -455,49 +501,20 @@ const filteredSupplementOptions = computed(() => {
   return (supplementOptions.value || []).filter((s: any) => !sup || String(s.supplier || '') === sup)
 })
 const products = computed(() => externalStore.products || [])
+// PRD R24/R25：选项按两轴过滤并附展示接口号；原「按 form.supplier 等值比较档案 supplier」是机构轴与供应商轴错配，已废弃
 const externalOptions = computed(() => {
-  const sup = String(form.supplier || '').trim()
-  const allProducts = products.value || []
-  console.log('[Debug] 重新计算 externalOptions')
-  console.log('[Debug] 当前选择的合作机构 (sup):', `"${sup}"`)
-  console.log('[Debug] Store 中的产品总数 (allProducts.length):', allProducts.length)
-  
-  if (allProducts.length > 0) {
-    const firstProd = allProducts[0]
-    console.log('[Debug] 第一个产品样本:', {
-      name: firstProd.name,
-      supplier: `"${firstProd.supplier}"`,
-      supplierType: typeof firstProd.supplier
-    })
-  }
-
-  const base = allProducts.filter((p: any) => {
-    const pSup = String(p.supplier || '').trim()
-    const match = !sup || pSup === sup
-    if (sup && !match && allProducts.indexOf(p) < 3) {
-       console.log(`[Debug] 过滤排除: 产品供应商 "${pSup}" != 目标 "${sup}"`)
-    }
-    return match
-  })
-  
-  console.log('[Debug] 过滤后的可选产品数 (base.length):', base.length)
-  
-  // PRD R24/R25: 选项列表附加展示接口号，支持按接口号搜索
-  return base.map((p: any) => ({
-    label: `${p.name}（${p.supplier || '—'}/${p.channel || '—'}${p.interfaceNo ? ' / 接口号:' + p.interfaceNo : ''}）`,
+  return (products.value || []).filter((p: any) => matchesAxes(p)).map((p: any) => ({
+    label: `${p.name}（${p.cooperationOrg || '—'}/${p.supplier || '—'}${p.interfaceNo ? ' / 接口号:' + p.interfaceNo : ''}）`,
     value: p.id
   }))
 })
 const selectedExternalIds = ref<Array<string | number>>([])
 const activeExternalId = ref<string | number | undefined>(undefined)
 const externalConfigs = reactive<Record<string, any>>({})
-const externalLabel = (id: string | number) => { const p = products.value.find((x: any) => String(x.id) === String(id)) as any; return p ? `${p.name}（${p.supplier || '—'}/${p.channel || '—'}${p.interfaceNo ? ' / ' + p.interfaceNo : ''}）` : String(id) }
+const externalLabel = (id: string | number) => { const p = products.value.find((x: any) => String(x.id) === String(id)) as any; return p ? `${p.name}（${p.cooperationOrg || '—'}/${p.supplier || '—'}${p.interfaceNo ? ' / ' + p.interfaceNo : ''}）` : String(id) }
 
-// PRD D1: 外数多选框数据源（按合作机构过滤 + 关键字搜索名称/接口号/合作机构/渠道）
-const externalCandidateProducts = computed(() => {
-  const sup = String(form.supplier || '').trim()
-  return (products.value || []).filter((p: any) => !sup || String(p.supplier || '').trim() === sup)
-})
+// PRD D1: 外数多选框数据源（按两轴过滤 + 关键字搜索名称 / 接口号 / 合作机构 / 供应商）
+const externalCandidateProducts = computed(() => (products.value || []).filter((p: any) => matchesAxes(p)))
 const externalKeyword = ref('')
 const externalCheckOptions = computed(() => {
   const kw = externalKeyword.value.trim().toLowerCase()
@@ -505,13 +522,13 @@ const externalCheckOptions = computed(() => {
     .map((p: any) => ({
       value: String(p.id),
       name: p.name || p.productName || p.code || String(p.id),
+      cooperationOrg: p.cooperationOrg || '—',
       supplier: p.supplier || '—',
-      channel: p.channel || '—',
       interfaceNo: p.interfaceNo || ''
     }))
     .filter((it) => {
       if (!kw) return true
-      return [it.name, it.supplier, it.channel, it.interfaceNo].some((f) => String(f).toLowerCase().includes(kw))
+      return [it.name, it.cooperationOrg, it.supplier, it.interfaceNo].some((f) => String(f).toLowerCase().includes(kw))
     })
 })
 const selectedExternalSet = computed(() => new Set(selectedExternalIds.value.map(String)))
@@ -555,7 +572,11 @@ const form = reactive<any>({
   amount: undefined,
   signDate: undefined,
   isGroupPurchase: false,
+  // supplier 从「人工选择的合作机构」降级为「两轴派生的签约主体」，仍作为签报/框架合同/定价/结算的取值键
   supplier: '',
+  // 2026-11-03 两轴整合：与外数档案同名的两个轴才是合同的机构输入
+  cooperationOrg: '',
+  dataSupplier: '',
   signReportNo: '',
   initialOccupiedAmount: 0,
   frameworkIds: [] as Array<string>,
@@ -572,20 +593,23 @@ const rules = {
   fullName: [{ required: true, message: '请输入合同全称' }],
   amount: [{ required: true, message: '请输入合同总金额' }],
   signDate: [{ required: true, message: '请选择签订日期' }],
-  supplier: [{ required: true, message: '请输入合作机构' }],
+  cooperationOrg: [{ required: true, message: '请选择合作机构（持牌四档）' }],
+  // 主体不再是手选值，而是两轴的派生键；推不出时必须拦住，否则合同会带着空主体进签报额度与定价链路
+  supplier: [{ validator: (_: any, val: any, cb: any) => { if (form.cooperationOrg && !String(val || '').trim()) {return cb('两轴推不出已登记的签约主体，请改用已登记主体或补录供应商字典')} cb() } }],
   frameworkIds: [{ validator: (_: any, val: any, cb: any) => { if (form.contractType === 'supplement' && (!Array.isArray(val) || val.length === 0)) return cb('请选择关联框架合同'); cb() } }]
 }
 
 const goBack = () => router.push('/budget/contracts')
 const skipUpload = () => { Message.info('已跳过上传'); skipUploadSelected.value = true }
-// 供应商变更后，联动过滤外数选择（仅清除与新合作机构不匹配的，保留匹配项，避免清空由外数选择自动回填的合作机构对应的选项）
-watch(() => form.supplier, (val) => {
+// 两轴变更后：重新派生签约主体 → 清关联合同选项 → 剔除与新两轴不符的已选外数。
+// 原 watch(form.supplier)，拿主体全称去等值比较档案 supplier，造成「选任何机构全称都筛不出外数」，现改按两轴比较
+watch(() => [form.cooperationOrg, form.dataSupplier], () => {
+  form.supplier = subjectOfAxes(String(form.cooperationOrg || ''), String(form.dataSupplier || ''))
   if (Array.isArray(form.frameworkIds)) form.frameworkIds = []
   if (Array.isArray(form.supplementIds)) form.supplementIds = []
-  const sup = String(val || '').trim()
   const kept = selectedExternalIds.value.filter(id => {
     const p = products.value.find((x: any) => String(x.id) === String(id))
-    return !sup || !p || String(p.supplier || '').trim() === sup
+    return !p || matchesAxes(p)
   })
   if (kept.length !== selectedExternalIds.value.length) {
     selectedExternalIds.value = kept
@@ -617,7 +641,8 @@ const onBillingTypeChange = (extKey: string) => {
 function ensureConfigFor(extKey: string) {
   const p = products.value.find((x: any) => String(x.id) === String(extKey))
   const cfg = externalConfigs[extKey] || (externalConfigs[extKey] = {})
-  if (!cfg.billingMode) cfg.billingMode = (p?.channel === '文件批量') ? '查得计费' : '查询计费'
+  // 原判断依据是档案「渠道＝文件批量」，该字段 2026-11-03 已下线，故统一默认「查询计费」，由用户在配置区改选
+  if (!cfg.billingMode) {cfg.billingMode = '查询计费'}
   // PRD I03: 合同中外数名称预填数据地图卡片名称，可修改
   if (!cfg.contractName) cfg.contractName = p?.name || ''
   if (!cfg.billingType) cfg.billingType = 'fixed'
@@ -635,22 +660,16 @@ function ensureConfigFor(extKey: string) {
 }
 watch(selectedExternalIds, (ids) => {
   const selProducts = ids.map(id => products.value.find((p: any) => String(p.id) === String(id))).filter(Boolean) as any[]
-  const selSuppliers = Array.from(new Set(selProducts.map(p => String(p.supplier || '')))).filter(Boolean)
-  if (!form.supplier) {
-    if (selSuppliers.length === 1) {
-      form.supplier = selSuppliers[0]
-      Message.success(`已自动将合作机构设为：${form.supplier}`)
-    } else if (selSuppliers.length > 1) {
-      Message.warning('所选外数包含多个合作机构，请先选择统一的合作机构')
-    }
-  } else {
-    const filtered = ids.filter(id => {
-      const p = products.value.find((x: any) => String(x.id) === String(id))
-      return !p || String(p.supplier || '') === String(form.supplier || '')
-    })
-    if (filtered.length !== ids.length) {
-      selectedExternalIds.value = filtered
-      Message.warning('已过滤与当前合作机构不一致的外数')
+  // 两轴未填时由所选外数回填：合作机构取首条（跨机构时由两轴 watcher 剔掉不符项），
+  // 供应商只在全部所选外数同一家时才写死 —— 一份合同覆盖同机构下多个厂商的数据是常态，留空即不按供应商收窄
+  if (selProducts.length && !form.cooperationOrg) {
+    const orgs = Array.from(new Set(selProducts.map(p => String(p.cooperationOrg || '')))).filter(Boolean)
+    if (orgs.length > 1) {Message.warning('所选外数跨多个合作机构，已按首条回填，建议拆成多份合同')}
+    form.cooperationOrg = orgs[0] || ''
+    const sups = Array.from(new Set(selProducts.map(p => String(p.supplier || '')))).filter(Boolean)
+    if (sups.length === 1) {form.dataSupplier = sups[0]}
+    if (form.cooperationOrg) {
+      Message.success(`已按所选外数回填两轴：${form.cooperationOrg}${form.dataSupplier ? ` / ${form.dataSupplier}` : ''}`)
     }
   }
   selectedExternalIds.value.forEach(id => ensureConfigFor(String(id)))
@@ -876,6 +895,9 @@ const submit = async () => {
     contractNo: form.contractNo,
     contractName: form.fullName,
     supplier: form.supplier,
+    // 两轴与派生主体一起落库：列表/详情展示用两轴，签报与定价仍旧读 supplier（主体）
+    cooperationOrg: form.cooperationOrg,
+    dataSupplier: form.dataSupplier || '',
     signReportNo: form.signReportNo || undefined,
     initialOccupiedAmount: Number(form.initialOccupiedAmount) || 0,
     amount: Number(form.amount || 0),
@@ -991,8 +1013,10 @@ const applyBatchRecords = (records: Record<string, string>[]) => {
       product = {
         id: newId,
         name: nm || ifNo || `外数-${idx + 1}`,
-        supplier: r.supplier || form.supplier || '',
-        channel: '在线查询',
+        supplier: form.dataSupplier || r.supplier || '',
+        // 新建档案必须带两轴：优先用当前合同的两轴，缺则按主体反解（axesOfSubject），避免造出无机构归属的档案
+        cooperationOrg: form.cooperationOrg || axesOfSubject(String(form.dataSupplier || r.supplier || '')).cooperationOrg,
+        // 2026-11-03：档案「渠道」字段已下线，此处不再写入 channel（原值「在线查询」无处可展）
         interfaceNo: ifNo,
         unitPrice: r.basePrice ? Number(r.basePrice) : undefined
       }
@@ -1136,6 +1160,7 @@ const applyMockBatchData = () => {
 .ext-filter { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .ext-filter-search { width: 300px; }
 .ext-filter-hint { margin-left: auto; font-size: 12px; color: var(--color-text-3); }
+.ext-filter-relax { font-size: 12px; }
 .ext-checkbox-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; width: 100%; max-height: 280px; padding: 2px; overflow-y: auto; }
 .ext-check-item {
   align-items: flex-start; padding: 8px 10px; border-radius: 6px;

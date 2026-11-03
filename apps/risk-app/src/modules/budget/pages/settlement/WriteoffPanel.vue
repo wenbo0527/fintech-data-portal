@@ -6,11 +6,8 @@
           <a-option v-for="s in supplierOptions" :key="s.value" :value="s.value">{{ s.label }}</a-option>
         </a-select>
       </a-form-item>
-      <a-form-item field="channelId" label="对接渠道">
-        <a-select v-model="form.channelId" allow-clear placeholder="选择对接渠道" style="width: 240px">
-          <a-option v-for="s in supplierOptions" :key="s.value" :value="s.value">{{ s.label }}</a-option>
-        </a-select>
-      </a-form-item>
+      <!-- 原「对接渠道」筛选项已剔除（2026-11-03）：档案渠道轴下线后它已无上游口径，
+           且候选直接复用 supplierOptions（与左边的合作机构一模一样），选中后也没人读 form.channelId -->
       <a-form-item field="month" label="账期" required>
         <a-input v-model="form.month" placeholder="YYYY-MM" style="width: 140px" />
       </a-form-item>
@@ -151,7 +148,7 @@ const { supplierOptions, getSupplierName, loadSuppliers } = useSettlementSupplie
 
 const props = defineProps<{ supplierId?: string; month?: string; embedded?: boolean }>()
 const embedded = computed(() => props.embedded === true)
-const form = ref({ supplierId: props.supplierId || '', channelId: '', month: props.month || `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}` })
+const form = ref({ supplierId: props.supplierId || '', month: props.month || `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}` })
 const productRows = ref<any[]>([])
 const supplierProducts = ref<any[]>([])
 

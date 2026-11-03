@@ -8,7 +8,12 @@ export interface ContractItem {
   id: string
   contractNo: string
   contractName: string
+  /** 签约主体（工商全称或历史简称），签报/定价/结算沿用的那个键，2026-11-03 起由两轴派生 */
   supplier: string
+  /** 2026-11-03 两轴整合：与外数档案同名的合作机构轴（百行/朴道/钱塘/其他） */
+  cooperationOrg?: string
+  /** 2026-11-03 两轴整合：供应商轴（实际供数厂商）；持牌征信机构直供时为空 */
+  dataSupplier?: string
   amount: number
   startDate: string
   endDate: string
@@ -38,12 +43,17 @@ export interface ContractListParams {
 
 // 客户端 mock 数据（useMock fallback 用）
 // 7 条：4 active + 2 expired + 1 completed；5 framework + 2 supplement
+// 两轴回填口径 = api/supplierDictionary.ts 的 ORG_AXES_BY_SUP_ID：
+//   持牌三家（百行/朴道/钱塘）只填合作机构、供应商轴留空（它们是合规通道不是供数厂商）；
+//   同盾科技 / 中诚信 不在十二家主体名单里，按档案兜底口径记「其他 + 本名当供应商」。
 const MOCK_CONTRACTS: ContractItem[] = [
   {
     id: 'C001',
     contractNo: 'HT-2024-001',
     contractName: '百行征信数据服务框架协议',
     supplier: '百行征信',
+    cooperationOrg: '百行',
+    dataSupplier: '',
     amount: 120,
     startDate: '2024-01-15',
     endDate: '2026-01-14',
@@ -65,6 +75,8 @@ const MOCK_CONTRACTS: ContractItem[] = [
     contractNo: 'HT-2024-002',
     contractName: '百行征信补充协议-反欺诈模块',
     supplier: '百行征信',
+    cooperationOrg: '百行',
+    dataSupplier: '',
     amount: 30,
     startDate: '2024-03-01',
     endDate: '2025-12-31',
@@ -86,6 +98,8 @@ const MOCK_CONTRACTS: ContractItem[] = [
     contractNo: 'HT-2024-003',
     contractName: '朴道数据风控补充协议',
     supplier: '朴道数据',
+    cooperationOrg: '朴道',
+    dataSupplier: '',
     amount: 25,
     startDate: '2024-04-10',
     endDate: '2025-12-31',
@@ -107,6 +121,8 @@ const MOCK_CONTRACTS: ContractItem[] = [
     contractNo: 'HT-2024-004',
     contractName: '钱塘征信框架协议',
     supplier: '钱塘征信',
+    cooperationOrg: '钱塘',
+    dataSupplier: '',
     amount: 80,
     startDate: '2024-06-01',
     endDate: '2026-05-31',
@@ -128,6 +144,8 @@ const MOCK_CONTRACTS: ContractItem[] = [
     contractNo: 'HT-2024-005',
     contractName: '钱塘征信-学信网数据补充',
     supplier: '钱塘征信',
+    cooperationOrg: '钱塘',
+    dataSupplier: '',
     amount: 18,
     startDate: '2024-07-01',
     endDate: '2025-09-30',
@@ -148,6 +166,8 @@ const MOCK_CONTRACTS: ContractItem[] = [
     contractNo: 'HT-2023-006',
     contractName: '同盾科技框架协议-2023',
     supplier: '同盾科技',
+    cooperationOrg: '其他',
+    dataSupplier: '同盾科技',
     amount: 95,
     startDate: '2023-01-01',
     endDate: '2024-06-30',
@@ -168,6 +188,8 @@ const MOCK_CONTRACTS: ContractItem[] = [
     contractNo: 'HT-2023-007',
     contractName: '中诚信征信框架协议-2023',
     supplier: '中诚信',
+    cooperationOrg: '其他',
+    dataSupplier: '中诚信',
     amount: 65,
     startDate: '2023-03-01',
     endDate: '2024-08-31',
@@ -222,6 +244,8 @@ export async function createContract(data: Partial<ContractItem>): Promise<Contr
       contractNo: data.contractNo || `HT-NEW-${Date.now()}`,
       contractName: data.contractName || '',
       supplier: data.supplier || '',
+      cooperationOrg: data.cooperationOrg,
+      dataSupplier: data.dataSupplier,
       amount: data.amount ?? 0,
       startDate: data.startDate || new Date().toISOString().slice(0, 10),
       endDate: data.endDate || '',

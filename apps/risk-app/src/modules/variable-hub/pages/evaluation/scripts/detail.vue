@@ -215,6 +215,8 @@ import ScriptFormDrawer from '@/modules/variable-hub/components/evaluation/Scrip
 import ScriptVersionDrawer from '@/modules/variable-hub/components/evaluation/ScriptVersionDrawer.vue'
 import {
   EvaluationTaskStore,
+  scenarioLabel,
+  scriptTypeLabel,
   type EvaluationTaskMock,
   type PythonScriptConfig
 } from '@/modules/variable-hub/mock/evaluation/evaluation-task-store'
@@ -247,7 +249,9 @@ const baseInfo = computed(() => {
   }
   return [
     { label: '脚本编号', value: s.id },
-    { label: '脚本类型', value: typeLabel(s.type) },
+    // 脚本类型 = 适用评估场景；能力角色另起一行，两者正交，合并只会让用户以为在改同一个东西
+    { label: '脚本类型', value: scenarioLabel(s.scenario) },
+    { label: '能力角色', value: scriptTypeLabel(s.type) },
     { label: '脚本说明', value: s.description || '—' },
     { label: '标签', value: s.tags?.length ? s.tags.join('、') : '—' },
     { label: '创建人', value: s.createdBy || '—' },
@@ -305,9 +309,6 @@ const taskColumns = [
   { title: '引用版本', slotName: 'useVersion', width: 140 },
   { title: '最近更新', dataIndex: 'updatedAt', width: 160 }
 ]
-
-const typeLabel = (type: string) =>
-  type === 'processor' ? '数据处理' : type === 'visualizer' ? '图表生成' : '综合'
 
 const formatDate = (val?: string) => (val ? val.slice(0, 16) : '—')
 

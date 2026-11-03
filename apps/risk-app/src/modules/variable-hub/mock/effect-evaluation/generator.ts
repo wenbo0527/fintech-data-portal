@@ -3,7 +3,8 @@
  *
  * 设计要点（评估文档 §5.2）：
  *   1. 效果域自持 412 条样本 = 26 条台账真实 ID + 386 条合成 `VAR-EFF-xxxx`；
- *      台账 `variableAssets` 保持 26 条不动，本文件绝不回写台账。
+ *      本文件绝不回写台账 `variableAssets`；台账尾部新增的外数 / 征信资产（VAR-0001~0004）
+ *      故意不进效果样本，免得动到 412 条这套已稳定的分布。
  *   2. 随机性用固定种子的 mulberry32，禁止裸 Math.random —— 保证评审截图两次刷新一致。
  *   3. 一致性约束全部由构造保证：
  *      - 汰换(63) + 推荐(118) ≤ 412（按排名切分，天然不重叠）
@@ -416,7 +417,7 @@ function apportion(total: number, weights: number[]): number[] {
   return floors
 }
 
-/** 把台账 26 条真实资产映射成效果域样本的种子字段 */
+/** 把台账前 26 条资产映射成效果域样本的种子字段 */
 function seedFromLedger(asset: any) {
   const quality = typeof asset.quality === 'number' ? asset.quality : 80
   return {

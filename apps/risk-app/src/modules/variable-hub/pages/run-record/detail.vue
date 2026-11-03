@@ -188,6 +188,10 @@
 
             <a-card :bordered="false" class="detail-card">
               <template #title>名单推送</template>
+              <!-- 推送不是终点：给一个回到效果分析的回看入口，才能看到这批名单后续被反馈成怎样 -->
+              <template #extra>
+                <a-link @click="goAnalysis">去效果分析回看</a-link>
+              </template>
               <a-descriptions :column="1" size="medium">
                 <a-descriptions-item label="推送开关">
                   <a-tag size="small" :color="record.payload.push.enabled ? 'green' : 'gray'">
@@ -468,6 +472,8 @@ watch(runId, () => {
 })
 
 const goBack = () => router.push('/runs')
+/** 效果分析落在一体化总览的推荐表（方案 C 不单独设菜单） */
+const goAnalysis = () => router.push({ path: '/variable-hub', hash: '#recommend' })
 const goRun = (id: string) => router.push(`/runs/${id}`)
 const goScript = (id: string) => router.push(`/tasks/scripts/${id}`)
 const goVariable = (id: string) => router.push(`/variable-management/detail/${id}`)

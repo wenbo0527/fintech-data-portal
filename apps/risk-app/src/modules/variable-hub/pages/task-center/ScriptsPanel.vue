@@ -20,7 +20,7 @@
         <a-input v-model="filters.keyword" allow-clear placeholder="搜索脚本名称 / 路径 / 说明" style="width: 280px">
           <template #prefix><icon-search /></template>
         </a-input>
-        <a-select v-model="filters.type" allow-clear placeholder="脚本类型" :options="typeOptions" style="width: 180px" />
+        <a-select v-model="filters.scenario" allow-clear placeholder="脚本类型" :options="scenarioOpts" style="width: 180px" />
         <a-select v-model="filters.tag" allow-clear placeholder="标签" :options="tagOptions" style="width: 160px" />
         <a-select v-model="filters.status" allow-clear placeholder="状态" :options="statusOptions" style="width: 140px" />
         <a-button @click="resetFilters">重置</a-button>
@@ -38,7 +38,7 @@
           </a-space>
         </template>
         <template #typeCell="{ record }">
-          <a-tag :color="typeColor(record.type)">{{ typeLabel(record.type) }}</a-tag>
+          <a-tag :color="scenarioColor(record.scenario)">{{ scenarioLabel(record.scenario) }}</a-tag>
         </template>
         <template #versionCell="{ record }">
           <a-space size="mini">
@@ -118,6 +118,9 @@ import ScriptFormDrawer from '@/modules/variable-hub/components/evaluation/Scrip
 import ScriptVersionDrawer from '@/modules/variable-hub/components/evaluation/ScriptVersionDrawer.vue'
 import {
   EvaluationTaskStore,
+  scenarioColor,
+  scenarioLabel,
+  scenarioOptions,
   type PythonScriptConfig
 } from '@/modules/variable-hub/mock/evaluation/evaluation-task-store'
 
@@ -126,7 +129,7 @@ const router = useRouter()
 const scripts = ref<PythonScriptConfig[]>([])
 const taskCountMap = ref<Record<string, number>>({})
 
-const filters = reactive({ keyword: '', type: '', tag: '', status: '' })
+const filters = reactive({ keyword: '', scenario: '', tag: '', status: '' })
 const pagination = reactive({ pageSize: 10, showTotal: true, size: 'small' as const })
 
 const formDrawerRef = ref()
@@ -134,11 +137,8 @@ const versionDrawerRef = ref()
 const currentScript = ref<PythonScriptConfig>()
 const versionScriptId = ref('')
 
-const typeOptions = [
-  { label: '数据处理（processor）', value: 'processor' },
-  { label: '图表生成（visualizer）', value: 'visualizer' },
-  { label: '综合（combined）', value: 'combined' }
-]
+/** 脚本类型 = 适用评估场景，字典与文案统一取 store，面板不自行拼 */
+const scenarioOpts = scenarioOptions().map((s) => ({ label: s.label, value: s.value }))
 const statusOptions = [
   { label: '启用中', value: 'active' },
   { label: '已归档', value: 'archived' }
@@ -159,7 +159,7 @@ const filteredScripts = computed(() => {
         return false
       }
     }
-    if (filters.type && s.type !== filters.type) {
+    if (filters.scenario && (s.scenario || 'general') !== filters.scenario) {
       return false
     }
     if (filters.tag && !(s.tags || []).includes(filters.tag)) {
@@ -186,7 +186,7 @@ const statItems = computed(() => {
 const columns = [
   { title: '脚本编号', dataIndex: 'id', width: 140 },
   { title: '脚本名称', slotName: 'nameCell', width: 240 },
-  { title: '类型', slotName: 'typeCell', width: 110 },
+  { title: '脚本类型', slotName: 'typeCell', width: 130 },
   { title: '当前版本', slotName: 'versionCell', width: 150 },
   { title: '标签', slotName: 'tagCell', width: 180 },
   { title: '被引用', slotName: 'refCell', width: 100 },
@@ -216,17 +216,11 @@ const refTooltip = (id: string) => {
   return `被引用：${tasks.map((t) => t.name).join('、')}`
 }
 
-const typeLabel = (type: string) =>
-  type === 'processor' ? '数据处理' : type === 'visualizer' ? '图表生成' : '综合'
-
-const typeColor = (type: string) =>
-  type === 'processor' ? 'arcoblue' : type === 'visualizer' ? 'purple' : 'cyan'
-
 const formatDate = (val?: string) => (val ? val.slice(0, 16) : '—')
 
 const resetFilters = () => {
   filters.keyword = ''
-  filters.type = ''
+  filters.scenario = ''
   filters.tag = ''
   filters.status = ''
 }
@@ -279,6 +273,7 @@ const handleCopy = (script: PythonScriptConfig) => {
       name: `${script.name} - 副本`,
       path: script.path,
       type: script.type,
+      scenario: script.scenario,
       description: script.description || '',
       dependencies: [...(script.dependencies || [])],
       tags: [...(script.tags || [])],

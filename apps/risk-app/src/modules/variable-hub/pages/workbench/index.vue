@@ -21,7 +21,7 @@
     </a-card>
 
     <a-row :gutter="12" class="entry-row">
-      <a-col v-for="item in entries" :key="item.key" :span="8">
+      <a-col v-for="item in entries" :key="item.key" :span="entries.length > 3 ? 6 : 8">
         <a-card class="entry-card" :bordered="false" hoverable @click="router.push(item.path)">
           <a-space>
             <span class="entry-icon" :style="{ background: item.bg, color: item.color }">{{ item.iconText }}</span>
@@ -36,6 +36,10 @@
 
     <!-- 效果总览 + 页内推荐表（不新增路由与菜单，四数点击 = 页内锚点 + ?tab=） -->
     <a-card title="变量效果评估" :bordered="false" class="panel-card effect-panel">
+      <!-- 分析结果要能回到产出它的任务，不然这一屏只是终点站 -->
+      <template #extra>
+        <a-link @click="router.push('/tasks?tab=tasks&dm=effect')">相关效果任务</a-link>
+      </template>
       <StatusBar :overview="overview" />
 
       <div id="recommend" class="recommend-anchor">
@@ -85,7 +89,9 @@ const variableStore = useVariableStore()
 const entries = [
   { key: 'ledger', title: '特征台账', desc: '权威台账，状态/分类/详情档案', path: '/variable-management', iconText: '账', color: '#165dff', bg: '#f0f7ff' },
   { key: 'task', title: '任务管理', desc: '评估与效果任务一张表 / 脚本管理，判定配置跟任务走', path: '/tasks', iconText: '任', color: '#0fc6c2', bg: '#e6fffb' },
-  { key: 'run', title: '执行记录', desc: '两域跑批实例、日志与口径快照', path: '/runs', iconText: '记', color: '#ff7d00', bg: '#fff3e8' }
+  { key: 'run', title: '执行记录', desc: '两域跑批实例、日志与口径快照', path: '/runs', iconText: '记', color: '#ff7d00', bg: '#fff3e8' },
+  // 风险要素侧到外数域的统一入口：以前两个域互不可见，只能靠左侧菜单找
+  { key: 'external', title: '外数管理', desc: '档案 / 评估中心 / 落库与服务申请', path: '/variable-hub/external-data/lifecycle', iconText: '外', color: '#722ed1', bg: '#f5f0ff' }
 ]
 
 const variableList = computed(() => variableStore.variableList || [])

@@ -49,8 +49,11 @@
  * 落库统一走 effectOpinionStore.markVariables，组件不写 localStorage。
  */
 import { computed, reactive, ref, watch } from 'vue'
-import { Message } from '@arco-design/web-vue'
+import { useRouter } from 'vue-router'
+import { Message, Modal } from '@arco-design/web-vue'
 import { effectOpinionStore, MARK_TYPE_LABELS } from '@/modules/variable-hub/mock/effect-evaluation/opinion-store'
+
+const router = useRouter()
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -105,9 +108,22 @@ function submit() {
     Message.success(`本次标记 ${res.marked} 个变量`)
     emit('done', res.marked)
     close()
+    // 反馈不该是终点：把「标记 → 复评」接上回路，否则效果运营只是一条单行道
+    offerFollowUpTask(res.marked)
   } else {
     Message.error('标记失败：理由不能为空')
   }
+}
+
+/** 标记完成后询问是否基于这批变量去建复评任务 */
+function offerFollowUpTask(count) {
+  Modal.confirm({
+    title: '标记已记录',
+    content: `本次标记了 ${count} 个变量。要不要到任务管理为它们建一轮复评，把结论送回到评估口径里？`,
+    okText: '去建复评任务',
+    cancelText: '稍后再说',
+    onOk: () => router.push('/tasks/evaluation/create')
+  })
 }
 
 /** 关闭弹窗 */

@@ -39,6 +39,8 @@
           <a-sub-menu key="risk-factor-explore">
             <template #title>探索过程</template>
             <a-menu-item key="/explore/topics">探索课题</a-menu-item>
+            <!-- 决策审计页一直存但无入口，而审计事件仍在持续写入，这里补上菜单入口 -->
+            <a-menu-item key="/explore/audit">决策审计</a-menu-item>
           </a-sub-menu>
           <a-sub-menu key="risk-factor-config">
             <template #title>模块配置</template>
@@ -49,13 +51,15 @@
           <a-sub-menu key="external-data-core-group">
             <template #title>外数生命周期</template>
             <a-menu-item key="/variable-hub/external-data/lifecycle">生命周期总览</a-menu-item>
-            <a-menu-item key="/variable-hub/external-data/credit-agency">征信机构管理</a-menu-item>
+            <a-menu-item key="/variable-hub/external-data/credit-agency">合作机构管理</a-menu-item>
             <a-menu-item key="/variable-hub/external-data/archive">外数档案管理</a-menu-item>
             <a-menu-item key="/variable-hub/external-data/evaluation">外数评估中心</a-menu-item>
           </a-sub-menu>
           <a-sub-menu key="external-data-service-group">
             <template #title>外数服务管理</template>
             <a-menu-item key="/variable-hub/external-data/service-scene">服务场景入口</a-menu-item>
+            <!-- 线上调用服务申请页之前只能从服务场景入口的按钮进入，菜单无入口 -->
+            <a-menu-item key="/variable-hub/external-data/online-call-application">线上调用服务申请</a-menu-item>
             <a-menu-item key="/variable-hub/external-data/backtrack-persist">外数回溯落库申请</a-menu-item>
             <a-menu-item key="/variable-hub/external-data/task-list">服务任务列表</a-menu-item>
             <a-menu-item key="/variable-hub/external-data/sample-preparation">样本表准备</a-menu-item>
@@ -138,6 +142,9 @@ function updateMenuState(path: string) {
   if (path === '/variable-hub' || path === '/variable-hub/') activeSideMenu.value = '/variable-hub'
   else if (path.startsWith('/variable-management')) activeSideMenu.value = '/variable-management'
   else if (path.startsWith('/explore/topics')) activeSideMenu.value = '/explore/topics'
+  else if (path.startsWith('/explore/audit')) activeSideMenu.value = '/explore/audit'
+  // 实验对比由课题页内跳入，菜单高亮归属探索课题
+  else if (path.startsWith('/explore/compare')) activeSideMenu.value = '/explore/topics'
   else if (path.startsWith('/explore/taxonomy')) activeSideMenu.value = '/explore/taxonomy'
   else if (path.startsWith('/explore/map')) activeSideMenu.value = '/explore/map'
   // 任务管理：两 Tab 与页内新建评估 / 新建效果任务 / 效果任务详情 / 脚本详情都归属它
@@ -150,6 +157,7 @@ function updateMenuState(path: string) {
   else if (path.startsWith('/variable-hub/external-data/archive')) activeSideMenu.value = '/variable-hub/external-data/archive'
   else if (path.startsWith('/variable-hub/external-data/evaluation')) activeSideMenu.value = '/variable-hub/external-data/evaluation'
   else if (path.startsWith('/variable-hub/external-data/service-scene')) activeSideMenu.value = '/variable-hub/external-data/service-scene'
+  else if (path.startsWith('/variable-hub/external-data/online-call-application')) activeSideMenu.value = '/variable-hub/external-data/online-call-application'
   else if (path.startsWith('/variable-hub/external-data/backtrack-persist')) activeSideMenu.value = '/variable-hub/external-data/backtrack-persist'
   else if (path.startsWith('/variable-hub/external-data/task-list')) activeSideMenu.value = '/variable-hub/external-data/task-list'
   else if (path.startsWith('/variable-hub/external-data/sample-preparation')) activeSideMenu.value = '/variable-hub/external-data/sample-preparation'

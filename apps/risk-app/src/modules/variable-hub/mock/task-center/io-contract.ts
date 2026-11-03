@@ -4,7 +4,7 @@
  * 为什么要这一层：
  * 两域任务的输入输出其实一直是固定格式，只是过去只写在 store 的代码里（效果域是 EffectRow 的字段，
  * 评估域是 metrics 与 pythonOutputs 这两个 any）。格式没被声明出来，就会出现三种静默错误：
- * 脚本改版后输出少字段 → 回写特征档案失败但状态仍显示成功；选错脚本类型 → 照样能保存；
+ * 脚本改版后输出少字段 → 回写特征档案失败但状态仍显示成功；选错能力角色 → 照样能保存；
  * 上游分区没就绪 → 只有跑完才知道。所以把格式显式成契约，校验只是契约的副作用。
  *
  * 约束：
@@ -338,7 +338,7 @@ export function validateEvaluationOnSave(input: {
     issues.push({
       code: 'script_required',
       level: 'blocker',
-      message: `所选 ${scripts.length} 个脚本都只是图表生成器（visualizer），没有一个数据处理口径`,
+      message: `所选 ${scripts.length} 个脚本的能力角色都只是「仅图表产出」，没有一个数据处理口径`,
       anchor: 'scripts'
     })
   }

@@ -52,49 +52,68 @@
         <a-input
           v-model="keywordDraft"
           allow-clear
+          size="small"
           placeholder="搜索任务名 / 任务 ID / 负责人"
           class="f-keyword"
+          :class="{ 'f-active': !!queryParams.keyword }"
           @press-enter="flushKeyword"
         >
           <template #prefix><icon-search /></template>
         </a-input>
-        <a-select
-          v-model="local.domain"
-          :options="domainOpts"
-          allow-clear
-          placeholder="业务域"
-          size="small"
-          class="f-item"
-          @change="(v) => applyChange({ domain: v, page: 1 })"
-        />
-        <a-select
-          v-model="local.kind"
-          :options="kindOpts"
-          allow-clear
-          placeholder="任务类型"
-          size="small"
-          class="f-item f-item--wide"
-          @change="(v) => applyChange({ kind: v, page: 1 })"
-        />
-        <a-select
-          v-model="local.status"
-          :options="statusOpts"
-          allow-clear
-          placeholder="任务状态"
-          size="small"
-          class="f-item"
-          @change="(v) => applyChange({ status: v, page: 1 })"
-        />
-        <a-select
-          v-model="local.contract"
-          :options="contractOpts"
-          allow-clear
-          placeholder="契约状态"
-          size="small"
-          class="f-item"
-          @change="(v) => applyChange({ contractState: v, page: 1 })"
-        />
-        <a-button size="small" type="text" @click="resetFilters">清空筛选</a-button>
+
+        <!-- 四个维度筛选项成组收缩：窄屏时整组换行，不会出现单个下拉孤零零掉尾 -->
+        <div class="f-filters">
+          <span class="f-split" aria-hidden="true" />
+          <a-select
+            v-model="local.domain"
+            :options="domainOpts"
+            allow-clear
+            placeholder="业务域"
+            size="small"
+            class="f-item"
+            :class="{ 'f-active': !!queryParams.domain }"
+            @change="(v) => applyChange({ domain: v, page: 1 })"
+          />
+          <a-select
+            v-model="local.kind"
+            :options="kindOpts"
+            allow-clear
+            placeholder="任务类型"
+            size="small"
+            class="f-item f-item--wide"
+            :class="{ 'f-active': !!queryParams.kind }"
+            @change="(v) => applyChange({ kind: v, page: 1 })"
+          />
+          <a-select
+            v-model="local.status"
+            :options="statusOpts"
+            allow-clear
+            placeholder="任务状态"
+            size="small"
+            class="f-item"
+            :class="{ 'f-active': !!queryParams.status }"
+            @change="(v) => applyChange({ status: v, page: 1 })"
+          />
+          <a-select
+            v-model="local.contract"
+            :options="contractOpts"
+            allow-clear
+            placeholder="契约状态"
+            size="small"
+            class="f-item"
+            :class="{ 'f-active': !!queryParams.contractState }"
+            @change="(v) => applyChange({ contractState: v, page: 1 })"
+          />
+        </div>
+
+        <!-- 行尾操作区钉右，与筛选维度拉开距离，避免被当成第 5 个下拉 -->
+        <div class="f-actions">
+          <span v-if="activeFilterCount" class="f-count">已按 {{ activeFilterCount }} 项筛选</span>
+          <a-button size="small" type="text" :disabled="!activeFilterCount" @click="resetFilters">
+            <template #icon><icon-close-circle /></template>
+            清空筛选
+          </a-button>
+        </div>
       </div>
 
       <a-table
@@ -324,6 +343,14 @@ const local = reactive({
   status: queryParams.value.status,
   contract: queryParams.value.contractState
 })
+
+/**
+ * 生效中的筛选项计数：一律认 URL（queryParams），不认输入框与下拉的草稿值
+ * 草稿还没防抖落进 URL 时不算生效，「已按 N 项筛选」必须与实际列表口径一致
+ */
+const activeFilterCount = computed(
+  () => [queryParams.value.keyword, queryParams.value.domain, queryParams.value.kind, queryParams.value.status, queryParams.value.contractState].filter(Boolean).length
+)
 
 const loading = ref(false)
 const result = ref<TaskListResult>(taskRecordStore.list(queryParams.value))
@@ -650,17 +677,53 @@ onUnmounted(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px 12px;
   margin-bottom: 12px;
 }
+/*
+ * 控件一律按 flex 等比收缩，不再写死 px 宽度：
+ * 写死宽度时一行总宽超阈值就随机换行（某个下拉孤零零掉第二行），
+ * 等比收缩 + 筛选项成组包裹，才能保证要么整齐一行、要么整组换行。
+ * 搜索框与维度筛选项之间以竖线分组，行尾操作区钉右与筛选器拉开主次。
+ */
 .f-keyword {
-  width: 260px;
+  flex: 0 1 260px;
+  min-width: 170px;
+}
+.f-filters {
+  display: flex;
+  flex: 1 1 520px;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.f-split {
+  flex: 0 0 1px;
+  height: 16px;
+  background: var(--color-border-2);
 }
 .f-item {
-  width: 140px;
+  flex: 1 1 0;
+  min-width: 104px;
 }
 .f-item--wide {
-  width: 200px;
+  flex: 1.5 1 0;
+}
+/* 生效中的筛选维度：placeholder 被值顶掉后，靠边框说清是哪个下拉在起作用 */
+.f-active {
+  border-color: rgb(var(--primary-6));
+  background: var(--color-primary-light-1);
+}
+.f-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.f-count {
+  font-size: 12px;
+  color: rgb(var(--primary-6));
 }
 .cell-name {
   display: flex;

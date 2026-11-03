@@ -8,7 +8,7 @@
       <div class="header-left">
         <icon-code class="header-icon" />
         <span class="header-title">{{ script?.name || 'Python 脚本' }}</span>
-        <a-tag v-if="script?.type" :color="typeColor" size="small">{{ typeLabel }}</a-tag>
+        <a-tag v-if="script" :color="scenarioColor(script.scenario)" size="small">{{ scenarioLabel(script.scenario) }}</a-tag>
       </div>
       <div class="header-right">
         <a-space>
@@ -69,7 +69,11 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import type { PythonScriptConfig } from '@/modules/variable-hub/mock/evaluation/evaluation-task-store'
+import {
+  scenarioColor,
+  scenarioLabel,
+  type PythonScriptConfig
+} from '@/modules/variable-hub/mock/evaluation/evaluation-task-store'
 
 interface Props {
   script?: PythonScriptConfig
@@ -98,23 +102,8 @@ const displayContent = computed(() => {
   return props.script?.content || '# 暂无脚本内容\nprint("Hello, World!")'
 })
 
-const typeLabel = computed(() => {
-  const map: Record<string, string> = {
-    processor: '数据处理',
-    visualizer: '图表生成',
-    combined: '综合脚本'
-  }
-  return map[props.script?.type || ''] || '未知'
-})
-
-const typeColor = computed(() => {
-  const map: Record<string, string> = {
-    processor: 'arcoblue',
-    visualizer: 'green',
-    combined: 'purple'
-  }
-  return map[props.script?.type || ''] || 'gray'
-})
+// 头部只挂一个标签，展「脚本类型」（适用评估场景）；能力角色属契约内部语义，
+// 不在此处抢位，要看去脚本基本信息的「能力角色」行
 
 function startEdit() {
   editContent.value = props.script?.content || ''

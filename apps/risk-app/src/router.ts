@@ -312,7 +312,7 @@ const routes: RouteRecordRaw[] = [
         path: '/variable-hub/external-data/credit-agency',
         name: 'RiskExternalDataCreditAgency',
         component: () => import('./modules/external-data/pages/CreditAgency.vue'),
-        meta: { title: '征信机构管理' }
+        meta: { title: '合作机构管理' }
       },
 
       // ========== 预算管理 ==========

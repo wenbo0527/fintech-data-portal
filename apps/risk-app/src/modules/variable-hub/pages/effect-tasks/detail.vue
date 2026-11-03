@@ -12,6 +12,7 @@
       <a-space v-if="task">
         <a-button size="small" @click="activeTab = 'rule'">判定配置</a-button>
         <a-button size="small" @click="goRuns">执行记录</a-button>
+        <a-button size="small" @click="goAnalysis">效果分析</a-button>
         <template v-if="canRun">
           <a-button size="small" :disabled="task.status === 'running'" @click="runTask">立即执行</a-button>
           <a-button size="small" @click="toggleEnabled">{{ task.enabled ? '停用' : '启用' }}</a-button>
@@ -417,6 +418,8 @@ function onRuleSaved() {
 }
 /** 全域执行记录，带域筛选只看本域批次 */
 const goRuns = () => router.push({ path: '/runs', query: { domain: 'effect' } })
+/** 效果分析落在一体化总览（方案 C 不单独设菜单），带锚点直接定位到推荐表 */
+const goAnalysis = () => router.push({ path: '/variable-hub', hash: '#recommend' })
 /** 批次详情统一走执行记录详情页（与评估域同一个页面） */
 const goRunDetail = (record) => router.push(`/runs/${record.id}`)
 

@@ -43,6 +43,14 @@
         <a-card title="评估对象" :bordered="false" class="form-card">
           <a-alert type="info" :show-icon="false" style="margin-bottom: 16px">
             选择需要评估的特征，支持按类型筛选和关键词搜索。已选 {{ form.targets.length }} 个特征。
+            <!-- 候选不够时给出上游来源，不让用户本身成为「找不到对象」的终点 -->
+            <template #action>
+              <a-space>
+                <a-link @click="router.push('/variable-management')">去台账注册特征</a-link>
+                <a-link @click="router.push('/variable-hub/external-data/lifecycle')">去外数落库取数</a-link>
+                <a-link @click="router.push('/explore/topics')">去探索课题</a-link>
+              </a-space>
+            </template>
           </a-alert>
 
           <VariableSelector
@@ -111,7 +119,7 @@
                 <div class="script-item-info">
                   <span class="script-name">{{ script.name }}</span>
                   <a-tag color="arcoblue" size="small">v{{ script.currentVersion }}</a-tag>
-                  <a-tag :color="scriptTypeColor(script.type)" size="small">{{ scriptTypeLabel(script.type) }}</a-tag>
+                  <a-tag :color="scenarioColor(script.scenario)" size="small">{{ scenarioLabel(script.scenario) }}</a-tag>
                   <span class="script-path">{{ script.path }}</span>
                 </div>
                 <div class="script-item-actions">
@@ -205,7 +213,14 @@ import {
   validateEvaluationOnSave,
   type ContractIssue
 } from '@/modules/variable-hub/mock/task-center/io-contract'
-import { EvaluationTaskStore, type EvaluationTaskMock, type PythonScriptConfig, type EvaluationTaskTarget } from '@/modules/variable-hub/mock/evaluation/evaluation-task-store'
+import {
+  EvaluationTaskStore,
+  scenarioColor,
+  scenarioLabel,
+  type EvaluationTaskMock,
+  type PythonScriptConfig,
+  type EvaluationTaskTarget
+} from '@/modules/variable-hub/mock/evaluation/evaluation-task-store'
 import DmtPageHeader from '@/modules/variable-hub/components/PageHeader.vue'
 import PythonScriptEditor from '@/modules/variable-hub/components/evaluation/PythonScriptEditor.vue'
 import ScriptFormDrawer from '@/modules/variable-hub/components/evaluation/ScriptFormDrawer.vue'
@@ -283,18 +298,6 @@ const filteredScripts = computed(() => {
     (s.tags || []).some((t) => t.toLowerCase().includes(keyword))
   )
 })
-
-const scriptTypeLabel = (type: string) => ({
-  processor: '数据处理',
-  visualizer: '图表生成',
-  combined: '综合'
-}[type] || '未知')
-
-const scriptTypeColor = (type: string) => ({
-  processor: 'arcoblue',
-  visualizer: 'green',
-  combined: 'purple'
-}[type] || 'gray')
 
 function refreshScripts() {
   allScripts.value = EvaluationTaskStore.listPythonScripts()

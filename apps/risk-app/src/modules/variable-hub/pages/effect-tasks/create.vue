@@ -80,6 +80,14 @@
           </span>
 
           <template v-if="form.inputMode === 'upstream' && upstreamAllowed">
+            <!-- 上游为空时给出回评估域的入口，不让用户对着一张选不出东西的下拉框发呆 -->
+            <a-alert v-if="!upstreamCandidates.length" type="warning" class="lineage-alert">
+              <div>还没有可引用的评估任务：效果域的上游必须先在评估域建好并跑过一轮。</div>
+              <div>
+                <a-link @click="goCreateEvaluationTask">去新建常态性评估</a-link>
+                ，或用左侧「任务管理」查看已有任务。
+              </div>
+            </a-alert>
             <a-row :gutter="24" class="upstream-row">
               <a-col :span="12">
                 <a-form-item label="上游评估任务" required>
@@ -193,6 +201,11 @@ const submitting = ref(false)
 const currentKind = computed(() => `effect.${form.type}`)
 /** 契约里声明了 upstream 才允许引用上游，没声明就只讲本域口径 */
 const upstreamAllowed = computed(() => upstreamKindOptions(currentKind.value).length > 0)
+/** 上游候选为空时把用户送回评估域，而不是卡在选不出东西的下拉框前 */
+function goCreateEvaluationTask() {
+  router.push('/tasks/evaluation/create')
+}
+
 /** 可引用的上游评估任务：按契约 fromKinds 过滤，不合法的类型根本选不到 */
 const upstreamCandidates = computed(() => {
   const kinds = upstreamKindOptions(currentKind.value)

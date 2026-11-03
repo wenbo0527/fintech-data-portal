@@ -847,6 +847,17 @@ const handleDerivationAction = () => {
       })
     })
   }
+  // 从外数落库 / 档案详情「登记为特征」跳入：直接打开注册抽屉，把接入主干接上
+  if (route.query.action === 'register_from_external' && !derivationActionHandled) {
+    derivationActionHandled = true
+    nextTick(() => {
+      openRegisterDrawer({ mode: 'create', source: 'ledger' })
+      Message.info(`带着外数表「${route.query.table || '—'}」登记新特征：来源选「外数」即可与落库表关联`)
+      nextTick(() => {
+        router.replace({ path: route.path, query: {} })
+      })
+    })
+  }
 }
 // 在 onMounted 中调用（不在 watch immediate 中）
 // 同时保留 watch 响应后续导航（比如用户从其他页面再带这个 query 进来）
@@ -1834,7 +1845,7 @@ const handleViewDetail = (record, opts = {}) => {
 const openExternalArchive = (record) => {
   const id = record?.sourceRefs?.externalArchiveId
   if (!id) return
-  window.open(buildRiskAppUrl(`/risk/external-data/archive/${id}`), '_blank')
+  window.open(buildRiskAppUrl(`/risk/variable-hub/external-data/archive/${id}`), '_blank')
 }
 
 /**

@@ -1,5 +1,8 @@
 import type { VariableSourceType } from '@/modules/variable-hub/mock/variable-management/variables'
 import { VariableStatusStore } from '@/modules/variable-hub/mock/variable-management/variable-status-store'
+// 外数报告实体只认外数报告库：任务域给外数特征出报告时必须真的在那边落一条，
+// 否则台账 / 执行记录上的外数报告链接指向的是一个不存在的 id（该 mock 不反向依赖本模块，无循环引用）
+import { createEvaluationReport } from '@/modules/external-data/mock/evaluationReports'
 import {
   issueSummary,
   validateRunOutput,
@@ -38,8 +41,13 @@ export interface PythonScriptConfig {
   path: string
   /** 脚本内容（当前生效版本，与 versions[currentVersion-1] 一致） */
   content: string
-  /** 脚本类型：processor（数据处理）/ visualizer（图表生成） */
+  /**
+   * 能力角色：processor（数据处理口径）/ visualizer（仅图表产出）/ combined（口径 + 图表）
+   * 只服务契约校验（决定能不能单独当计算口径），不再当作用户可见的「脚本类型」
+   */
   type: 'processor' | 'visualizer' | 'combined'
+  /** 适用评估场景：用户在列表 / 筛选 / 表单上看到的「脚本类型」，缺省按通用处理 */
+  scenario?: ScriptScenario
   /** 依赖包列表 */
   dependencies?: string[]
   /** 脚本描述 */
@@ -67,6 +75,63 @@ export interface PythonScriptConfig {
   updatedAt: string
   /** 修改人 */
   updatedBy: string
+}
+
+/**
+ * 脚本适用评估场景 —— 用户可见的「脚本类型」
+ *
+ * 与 PythonScriptConfig.type 是两个正交维度，不能混用：
+ * type 说「能不能单独当口径」，是 io-contract 保存校验的承重件；
+ * scenario 说「这套口径用在哪个评估场景」，列表、筛选、表单展示一律只认它。
+ * 新增场景只改这一处，页面不得自行拼场景文案。
+ */
+export type ScriptScenario = 'external_routine' | 'variable_routine' | 'external_access' | 'general'
+
+export const SCRIPT_SCENARIO_META: Record<ScriptScenario, { label: string; color: string; desc: string }> = {
+  external_routine: { label: '外数日常评估', color: 'orange', desc: '对外数特征按周期巡检 IV / PSI / 缺失率' },
+  variable_routine: { label: '变量日常评估', color: 'arcoblue', desc: '对内数变量按周期跑数据质量与覆盖率口径' },
+  external_access: { label: '外数准入评估', color: 'green', desc: '新外数接入前的一次性准入判定' },
+  general: { label: '通用', color: 'gray', desc: '不绑定场景的辅助口径，可搭配任一场景使用' }
+}
+
+/** 下拉与筛选固定排序：三个业务场景在前，「通用」兜底在后，不抢第一眼 */
+export const SCRIPT_SCENARIO_ORDER: ScriptScenario[] = ['external_routine', 'variable_routine', 'external_access', 'general']
+
+/** 场景 → 文案，未知值原样返回，页面不自己兜字典 */
+export function scenarioLabel(value?: ScriptScenario | string): string {
+  return SCRIPT_SCENARIO_META[value as ScriptScenario]?.label || value || '未分类'
+}
+
+export function scenarioColor(value?: ScriptScenario | string): string {
+  return SCRIPT_SCENARIO_META[value as ScriptScenario]?.color || 'gray'
+}
+
+/** 表单与筛选下拉共用 */
+export function scenarioOptions(): { label: string; value: ScriptScenario; desc: string }[] {
+  return SCRIPT_SCENARIO_ORDER.map((key) => ({
+    value: key,
+    label: SCRIPT_SCENARIO_META[key].label,
+    desc: SCRIPT_SCENARIO_META[key].desc
+  }))
+}
+
+/**
+ * 能力角色字典：原先 ScriptsPanel / 脚本详情 / 新建评估 / 脚本编辑器各抄了一份且颜色互不一致，
+ * 统一收到这里；属于内部校验语义，界面上以「能力角色」出现，不再占用「脚本类型」这个名字。
+ * 文案刻意与场景拉开：这里说的是「能不能单独当口径」，不是「用在哪个评估场景」。
+ */
+export const SCRIPT_TYPE_META: Record<PythonScriptConfig['type'], { label: string; color: string }> = {
+  processor: { label: '数据处理口径', color: 'arcoblue' },
+  visualizer: { label: '仅图表产出', color: 'purple' },
+  combined: { label: '口径 + 图表', color: 'cyan' }
+}
+
+export function scriptTypeLabel(type?: string): string {
+  return SCRIPT_TYPE_META[type as PythonScriptConfig['type']]?.label || type || '—'
+}
+
+export function scriptTypeColor(type?: string): string {
+  return SCRIPT_TYPE_META[type as PythonScriptConfig['type']]?.color || 'gray'
 }
 
 export interface RoutineScheduleConfig {
@@ -100,6 +165,8 @@ export interface PythonScriptRef {
   name: string
   path: string
   type: PythonScriptConfig['type']
+  /** 场景快照：任务侧不回查脚本库就能说出这套口径用在哪个评估场景 */
+  scenario?: ScriptScenario
   currentVersion?: number
   updatedAt?: string
   updatedBy?: string
@@ -239,7 +306,7 @@ const RUNS_KEY = 'evaluation.runs'
 
 /**
  * 评估执行后写回特征的"外数评估报告 ID"映射
- * 形如：{ VAR-0001: 11, VAR-0002: 12, ... }
+ * 形如：{ VAR-0001: 9001, VAR-0002: 9002, ... }，值一定是外数报告库里真实存在的 id
  * 在 api/variable-management 中会与特征的 sourceRefs.externalEvaluationId 合并展示
  */
 type ExternalBindingMap = Record<string, string | number>
@@ -292,12 +359,6 @@ function nextTaskId() {
   return `${prefix}${String(next).padStart(3, '0')}`
 }
 
-function nextExternalReportId(): number {
-  const binding = readBinding()
-  const used = Object.values(binding).map((v) => Number(v)).filter((n) => !Number.isNaN(n))
-  return (used.length ? Math.max(...used) : 100) + 1
-}
-
 // ============ Python 脚本管理 ============
 /** 脚本种子类型（未包含版本/创建字段，由 normalizeScript 补全） */
 type PythonScriptSeed = Omit<
@@ -308,15 +369,20 @@ type PythonScriptSeed = Omit<
 
 /**
  * 规范化脚本：为缺失版本信息的旧数据自动生成 v1（基于当前 content）
- * 兼容 localStorage 中的历史数据结构
+ * 兼容 localStorage 中的历史数据结构：旧副本没有 scenario 字段，内置脚本先按 id 回到各自真实场景，
+ * 回查不到才落「通用」；不拿 processor/visualizer 去猜场景（两个维度正交，一猜就会把图表生成器算成业务场景）
  */
 function normalizeScript(input: PythonScriptSeed | PythonScriptConfig): PythonScriptConfig {
   const anyInput = input as any
+  const scenario: ScriptScenario = SCRIPT_SCENARIO_META[anyInput.scenario as ScriptScenario]
+    ? anyInput.scenario
+    : defaultPythonScripts.find((s) => s.id === anyInput.id)?.scenario || 'general'
   if (Array.isArray(anyInput.versions) && anyInput.versions.length > 0) {
     const versions = [...anyInput.versions].sort((a, b) => b.version - a.version)
     const currentVersion = anyInput.currentVersion ?? versions[0].version
     return {
       ...(anyInput as PythonScriptConfig),
+      scenario,
       versions,
       currentVersion,
       createdAt: anyInput.createdAt || anyInput.updatedAt,
@@ -335,6 +401,7 @@ function normalizeScript(input: PythonScriptSeed | PythonScriptConfig): PythonSc
   }
   return {
     ...(anyInput as PythonScriptConfig),
+    scenario,
     currentVersion: 1,
     versions: [v1],
     createdAt: anyInput.createdAt || anyInput.updatedAt,
@@ -423,6 +490,7 @@ const defaultPythonScripts: PythonScriptSeed[] = [
     path: 'python-reports/processors/data_processor.py',
     content: `"""\n数据处理器模块\n负责处理样本文件、生成统计数据和质量分析\n"""\n\nimport pandas as pd\nimport numpy as np\nfrom typing import Dict, Any, List, Optional\nfrom pathlib import Path\nimport warnings\n\nwarnings.filterwarnings('ignore')\n\n\nclass DataProcessor:\n    """\n    数据处理器类\n    负责样本数据的读取、清洗、统计和质量分析\n    """\n    \n    def __init__(self):\n        """初始化数据处理器"""\n        self.supported_formats = ['.xlsx', '.csv', '.xls']\n    \n    def process_sample_file(self, file_path: str) -> pd.DataFrame:\n        """处理样本文件"""\n        file_path = Path(file_path)\n        \n        if not file_path.exists():\n            raise FileNotFoundError(f"文件不存在: {file_path}")\n        \n        if file_path.suffix.lower() not in self.supported_formats:\n            raise ValueError(f"不支持的文件格式: {file_path.suffix}")\n        \n        # 读取数据\n        if file_path.suffix.lower() == '.csv':\n            df = pd.read_csv(file_path, encoding='utf-8')\n        else:\n            df = pd.read_excel(file_path)\n        \n        # 数据清洗\n        df = self._clean_data(df)\n        \n        # 数据验证\n        self._validate_data(df)\n        \n        return df\n    \n    def _clean_data(self, df: pd.DataFrame) -> pd.DataFrame:\n        """数据清洗"""\n        # 删除空值较多的列\n        threshold = len(df) * 0.7\n        df = df.dropna(thresh=threshold, axis=1)\n        \n        # 填充缺失值\n        for col in df.columns:\n            if df[col].dtype in ['int64', 'float64']:\n                df[col] = df[col].fillna(0)\n            else:\n                df[col] = df[col].fillna('')\n        \n        # 去除重复行\n        df = df.drop_duplicates()\n        \n        return df\n    \n    def _get_quality_metrics(self, df: pd.DataFrame) -> Dict[str, Any]:\n        """获取数据质量指标"""\n        quality = {\n            "completeness": {},\n            "consistency": {},\n            "accuracy": {}\n        }\n        \n        # 完整性\n        for col in df.columns:\n            null_count = df[col].isnull().sum()\n            completeness = 1 - (null_count / len(df))\n            quality["completeness"][col] = {\n                "null_count": int(null_count),\n                "completeness_rate": float(completeness)\n            }\n        \n        return quality\n    \n    def generate_statistics(self, df: pd.DataFrame) -> Dict[str, Any]:\n        """生成统计数据"""\n        stats = {\n            "basic_info": self._get_basic_info(df),\n            "numeric_stats": self._get_numeric_stats(df),\n            "quality_metrics": self._get_quality_metrics(df),\n        }\n        return stats`,
     type: 'processor',
+    scenario: 'variable_routine',
     dependencies: ['pandas', 'numpy'],
     description: '读取样本/回溯数据，完成清洗、缺失值与异常值检测，输出完整性、一致性、准确性等质量指标。',
     requires: ['variableId', 'variableName', 'sampleRows'],
@@ -437,6 +505,7 @@ const defaultPythonScripts: PythonScriptSeed[] = [
     path: 'python-reports/visualizers/chart_generator.py',
     content: `"""\n图表生成器模块\n负责生成各种统计图表和可视化\n"""\n\nimport matplotlib.pyplot as plt\nimport seaborn as sns\nimport pandas as pd\nimport numpy as np\nfrom typing import Dict, Any, List, Optional\nfrom pathlib import Path\n\n# 设置中文字体\nplt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'DejaVu Sans']\nplt.rcParams['axes.unicode_minus'] = False\n\n# 设置图表样式\nsns.set_style("whitegrid")\nsns.set_palette("husl")\n\n\nclass ChartGenerator:\n    """\n    图表生成器类\n    负责根据数据生成各种统计图表\n    """\n    \n    def __init__(self, output_dir: str = "charts"):\n        """初始化图表生成器"""\n        self.output_dir = Path(output_dir)\n        self.output_dir.mkdir(exist_ok=True)\n        \n        # 设置图表样式\n        self.colors = ['#1890ff', '#52c41a', '#faad14', '#f5222d', '#722ed1', '#13c2c2']\n        self.figsize = (12, 8)\n    \n    def generate_charts(self, \n                       df: pd.DataFrame, \n                       report_type: str,\n                       chart_types: Optional[List[str]] = None) -> Dict[str, Any]:\n        """生成图表集合"""\n        if chart_types is None:\n            chart_types = ['sample_distribution', 'quality_score_distribution']\n        \n        charts = {}\n        \n        for chart_type in chart_types:\n            try:\n                chart_path = self._generate_chart(df, chart_type, report_type)\n                charts[chart_type] = chart_path\n            except Exception as e:\n                print(f"生成图表 {chart_type} 失败: {e}")\n                continue\n        \n        return charts\n    \n    def _create_sample_distribution(self, df: pd.DataFrame, report_type: str) -> str:\n        """创建样本分布图"""\n        fig, axes = plt.subplots(2, 2, figsize=(16, 12))\n        fig.suptitle('样本分布分析', fontsize=16, fontweight='bold')\n        \n        numeric_cols = df.select_dtypes(include=[np.number]).columns\n        if len(numeric_cols) > 0:\n            for i, col in enumerate(numeric_cols[:4]):\n                ax = axes[i//2, i%2]\n                df[col].hist(bins=30, ax=ax, alpha=0.7, color=self.colors[i%len(self.colors)])\n                ax.set_title(f'{col} 分布')\n                ax.set_xlabel('值')\n                ax.set_ylabel('频数')\n        \n        plt.tight_layout()\n        \n        chart_path = self.output_dir / f"sample_distribution_{report_type}.png"\n        plt.savefig(chart_path, dpi=300, bbox_inches='tight')\n        plt.close()\n        \n        return str(chart_path)`,
     type: 'visualizer',
+    scenario: 'general',
     dependencies: ['matplotlib', 'seaborn', 'pandas', 'numpy'],
     description: '基于分析结果生成样本分布、质量得分分布等统计图表，输出 PNG 供报告引用。',
     requires: ['variableId', 'sampleRows'],
@@ -451,6 +520,7 @@ const defaultPythonScripts: PythonScriptSeed[] = [
     path: 'python-reports/processors/external_evaluator.py',
     content: `"""\n外数特征效果评估器 v3\n计算 IV / KS / PSI / 缺失率，输出可回写的特征效果指标\n"""\n\nimport pandas as pd\nimport numpy as np\nfrom typing import Dict, Any\n\n\nclass ExternalFeatureEvaluator:\n    """外数特征效果评估器"""\n\n    def __init__(self, bins: int = 10):\n        self.bins = bins\n\n    def calc_missing_rate(self, df: pd.DataFrame, col: str) -> float:\n        return float(df[col].isnull().mean())\n\n    def calc_iv(self, df: pd.DataFrame, col: str, target: str) -> float:\n        """等频分箱后计算 IV"""\n        tmp = df[[col, target]].dropna()\n        if tmp.empty:\n            return 0.0\n        try:\n            tmp['bin'] = pd.qcut(tmp[col], q=self.bins, duplicates='drop')\n        except ValueError:\n            tmp['bin'] = tmp[col]\n        grouped = tmp.groupby('bin', observed=True)[target].agg(['count', 'sum'])\n        total_bad, total_good = grouped['sum'].sum(), (grouped['count'] - grouped['sum']).sum()\n        iv = 0.0\n        for cnt, bad in zip(grouped['count'], grouped['sum']):\n            good = cnt - bad\n            b = max(bad / max(total_bad, 1), 1e-6)\n            g = max(good / max(total_good, 1), 1e-6)\n            iv += (b - g) * np.log(b / g)\n        return float(iv)\n\n    def calc_psi(self, base: pd.Series, cur: pd.Series) -> float:\n        """群体稳定性指数，用于常态性巡检"""\n        qs = np.unique(np.nanquantile(base.dropna(), np.linspace(0, 1, self.bins + 1)))\n        if len(qs) < 2:\n            return 0.0\n        b = pd.cut(base, qs, include_lowest=True).value_counts(normalize=True).sort_index()\n        c = pd.cut(cur, qs, include_lowest=True).value_counts(normalize=True).sort_index()\n        eps = 1e-6\n        return float(((c + eps) / (b + eps) * np.log((c + eps) / (b + eps))).sum())\n\n    def evaluate(self, df: pd.DataFrame, col: str, target: str) -> Dict[str, Any]:\n        return {\n            'feature': col,\n            'missing_rate': round(self.calc_missing_rate(df, col), 4),\n            'iv': round(self.calc_iv(df, col, target), 4),\n        }`,
     type: 'processor',
+    scenario: 'external_routine',
     dependencies: ['pandas', 'numpy', 'scipy'],
     description: '针对外数特征计算 IV / PSI / 缺失率等效果指标，供常态性评估任务回写特征档案。',
     requires: ['variableId', 'variableName', 'sourceType', 'sampleRows'],
@@ -487,6 +557,23 @@ const defaultPythonScripts: PythonScriptSeed[] = [
         createdAt: '2026-10-20 15:30:00'
       }
     ]
+  },
+  {
+    id: 'PY-SCRIPT-004',
+    name: '外数准入判定器',
+    path: 'python-reports/processors/external_access_gate.py',
+    content: `"""\n外数准入判定器\n新外数接入前的一次性准入判定：覆盖率、区分度、缺失率三项达标才给出可通过结论\n"""\n\nimport pandas as pd\nimport numpy as np\nfrom typing import Dict, Any\n\n\nclass ExternalAccessGate:\n    """外数准入判定器"""\n\n    # 准入闸门：不达标的项会在报告中标为阻断原因\n    MIN_COVERAGE = 0.60\n    MIN_IV = 0.02\n    MAX_MISSING_RATE = 0.30\n\n    def calc_coverage(self, df: pd.DataFrame, col: str) -> float:\n        """非空且非默认哨兵值占比"""\n        s = df[col]\n        valid = s.notna() & ~s.isin([-1, -999, '', 'NULL'])\n        return float(valid.mean())\n\n    def calc_iv(self, df: pd.DataFrame, col: str, target: str) -> float:\n        """等频分箱算 IV，分箱不足时降为单箱"""\n        tmp = df[[col, target]].dropna()\n        if tmp.empty:\n            return 0.0\n        try:\n            tmp['bin'] = pd.qcut(tmp[col], q=10, duplicates='drop')\n        except ValueError:\n            tmp['bin'] = 0\n        grouped = tmp.groupby('bin', observed=True)[target].agg(['count', 'sum'])\n        total_bad = max(float(grouped['sum'].sum()), 1e-6)\n        total_good = max(float((grouped['count'] - grouped['sum']).sum()), 1e-6)\n        iv = 0.0\n        for cnt, bad in zip(grouped['count'], grouped['sum']):\n            good = cnt - bad\n            b = max(bad / total_bad, 1e-6)\n            g = max(good / total_good, 1e-6)\n            iv += (b - g) * np.log(b / g)\n        return float(iv)\n\n    def access_decision(self, df: pd.DataFrame, col: str, target: str) -> Dict[str, Any]:\n        coverage = self.calc_coverage(df, col)\n        iv = self.calc_iv(df, col, target)\n        missing_rate = float(df[col].isnull().mean())\n        blockers = []\n        if coverage < self.MIN_COVERAGE:\n            blockers.append(f"覆盖率 {coverage:.2%} 低于准入线 {self.MIN_COVERAGE:.0%}")\n        if iv < self.MIN_IV:\n            blockers.append(f"IV {iv:.4f} 低于准入线 {self.MIN_IV}")\n        if missing_rate > self.MAX_MISSING_RATE:\n            blockers.append(f"缺失率 {missing_rate:.2%} 高于上限 {self.MAX_MISSING_RATE:.0%}")\n        return {\n            'feature': col,\n            'coverage': round(coverage, 4),\n            'iv': round(iv, 4),\n            'missing_rate': round(missing_rate, 4),\n            # 质量得分给下游回写用：无阻断项时按覆盖率与 IV 加权\n            'quality': 0 if blockers else round(coverage * 60 + min(iv, 0.5) * 80, 2),\n            'passed': not blockers,\n            'blockers': blockers,\n        }`,
+    type: 'processor',
+    scenario: 'external_access',
+    dependencies: ['pandas', 'numpy'],
+    description: '新外数接入前的一次性准入判定：覆盖率 / IV / 缺失率三项不达标即给出阻断原因，通过项可回写特征档案。',
+    requires: ['variableId', 'variableName', 'sourceType', 'sampleRows'],
+    provides: ['quality', 'coverage', 'iv', 'missingRate'],
+    tags: ['外数', '准入', '卡口'],
+    updatedAt: '2026-10-30 11:20:00',
+    updatedBy: '李浩',
+    createdAt: '2026-10-30 11:20:00',
+    createdBy: '李浩'
   }
 ]
 
@@ -529,7 +616,7 @@ const defaultTasks: EvaluationTaskMock[] = [
         variableName: '外数-三要素核验一致性',
         sourceType: 'external',
         generatedAt: '2026-06-24 18:20:00',
-        url: '/risk/external-data/evaluation/11',
+        url: '/risk/variable-hub/external-data/evaluation/9001',
         summary: '外数评估系统输出：命中 0.93，IV 0.32，KS 0.28，建议保留。'
       },
       {
@@ -540,7 +627,7 @@ const defaultTasks: EvaluationTaskMock[] = [
         variableName: '外数-手机在网时长',
         sourceType: 'external',
         generatedAt: '2026-06-24 18:20:00',
-        url: '/risk/external-data/evaluation/12',
+        url: '/risk/variable-hub/external-data/evaluation/9002',
         summary: '外数评估系统输出：命中 0.85，IV 0.29，KS 0.26，建议保留并监控成本。'
       },
       {
@@ -641,7 +728,7 @@ const defaultTasks: EvaluationTaskMock[] = [
       lastRunResult: 'success'
     },
     pythonScripts: [
-      { id: 'PY-SCRIPT-001', name: '数据质量分析器', path: 'python-reports/processors/data_processor.py', content: '', type: 'processor', currentVersion: 1, updatedAt: '2026-08-01 10:00:00', updatedBy: '系统内置', requires: ['variableId', 'variableName', 'sampleRows'], provides: ['quality', 'coverage', 'passRate', 'totalRows'] }
+      { id: 'PY-SCRIPT-001', name: '数据质量分析器', path: 'python-reports/processors/data_processor.py', content: '', type: 'processor', scenario: 'variable_routine', currentVersion: 1, updatedAt: '2026-08-01 10:00:00', updatedBy: '系统内置', requires: ['variableId', 'variableName', 'sampleRows'], provides: ['quality', 'coverage', 'passRate', 'totalRows'] }
     ],
     pythonOutputs: {
       chartPaths: ['/charts/sample_distribution_routine_003.png'],
@@ -654,8 +741,8 @@ const defaultTasks: EvaluationTaskMock[] = [
     taskType: 'routine',
     status: 'scheduled',
     sourceType: 'variable_batch',
-    sourceIds: ['VAR-0003'],
-    sourceNames: ['内数-近30日交易次数'],
+    sourceIds: ['VAR-0003', 'MIDLOAN-FEAT-0001', 'MIDLOAN-FEAT-0018', 'MIDLOAN-FEAT-0019', 'MIDLOAN-FEAT-0022', 'MIDLOAN-FEAT-0023'],
+    sourceNames: ['近30日交易次数', '近30日大额交易次数', '近30日最常登录城市', '近30日白名单命中次数', '授信额度使用率', '近60日逾期天数最大值'],
     dataSourceId: 'internal',
     dataSourceName: '内数底表',
     variableTypeId: 'behavior',
@@ -667,7 +754,14 @@ const defaultTasks: EvaluationTaskMock[] = [
     startedAt: '2026-10-27 08:00:00',
     finishedAt: '2026-10-27 08:10:00',
     targets: [
-      { id: 'VAR-0003', name: '内数-近30日交易次数', code: 'IN_TXN_CNT_30D', sourceType: 'internal', dataSourceName: '交易明细表' }
+      { id: 'VAR-0003', name: '内数-近30日交易次数', code: 'IN_TXN_CNT_30D', sourceType: 'internal', dataSourceName: '交易明细表' },
+      // 台账里已上线 / 已登记的贷中行为特征：周度巡检要覆盖真实资产，
+      // 否则 26 条台账特征只有一条能反查出评估产出，台账详情的分析报告永远是空的
+      { id: 'MIDLOAN-FEAT-0001', name: '近30日大额交易次数', code: 'MIDLOAN_BIGTXN_CNT_30D', sourceType: 'internal', dataSourceName: 'Hbase 行为元数据表' },
+      { id: 'MIDLOAN-FEAT-0018', name: '近30日最常登录城市', code: 'MIDLOAN_TOP_LOGIN_CITY_30D', sourceType: 'internal', dataSourceName: 'Hbase 行为元数据表' },
+      { id: 'MIDLOAN-FEAT-0019', name: '近30日白名单命中次数', code: 'MIDLOAN_WHITELIST_HIT_30D', sourceType: 'internal', dataSourceName: 'Hbase 行为元数据表' },
+      { id: 'MIDLOAN-FEAT-0022', name: '授信额度使用率', code: 'MIDLOAN_CREDIT_UTIL_RATIO', sourceType: 'internal', dataSourceName: '信贷核心库-额度表' },
+      { id: 'MIDLOAN-FEAT-0023', name: '近60日逾期天数最大值', code: 'MIDLOAN_OVERDUE_MAX_D_60D', sourceType: 'internal', dataSourceName: 'Hbase 行为元数据表' }
     ],
     metrics: {
       coverage: 0.88,
@@ -675,7 +769,7 @@ const defaultTasks: EvaluationTaskMock[] = [
       ks: 0.24,
       passRate: 0.92
     },
-    resultSummary: '周度复核完成：IV 值稳定在 0.28，特征区分度良好，建议继续保持。',
+    resultSummary: '周度复核完成：共 6 个特征全部产出报告，IV 值稳定在 0.28，特征区分度良好，建议继续保持。',
     reports: [
       {
         id: 'PY-RPT-003',
@@ -700,10 +794,10 @@ const defaultTasks: EvaluationTaskMock[] = [
       lastRunResult: 'success'
     },
     pythonScripts: [
-      { id: 'PY-SCRIPT-001', name: '数据质量分析器', path: 'python-reports/processors/data_processor.py', content: '', type: 'processor', currentVersion: 1, updatedAt: '2026-08-01 10:00:00', updatedBy: '系统内置', requires: ['variableId', 'variableName', 'sampleRows'], provides: ['quality', 'coverage', 'passRate', 'totalRows'] },
-      { id: 'PY-SCRIPT-002', name: '评估图表生成器', path: 'python-reports/visualizers/chart_generator.py', content: '', type: 'visualizer', currentVersion: 1, updatedAt: '2026-08-01 10:00:00', updatedBy: '系统内置', requires: ['variableId', 'sampleRows'], provides: ['chartPath'] },
+      { id: 'PY-SCRIPT-001', name: '数据质量分析器', path: 'python-reports/processors/data_processor.py', content: '', type: 'processor', scenario: 'variable_routine', currentVersion: 1, updatedAt: '2026-08-01 10:00:00', updatedBy: '系统内置', requires: ['variableId', 'variableName', 'sampleRows'], provides: ['quality', 'coverage', 'passRate', 'totalRows'] },
+      { id: 'PY-SCRIPT-002', name: '评估图表生成器', path: 'python-reports/visualizers/chart_generator.py', content: '', type: 'visualizer', scenario: 'general', currentVersion: 1, updatedAt: '2026-08-01 10:00:00', updatedBy: '系统内置', requires: ['variableId', 'sampleRows'], provides: ['chartPath'] },
       // 快照为 v2，而脚本库已升级到 v3：用于演示「非最新口径」提示
-      { id: 'PY-SCRIPT-003', name: '外数特征效果评估器', path: 'python-reports/processors/external_evaluator.py', content: '', type: 'processor', currentVersion: 2, updatedAt: '2026-08-18 14:05:00', updatedBy: '张敏', requires: ['variableId', 'variableName', 'sourceType', 'sampleRows'], provides: ['iv', 'ks', 'psi'] }
+      { id: 'PY-SCRIPT-003', name: '外数特征效果评估器', path: 'python-reports/processors/external_evaluator.py', content: '', type: 'processor', scenario: 'external_routine', currentVersion: 2, updatedAt: '2026-08-18 14:05:00', updatedBy: '张敏', requires: ['variableId', 'variableName', 'sourceType', 'sampleRows'], provides: ['iv', 'ks', 'psi'] }
     ]
   }
 ]
@@ -1168,6 +1262,7 @@ function syncTaskAfterRun(task: EvaluationTaskMock, run: EvaluationRunInstance) 
           name: s.name,
           path: live?.path || s.name,
           type: live?.type || 'processor',
+          scenario: live?.scenario,
           currentVersion: s.version,
           updatedAt: live?.updatedAt || now,
           updatedBy: live?.updatedBy || run.triggeredBy
@@ -1241,7 +1336,6 @@ function generateReportsForTask(task: EvaluationTaskMock): EvaluationTaskReport[
 
   const reports: EvaluationTaskReport[] = [...existing]
   const binding = readBinding()
-  let externalCounter = 0
 
   task.targets.forEach((target, idx) => {
     if (target.sourceType !== 'external') {
@@ -1264,14 +1358,24 @@ function generateReportsForTask(task: EvaluationTaskMock): EvaluationTaskReport[
       return
     }
 
-    // 外数：调用外数评估能力（mock），生成 external 报告并回写 binding
+    // 外数：走外数评估能力（mock）真的在报告库落一条，再把 id 回写 binding
     const existingReport = existingByVar.get(target.id)
     if (existingReport) {
       // 任务已存在历史报告
       return
     }
-    const newId = String(nextExternalReportId() + externalCounter)
-    externalCounter += 1
+    const productName = target.name.replace(/^外数-/, '')
+    const created = createEvaluationReport({
+      title: `外数评估报告 - ${target.name}`,
+      type: 'comprehensive',
+      status: 'completed',
+      score: Math.round(80 + (target.id.length % 10)),
+      productName,
+      supplier: target.dataSourceName || '外部数据服务',
+      creator: task.owner,
+      analysisType: '批量回溯分析'
+    })
+    const newId = String(created.id)
     binding[target.id] = newId
     reports.push({
       id: newId,
@@ -1281,7 +1385,7 @@ function generateReportsForTask(task: EvaluationTaskMock): EvaluationTaskReport[
       variableName: target.name,
       sourceType: 'external',
       generatedAt: now,
-      url: `/risk/external-data/evaluation/${newId}`,
+      url: `/risk/variable-hub/external-data/evaluation/${newId}`,
       summary: `外数评估系统输出：${target.name}（命中/IV/KS 由外数系统给出）。`
     })
   })
@@ -1459,6 +1563,8 @@ export const EvaluationTaskStore = {
     path: string
     content: string
     type: PythonScriptConfig['type']
+    /** 适用评估场景（用户可见的脚本类型），不传则保持原值，新建时落默认「通用」 */
+    scenario?: ScriptScenario
     dependencies?: string[]
     description?: string
     tags?: string[]
@@ -1506,6 +1612,7 @@ export const EvaluationTaskStore = {
           name: payload.name,
           path: payload.path,
           type: payload.type,
+          scenario: payload.scenario ?? prev.scenario ?? 'general',
           dependencies: payload.dependencies,
           description: payload.description ?? prev.description,
           tags: payload.tags ?? prev.tags,
@@ -1537,6 +1644,7 @@ export const EvaluationTaskStore = {
       path: payload.path,
       content: payload.content,
       type: payload.type,
+      scenario: payload.scenario ?? 'general',
       dependencies: payload.dependencies,
       description: payload.description,
       tags: payload.tags,
@@ -1733,6 +1841,8 @@ export const EvaluationTaskStore = {
         name: s.name,
         path: s.path,
         type: s.type,
+        // 场景快照：任务侧展示「脚本类型」时不回查脚本库，否则列表会退化成未分类
+        scenario: s.scenario,
         currentVersion: s.currentVersion,
         updatedAt: s.updatedAt,
         updatedBy: s.updatedBy,

@@ -24,8 +24,9 @@
           </a-form-item>
         </a-col>
         <a-col :span="12">
-          <a-form-item field="type" label="脚本类型" :rules="[{ required: true, message: '请选择脚本类型' }]">
-            <a-select v-model="form.type" :options="typeOptions" placeholder="请选择" />
+          <a-form-item field="scenario" label="脚本类型" :rules="[{ required: true, message: '请选择脚本类型' }]">
+            <template #extra><span class="field-hint">{{ scenarioHint }}</span></template>
+            <a-select v-model="form.scenario" :options="scenarioOpts" placeholder="请选择" />
           </a-form-item>
         </a-col>
       </a-row>
@@ -74,13 +75,21 @@
         </a-col>
       </a-row>
 
+      <!-- 能力角色只决定「能不能单独当评估口径」，与上面的脚本类型是两个正交维度，
+           故降到契约区里、换一个名字，免得用户以为它是脚本类型的第二个说法 -->
       <a-row :gutter="16">
-        <a-col :span="12">
+        <a-col :span="8">
+          <a-form-item field="type" label="能力角色">
+            <template #extra><span class="field-hint">{{ roleHint }}</span></template>
+            <a-select v-model="form.type" :options="roleOptions" />
+          </a-form-item>
+        </a-col>
+        <a-col :span="8">
           <a-form-item field="dependencies" label="依赖包">
             <a-input-tag v-model="form.dependencies" placeholder="回车添加，如 pandas" allow-clear unique-value />
           </a-form-item>
         </a-col>
-        <a-col :span="12">
+        <a-col :span="8">
           <a-form-item field="tags" label="标签">
             <a-input-tag v-model="form.tags" placeholder="回车添加，如 数据质量" allow-clear unique-value />
           </a-form-item>
@@ -123,7 +132,11 @@ import { ref, reactive, computed } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import {
   EvaluationTaskStore,
-  type PythonScriptConfig
+  SCRIPT_SCENARIO_META,
+  SCRIPT_TYPE_META,
+  scenarioOptions,
+  type PythonScriptConfig,
+  type ScriptScenario
 } from '@/modules/variable-hub/mock/evaluation/evaluation-task-store'
 import { contractFieldOptions } from '@/modules/variable-hub/mock/task-center/io-contract'
 
@@ -134,12 +147,6 @@ const visible = ref(false)
 const submitting = ref(false)
 const formRef = ref()
 
-const typeOptions = [
-  { label: '数据处理（processor）', value: 'processor' },
-  { label: '图表生成（visualizer）', value: 'visualizer' },
-  { label: '综合（combined）', value: 'combined' }
-]
-
 /** 契约字段候选：只改字典不改本文件 */
 const inputFieldOptions = contractFieldOptions('input')
 const outputFieldOptions = contractFieldOptions('output')
@@ -147,6 +154,9 @@ const outputFieldOptions = contractFieldOptions('output')
 const form = reactive({
   name: '',
   path: '',
+  /** 适用评估场景 = 用户看到的「脚本类型」 */
+  scenario: 'general' as ScriptScenario,
+  /** 能力角色，契约校验用；与 scenario 正交，不拿前者猜后者 */
   type: 'processor' as PythonScriptConfig['type'],
   description: '',
   dependencies: [] as string[],
@@ -160,11 +170,28 @@ const form = reactive({
 const isEdit = computed(() => !!props.script?.id)
 const original = computed(() => props.script)
 
+/** 脚本类型 = 适用评估场景，字典与文案统一取 store，本文件不自行拼 */
+const scenarioOpts = scenarioOptions()
+const scenarioHint = computed(() => SCRIPT_SCENARIO_META[form.scenario]?.desc || '')
+
+/** 能力角色候选：同样只从 store 取文案，括号里留原枚举值方便对照契约报错 */
+const roleOptions = (Object.keys(SCRIPT_TYPE_META) as PythonScriptConfig['type'][]).map((value) => ({
+  value,
+  label: `${SCRIPT_TYPE_META[value].label}（${value}）`
+}))
+const roleHint = computed(() =>
+  form.type === 'visualizer'
+    ? '只能做图表产出，引用它的评估任务必须再配一个口径脚本，否则保存会被契约拦住'
+    : '可单独作为评估口径'
+)
+
 function open() {
   if (props.script) {
     Object.assign(form, {
       name: props.script.name,
       path: props.script.path,
+      // 旧副本没这个字段，落「通用」而不是拿能力角色去猜场景
+      scenario: props.script.scenario || 'general',
       type: props.script.type,
       description: props.script.description || '',
       dependencies: [...(props.script.dependencies || [])],
@@ -178,6 +205,7 @@ function open() {
     Object.assign(form, {
       name: '',
       path: 'python-reports/processors/',
+      scenario: 'general',
       type: 'processor',
       description: '',
       dependencies: ['pandas', 'numpy'],
@@ -213,6 +241,7 @@ const handleSubmit = async () => {
       name: form.name.trim(),
       path: form.path.trim(),
       content: form.content,
+      scenario: form.scenario,
       type: form.type,
       dependencies: form.dependencies,
       description: form.description,

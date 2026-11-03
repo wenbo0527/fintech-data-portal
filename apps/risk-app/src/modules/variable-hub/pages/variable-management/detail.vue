@@ -775,6 +775,7 @@ import { PROFILE_FIELD_SCHEMAS, LIFECYCLE_SUPPLEMENT_GUIDE } from '@/modules/var
 import { VariableDraftStore } from '@/modules/variable-hub/mock/variable-management/variable-draft-store'
 import { variableAssets } from '@/modules/variable-hub/mock/variable-management/variables'
 import { VariableStatusStore } from '@/modules/variable-hub/mock/variable-management/variable-status-store'
+import { EvaluationTaskStore } from '@/modules/variable-hub/mock/evaluation/evaluation-task-store'
 import { ExploreStore } from '@/modules/variable-hub/mock/explore/explore-store'
 import GovernanceActionDrawer from '@/modules/variable-hub/components/GovernanceActionDrawer.vue'
 import ParamGroup from '@/modules/variable-hub/components/ParamGroup.vue'
@@ -1370,27 +1371,74 @@ const handleCopyReportLink = async (record) => {
   }
 }
 
+/**
+ * 外数报告的落地路径：mock 产出上的 url 已带 /risk/ 前缀，直接沿用；
+ * 只有没带前缀的历史条目才回退成按报告 id 拼路径（报告 id 与外数报告编号不是同一套，不能直接拿来拼路由）
+ */
+const externalReportPath = (r) =>
+  (typeof r.url === 'string' && r.url.startsWith('/risk/'))
+    ? r.url
+    : `/risk/variable-hub/external-data/evaluation/${r.id}`
+
 const buildAnalysisReports = () => {
   const v = variableStore.currentVariable
   const list = []
 
-  if (v?.sourceType === 'external' && v?.sourceRefs?.externalEvaluationId) {
-    const id = v.sourceRefs.externalEvaluationId
-    list.push({
-      id: `risk-eval-${id}`,
-      name: '外数评估报告',
-      type: '外数评估',
-      source: 'risk-app',
-      updatedAt: v.updatedAt || '—',
-      url: buildRiskAppUrl(`/risk/external-data/evaluation/${id}`)
+  // 任务域真实产出：评估报告挂在执行实例上，这里按特征 ID 反查历次实例的产出，
+  // 以前只有一条写死的占位条目，台账看不到这个特征实跑出了什么报告
+  EvaluationTaskStore.listRuns()
+    .filter((run) => run.status === 'success' || run.status === 'partial')
+    .forEach((run) => {
+      (run.producedReports || [])
+        .filter((r) => r.variableId && String(r.variableId) === variableId.value)
+        .forEach((r) => {
+          list.push({
+            id: `run-${run.id}-${r.id}`,
+            name: r.name,
+            type: r.kind === 'external' ? '外数评估' : r.kind === 'python' ? 'Python 报告' : '特征评估',
+            source: `任务管理 · ${run.taskName}`,
+            updatedAt: r.generatedAt || run.finishedAt || run.startedAt,
+            ...(r.kind === 'external'
+              ? { url: buildRiskAppUrl(externalReportPath(r)) }
+              : {
+                  preview: {
+                    findings: [
+                      { id: 'f1', item: '本次执行', result: run.taskName, desc: `${run.startedAt} 触发·${run.targetSuccess}/${run.targetTotal} 个对象成功` },
+                      { id: 'f2', item: '覆盖率', result: typeof run.metrics?.coverage === 'number' ? `${(run.metrics.coverage * 100).toFixed(1)}%` : '—', desc: '取自本次执行实例的指标快照' },
+                      { id: 'f3', item: '质量得分', result: run.metrics?.quality ?? '—', desc: r.summary || '—' }
+                    ]
+                  }
+                })
+          })
+        })
     })
+
+  // 有 externalEvaluationId 锚点就直链，不区分外数 / 征信：两类资产的评估报告都落在外数评估中心，
+  // 只按 sourceType === 'external' 判会让征信资产上的锚点变成永远不会被展示的哑引用
+  if (v?.sourceRefs?.externalEvaluationId) {
+    const id = v.sourceRefs.externalEvaluationId
+    // 同一份外数报告可能已经从实例产出里进列表（报告 id 与外数报告编号不同套），按落地 url 去重
+    const alreadyListed = list.some((item) =>
+      String(item.id).endsWith(`-${id}`) || String(item.url || '').endsWith(`/evaluation/${id}`)
+    )
+    if (!alreadyListed) {
+      list.push({
+        id: `risk-eval-${id}`,
+        name: '外数评估报告',
+        type: '外数评估',
+        source: 'risk-app',
+        updatedAt: v.updatedAt || '—',
+        url: buildRiskAppUrl(`/risk/variable-hub/external-data/evaluation/${id}`)
+      })
+    }
   }
 
+  // 台账字段派生的指标摘要，不是报告实体：改名以免与上方真实产出混淆
   list.push({
     id: 'var-eval-001',
-    name: '特征质量评估报告',
-    type: '特征评估',
-    source: 'dmt-app',
+    name: '特征质量指标摘要（台账派生）',
+    type: '指标摘要',
+    source: '特征台账',
     updatedAt: v?.updatedAt || '—',
     preview: {
       findings: [
@@ -1421,13 +1469,13 @@ const hasAnyExternalRef = computed(() => hasExternalArchive.value || hasExternal
 const openRiskExternalArchive = () => {
   const id = externalRefs.value.externalArchiveId
   if (!id) return
-  window.open(buildRiskAppUrl(`/risk/external-data/archive/${id}`), '_blank')
+  window.open(buildRiskAppUrl(`/risk/variable-hub/external-data/archive/${id}`), '_blank')
 }
 
 const openRiskExternalEvaluation = () => {
   const id = externalRefs.value.externalEvaluationId
   if (!id) return
-  window.open(buildRiskAppUrl(`/risk/external-data/evaluation/${id}`), '_blank')
+  window.open(buildRiskAppUrl(`/risk/variable-hub/external-data/evaluation/${id}`), '_blank')
 }
 
 // ============ 评估 Tab：外数评估中心操作回调 ============
@@ -1455,7 +1503,7 @@ const handleLinkExternalEvaluation = () => {
   syncVariableFromStore()
   // 模拟异步跳转外数评估中心
   setTimeout(() => {
-    window.open(buildRiskAppUrl(`/risk/external-data/evaluation/${newId}`), '_blank')
+    window.open(buildRiskAppUrl(`/risk/variable-hub/external-data/evaluation/${newId}`), '_blank')
   }, 100)
   return Promise.resolve(newId)
 }
@@ -1463,7 +1511,7 @@ const handleLinkExternalEvaluation = () => {
 const openRiskExternalLifecycle = () => {
   const id = externalRefs.value.externalLifecycleId
   if (!id) return
-  window.open(buildRiskAppUrl(`/risk/external-data/lifecycle/${id}`), '_blank')
+  window.open(buildRiskAppUrl(`/risk/variable-hub/external-data/lifecycle/${id}`), '_blank')
 }
 
 // 使用统计

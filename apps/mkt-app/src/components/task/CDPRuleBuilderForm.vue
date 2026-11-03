@@ -150,16 +150,16 @@
                       filterable
                       @change="(val) => onFieldChange(groupIndex, condIndex, val)"
                     >
-                      <a-option-group label="🏷️ 标签字段">
+                      <a-optgroup label="🏷️ 标签字段">
                         <a-option v-for="f in tagFields" :key="f.id" :value="f.id">
                           {{ f.name }}
                         </a-option>
-                      </a-option-group>
-                      <a-option-group label="⚡ 事件字段">
+                      </a-optgroup>
+                      <a-optgroup label="⚡ 事件字段">
                         <a-option v-for="e in eventFields" :key="e.id" :value="e.id">
                           {{ e.name }}
                         </a-option>
-                      </a-option-group>
+                      </a-optgroup>
                     </a-select>
                   </div>
 
@@ -283,7 +283,93 @@
                       </a-button>
                     </a-tooltip>
                   </div>
+                <!-- /condition-row 移除原 L286 的 </div>：condition-row 与 event-properties 整体作为 v-for 子节点 -->
+
+                <!-- 事件属性筛选（事件类型才显示） -->
+                <div
+                  v-if="isEventField(condition.fieldId) && getEventProperties(condition.fieldId).length > 0"
+                  class="event-properties"
+                >
+                  <div class="event-properties-header">
+                    <span class="event-properties-label">事件属性</span>
+                    <span class="event-properties-hint">所有属性条件同时满足（AND）</span>
+                    <a-button
+                      v-if="(condition.eventProperties || []).length < getEventProperties(condition.fieldId).length"
+                      type="outline"
+                      size="mini"
+                      @click="addEventProperty(groupIndex, condIndex)"
+                    >
+                      <template #icon><icon-plus /></template>
+                      添加属性
+                    </a-button>
+                  </div>
+                  <div
+                    v-for="(prop, propIdx) in (condition.eventProperties || [])"
+                    :key="prop.id"
+                    class="event-property-row"
+                  >
+                    <a-select
+                      :model-value="prop.propertyId"
+                      :style="{ width: '130px' }"
+                      size="small"
+                      placeholder="选择属性"
+                      @change="(val: any) => onEventPropertyChange(groupIndex, condIndex, propIdx, 'propertyId', val)"
+                    >
+                      <a-option
+                        v-for="p in getEventProperties(condition.fieldId)"
+                        :key="p.id"
+                        :value="p.id"
+                      >
+                        {{ p.name }}
+                      </a-option>
+                    </a-select>
+                    <a-select
+                      :model-value="prop.operator"
+                      :style="{ width: '120px' }"
+                      size="small"
+                      @change="(val: any) => onEventPropertyChange(groupIndex, condIndex, propIdx, 'operator', val)"
+                    >
+                      <a-option value="equals">等于</a-option>
+                      <a-option value="not_equals">不等于</a-option>
+                      <a-option value="contains">包含</a-option>
+                    </a-select>
+                    <a-select
+                      v-if="getEventPropertyField(condition.fieldId, prop.propertyId)?.subType === 'text' && getEventPropertyValues(condition.fieldId, prop.propertyId).length > 0"
+                      :model-value="prop.values"
+                      :style="{ minWidth: '180px', flex: 1 }"
+                      multiple
+                      size="small"
+                      placeholder="选择值"
+                      @change="(val: any) => onEventPropertyChange(groupIndex, condIndex, propIdx, 'values', val)"
+                    >
+                      <a-option
+                        v-for="v in getEventPropertyValues(condition.fieldId, prop.propertyId)"
+                        :key="v.value"
+                        :value="v.value"
+                      >
+                        {{ v.label }}
+                      </a-option>
+                    </a-select>
+                    <a-input-number
+                      v-else-if="getEventPropertyField(condition.fieldId, prop.propertyId)?.subType === 'number'"
+                      :model-value="prop.value"
+                      :style="{ width: '120px' }"
+                      size="small"
+                      placeholder="输入数值"
+                      @change="(val: any) => onEventPropertyChange(groupIndex, condIndex, propIdx, 'value', val)"
+                    />
+                    <a-button
+                      type="text"
+                      status="danger"
+                      size="mini"
+                      @click="removeEventProperty(groupIndex, condIndex, propIdx)"
+                    >
+                      <template #icon><icon-close /></template>
+                    </a-button>
+                  </div>
                 </div>
+                </div>
+                <!-- /v-for(condition) 闭合（原 L286 上移到 L370 后，使 event-properties 块进入 v-for 作用域） -->
 
                 <!-- 添加条件按钮行 -->
                 <div class="add-condition-row">
@@ -429,16 +515,16 @@
                       filterable
                       @change="(val) => onExcludeFieldChange(groupIndex, condIndex, val)"
                     >
-                      <a-option-group label="🏷️ 标签字段">
+                      <a-optgroup label="🏷️ 标签字段">
                         <a-option v-for="f in tagFields" :key="f.id" :value="f.id">
                           {{ f.name }}
                         </a-option>
-                      </a-option-group>
-                      <a-option-group label="⚡ 事件字段">
+                      </a-optgroup>
+                      <a-optgroup label="⚡ 事件字段">
                         <a-option v-for="e in eventFields" :key="e.id" :value="e.id">
                           {{ e.name }}
                         </a-option>
-                      </a-option-group>
+                      </a-optgroup>
                     </a-select>
                   </div>
 
@@ -558,7 +644,92 @@
                       </a-button>
                     </a-tooltip>
                   </div>
+                <!-- /exCondition-row v3.3 修复：保留开标签未闭，将下方 event-properties 段移入此 v-for 块 -->
+
+                <!-- 排除条件的事件属性筛选 -->
+                <div
+                  v-if="isEventField(condition.fieldId) && getEventProperties(condition.fieldId).length > 0"
+                  class="event-properties"
+                >
+                  <div class="event-properties-header">
+                    <span class="event-properties-label">事件属性</span>
+                    <span class="event-properties-hint">所有属性条件同时满足（AND）</span>
+                    <a-button
+                      v-if="(condition.eventProperties || []).length < getEventProperties(condition.fieldId).length"
+                      type="outline"
+                      size="mini"
+                      @click="addExcludeEventProperty(groupIndex, condIndex)"
+                    >
+                      <template #icon><icon-plus /></template>
+                      添加属性
+                    </a-button>
+                  </div>
+                  <div
+                    v-for="(prop, propIdx) in (condition.eventProperties || [])"
+                    :key="prop.id"
+                    class="event-property-row"
+                  >
+                    <a-select
+                      :model-value="prop.propertyId"
+                      :style="{ width: '130px' }"
+                      size="small"
+                      placeholder="选择属性"
+                      @change="(val: any) => onExcludeEventPropertyChange(groupIndex, condIndex, propIdx, 'propertyId', val)"
+                    >
+                      <a-option
+                        v-for="p in getEventProperties(condition.fieldId)"
+                        :key="p.id"
+                        :value="p.id"
+                      >
+                        {{ p.name }}
+                      </a-option>
+                    </a-select>
+                    <a-select
+                      :model-value="prop.operator"
+                      :style="{ width: '120px' }"
+                      size="small"
+                      @change="(val: any) => onExcludeEventPropertyChange(groupIndex, condIndex, propIdx, 'operator', val)"
+                    >
+                      <a-option value="equals">等于</a-option>
+                      <a-option value="not_equals">不等于</a-option>
+                    </a-select>
+                    <a-select
+                      v-if="getEventPropertyField(condition.fieldId, prop.propertyId)?.subType === 'text' && getEventPropertyValues(condition.fieldId, prop.propertyId).length > 0"
+                      :model-value="prop.values"
+                      :style="{ minWidth: '180px', flex: 1 }"
+                      multiple
+                      size="small"
+                      placeholder="选择值"
+                      @change="(val: any) => onExcludeEventPropertyChange(groupIndex, condIndex, propIdx, 'values', val)"
+                    >
+                      <a-option
+                        v-for="v in getEventPropertyValues(condition.fieldId, prop.propertyId)"
+                        :key="v.value"
+                        :value="v.value"
+                      >
+                        {{ v.label }}
+                      </a-option>
+                    </a-select>
+                    <a-input-number
+                      v-else-if="getEventPropertyField(condition.fieldId, prop.propertyId)?.subType === 'number'"
+                      :model-value="prop.value"
+                      :style="{ width: '120px' }"
+                      size="small"
+                      placeholder="输入数值"
+                      @change="(val: any) => onExcludeEventPropertyChange(groupIndex, condIndex, propIdx, 'value', val)"
+                    />
+                    <a-button
+                      type="text"
+                      status="danger"
+                      size="mini"
+                      @click="removeExcludeEventProperty(groupIndex, condIndex, propIdx)"
+                    >
+                      <template #icon><icon-close /></template>
+                    </a-button>
+                  </div>
                 </div>
+                </div>
+                <!-- /v-for(exCondition) 闭合（原 L647 上移到 L730 后） -->
 
                 <div class="add-condition-row">
                   <a-dropdown trigger="click">
@@ -595,7 +766,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, computed, watch } from 'vue'
+import { reactive, computed } from 'vue'
 import {
   IconFilter,
   IconUser,
@@ -610,6 +781,7 @@ import {
   IconPlus,
   IconDown,
 } from '@arco-design/web-vue/es/icon'
+import { Message } from '@arco-design/web-vue'
 
 // ============ 字段数据 ============
 const tagFields = [
@@ -621,14 +793,128 @@ const tagFields = [
 ]
 
 const eventFields = [
-  { id: 'e1', name: '加购', subType: 'event' },
-  { id: 'e2', name: '下单', subType: 'event' },
-  { id: 'e3', name: '支付', subType: 'event' },
-  { id: 'e4', name: '退款', subType: 'event' },
-  { id: 'e5', name: '登录', subType: 'event' },
+  {
+    id: 'e1',
+    name: '加购',
+    subType: 'event',
+    properties: [
+      { id: 'e1p1', name: '产品类目', subType: 'text', values: [
+        { label: '美妆个护', value: 'beauty' },
+        { label: '服饰鞋帽', value: 'apparel' },
+        { label: '数码家电', value: 'digital' },
+        { label: '食品生鲜', value: 'grocery' },
+        { label: '母婴玩具', value: 'baby' },
+        { label: '运动户外', value: 'sports' }
+      ]},
+      { id: 'e1p2', name: '产品名称', subType: 'text', values: [
+        { label: 'YSL 圣罗兰小金条', value: 'ysl-gold' },
+        { label: '雅诗兰黛小棕瓶', value: 'estee-brown' },
+        { label: '兰蔻菁纯眼霜', value: 'lancome-eye' },
+        { label: 'SK-II 神仙水', value: 'sk2-water' },
+        { label: '海蓝之谜面霜', value: 'lamer-cream' }
+      ]},
+      { id: 'e1p3', name: '加购数量', subType: 'number' },
+      { id: 'e1p4', name: '加购金额', subType: 'number' },
+      { id: 'e1p5', name: '加购渠道', subType: 'text', values: [
+        { label: '商品详情页', value: 'pdp' },
+        { label: '购物车', value: 'cart' },
+        { label: '搜索结果', value: 'search' },
+        { label: '首页推荐', value: 'home-rec' }
+      ]}
+    ]
+  },
+  {
+    id: 'e2',
+    name: '下单',
+    subType: 'event',
+    properties: [
+      { id: 'e2p1', name: '产品类目', subType: 'text', values: [
+        { label: '美妆个护', value: 'beauty' },
+        { label: '服饰鞋帽', value: 'apparel' },
+        { label: '数码家电', value: 'digital' }
+      ]},
+      { id: 'e2p2', name: '订单金额', subType: 'number' },
+      { id: 'e2p3', name: '订单商品数', subType: 'number' },
+      { id: 'e2p4', name: '使用优惠券', subType: 'text', values: [
+        { label: '是', value: 'yes' },
+        { label: '否', value: 'no' }
+      ]},
+      { id: 'e2p5', name: '支付方式', subType: 'text', values: [
+        { label: '微信支付', value: 'wechat' },
+        { label: '支付宝', value: 'alipay' },
+        { label: '银联', value: 'unionpay' },
+        { label: '货到付款', value: 'cod' }
+      ]}
+    ]
+  },
+  {
+    id: 'e3',
+    name: '支付',
+    subType: 'event',
+    properties: [
+      { id: 'e3p1', name: '产品类目', subType: 'text', values: [
+        { label: '美妆个护', value: 'beauty' },
+        { label: '服饰鞋帽', value: 'apparel' }
+      ]},
+      { id: 'e3p2', name: '支付金额', subType: 'number' },
+      { id: 'e3p3', name: '支付方式', subType: 'text', values: [
+        { label: '微信支付', value: 'wechat' },
+        { label: '支付宝', value: 'alipay' }
+      ]},
+      { id: 'e3p4', name: '使用积分', subType: 'text', values: [
+        { label: '是', value: 'yes' },
+        { label: '否', value: 'no' }
+      ]}
+    ]
+  },
+  {
+    id: 'e4',
+    name: '退款',
+    subType: 'event',
+    properties: [
+      { id: 'e4p1', name: '产品类目', subType: 'text', values: [
+        { label: '美妆个护', value: 'beauty' },
+        { label: '服饰鞋帽', value: 'apparel' },
+        { label: '数码家电', value: 'digital' }
+      ]},
+      { id: 'e4p2', name: '退款原因', subType: 'text', values: [
+        { label: '不想要了', value: 'no-want' },
+        { label: '质量问题', value: 'quality' },
+        { label: '与描述不符', value: 'mismatch' },
+        { label: '物流问题', value: 'logistics' }
+      ]},
+      { id: 'e4p3', name: '退款金额', subType: 'number' }
+    ]
+  },
+  {
+    id: 'e5',
+    name: '登录',
+    subType: 'event',
+    properties: [
+      { id: 'e5p1', name: '登录设备', subType: 'text', values: [
+        { label: 'iOS', value: 'ios' },
+        { label: 'Android', value: 'android' },
+        { label: 'H5', value: 'h5' },
+        { label: '小程序', value: 'mini' }
+      ]},
+      { id: 'e5p2', name: '登录方式', subType: 'text', values: [
+        { label: '手机号', value: 'phone' },
+        { label: '微信', value: 'wechat' },
+        { label: 'Apple ID', value: 'apple' }
+      ]}
+    ]
+  }
 ]
 
 // ============ 类型定义 ============
+interface EventProperty {
+  id: string
+  propertyId: string | null
+  operator: string
+  values: any[]
+  value: any
+}
+
 interface Condition {
   id: string
   fieldId: string | null
@@ -642,6 +928,8 @@ interface Condition {
   timeWindowMode: 'recent' | 'custom' | null  // 'recent' = 最近 N 天/小时/分钟；'custom' = 自定义区间
   recentValue: number | null                    // 最近 N 数量
   recentUnit: 'minute' | 'hour' | 'day' | null  // 最近单位
+  // 事件属性（事件类型条件的二级筛选维度）
+  eventProperties?: EventProperty[]
 }
 
 interface Group {
@@ -695,9 +983,9 @@ const examples = [
       ruleData.ruleGroups[0].name = '高价值活跃用户'
       ruleData.ruleGroups[0].groupOperator = 'AND'
       ruleData.ruleGroups[0].conditions = [
-        { id: genId(), fieldId: 'f1', operator: 'contains', values: ['beijing', 'shanghai'], value: null, timeWindowType: null, timeWindowCustom: null, timeWindowMode: null, recentValue: null, recentUnit: null },
-        { id: genId(), fieldId: 'f4', operator: '>=', values: [], value: 3, timeWindowType: null, timeWindowCustom: null, timeWindowMode: null, recentValue: null, recentUnit: null },
-        { id: genId(), fieldId: 'e1', operator: 'happened', values: [], value: null, timeWindowType: null, timeWindowCustom: null, timeWindowMode: 'recent', recentValue: 30, recentUnit: 'day' },
+        { id: genId(), fieldId: 'f1', operator: 'contains', values: ['beijing', 'shanghai'], value: null, timeWindowType: null, timeWindowCustom: null, timeWindowMode: null, recentValue: null, recentUnit: null, eventProperties: [] },
+        { id: genId(), fieldId: 'f4', operator: '>=', values: [], value: 3, timeWindowType: null, timeWindowCustom: null, timeWindowMode: null, recentValue: null, recentUnit: null, eventProperties: [] },
+        { id: genId(), fieldId: 'e1', operator: 'happened', values: [], value: null, timeWindowType: null, timeWindowCustom: null, timeWindowMode: 'recent', recentValue: 30, recentUnit: 'day', eventProperties: [] },
       ]
     },
   },
@@ -709,8 +997,8 @@ const examples = [
       ruleData.ruleGroups[0].name = '流失挽回候选'
       ruleData.ruleGroups[0].groupOperator = 'AND'
       ruleData.ruleGroups[0].conditions = [
-        { id: genId(), fieldId: 'e5', operator: 'not_happened', values: [], value: null, timeWindowType: null, timeWindowCustom: null, timeWindowMode: 'recent', recentValue: 7, recentUnit: 'day' },
-        { id: genId(), fieldId: 'e1', operator: 'happened', values: [], value: null, timeWindowType: null, timeWindowCustom: null, timeWindowMode: 'recent', recentValue: 30, recentUnit: 'day' },
+        { id: genId(), fieldId: 'e5', operator: 'not_happened', values: [], value: null, timeWindowType: null, timeWindowCustom: null, timeWindowMode: 'recent', recentValue: 7, recentUnit: 'day', eventProperties: [] },
+        { id: genId(), fieldId: 'e1', operator: 'happened', values: [], value: null, timeWindowType: null, timeWindowCustom: null, timeWindowMode: 'recent', recentValue: 30, recentUnit: 'day', eventProperties: [] },
       ]
     },
   },
@@ -722,8 +1010,8 @@ const examples = [
       ruleData.ruleGroups[0].name = '女性年轻用户'
       ruleData.ruleGroups[0].groupOperator = 'AND'
       ruleData.ruleGroups[0].conditions = [
-        { id: genId(), fieldId: 'f2', operator: 'equals', values: ['female'], value: null, timeWindowType: null, timeWindowCustom: null, timeWindowMode: null, recentValue: null, recentUnit: null },
-        { id: genId(), fieldId: 'f3', operator: '>=', values: [], value: 18, timeWindowType: null, timeWindowCustom: null, timeWindowMode: null, recentValue: null, recentUnit: null },
+        { id: genId(), fieldId: 'f2', operator: 'equals', values: ['female'], value: null, timeWindowType: null, timeWindowCustom: null, timeWindowMode: null, recentValue: null, recentUnit: null, eventProperties: [] },
+        { id: genId(), fieldId: 'f3', operator: '>=', values: [], value: 18, timeWindowType: null, timeWindowCustom: null, timeWindowMode: null, recentValue: null, recentUnit: null, eventProperties: [] },
       ]
     },
   },
@@ -746,6 +1034,7 @@ const initCondition = (fieldId: string | null = null, operator: string | null = 
   timeWindowMode: 'recent',
   recentValue: 30,
   recentUnit: 'day',
+  eventProperties: [],
 })
 
 // ============ 复制条件组 ============
@@ -766,6 +1055,7 @@ const duplicateGroup = (groupIndex: number) => {
       timeWindowMode: c.timeWindowMode,
       recentValue: c.recentValue,
       recentUnit: c.recentUnit,
+      eventProperties: (c.eventProperties || []).map((p: any) => ({ ...p })),
     })),
   }
   ruleData.ruleGroups.splice(groupIndex + 1, 0, newGroup)
@@ -788,6 +1078,7 @@ const duplicateExcludeGroup = (groupIndex: number) => {
       timeWindowMode: c.timeWindowMode,
       recentValue: c.recentValue,
       recentUnit: c.recentUnit,
+      eventProperties: (c.eventProperties || []).map((p: any) => ({ ...p })),
     })),
   }
   ruleData.excludeGroups.splice(groupIndex + 1, 0, newGroup)
@@ -795,7 +1086,8 @@ const duplicateExcludeGroup = (groupIndex: number) => {
 
 // ============ 字段变化时重置 ============
 const onFieldChange = (groupIndex: number, condIndex: number, fieldId: string) => {
-  const condition = ruleData.ruleGroups[groupIndex].conditions[condIndex]
+  const condition = ruleData.ruleGroups[groupIndex]?.conditions?.[condIndex]
+  if (!condition) return
   condition.values = []
   condition.value = null
   condition.operator = null
@@ -831,7 +1123,7 @@ const onTimeWindowModeChange = (condition: any, mode: string) => {
 
 // ============ 条件类型：tag / event ============
 const getConditionType = (condition: any) => {
-  if (!condition.fieldId) return 'tag'
+  if (!condition || !condition.fieldId) return 'tag'
   if (isEventField(condition.fieldId)) return 'event'
   return 'tag'
 }
@@ -986,8 +1278,10 @@ const getEventOperators = () => [
 ]
 
 const getOperatorsForCondition = (groupIndex: number, condIndex: number) => {
-  const condition = ruleData.ruleGroups[groupIndex].conditions[condIndex]
-  if (!condition.fieldId) return []
+  const condition = ruleData.ruleGroups[groupIndex]?.conditions?.[condIndex]
+  if (!condition || !condition.fieldId) {
+    return []
+  }
   const field = tagFields.find(f => f.id === condition.fieldId) || eventFields.find(e => e.id === condition.fieldId)
   if (!field) return []
   if (field.subType === 'event') return getEventOperators()
@@ -1010,16 +1304,121 @@ const isTextField = (fieldId: string) => {
   return field?.subType === 'text'
 }
 
-const isEventField = (fieldId: string) => {
+const isEventField = (fieldId: any) => {
   if (!fieldId) return false
-  const field = eventFields.find(e => e.id === fieldId)
-  return !!field
+  if (!Array.isArray(eventFields) || eventFields.length === 0) return false
+  return eventFields.some(e => e && e.id === fieldId)
 }
 
 const getFieldValues = (fieldId: string) => {
   if (!fieldId) return []
   const field = tagFields.find(f => f.id === fieldId)
   return field?.values || []
+}
+
+// 事件字段属性（事件下的二级筛选维度：产品类目/价格/数量/渠道等）
+const getEventProperties = (fieldId: string) => {
+  if (!fieldId) return []
+  const field = eventFields.find(e => e.id === fieldId)
+  return field?.properties || []
+}
+
+// 事件属性的可选值
+const getEventPropertyValues = (fieldId: string, propertyId: string) => {
+  if (!fieldId || !propertyId) return []
+  const props = getEventProperties(fieldId)
+  return props.find((p: any) => p.id === propertyId)?.values || []
+}
+
+// 事件属性的字段元信息（用于判断 subType）
+const getEventPropertyField = (fieldId: string, propertyId: string) => {
+  if (!fieldId || !propertyId) return null
+  const props = getEventProperties(fieldId)
+  return props.find((p: any) => p.id === propertyId) || null
+}
+
+// 事件属性条件 CRUD
+const addEventProperty = (groupIndex: number, condIndex: number) => {
+  const cond: any = ruleData.ruleGroups[groupIndex]?.conditions[condIndex]
+  if (!cond) return
+  cond.eventProperties = cond.eventProperties || []
+  const used = new Set(cond.eventProperties.map((p: any) => p.propertyId))
+  const props = getEventProperties(cond.fieldId)
+  const next = props.find((p: any) => !used.has(p.id))
+  if (!next) return
+  const newProp: any = {
+    id: `ep_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    propertyId: next.id,
+    operator: 'equals',
+    values: [],
+    value: null
+  }
+  cond.eventProperties.push(newProp)
+}
+
+const removeEventProperty = (groupIndex: number, condIndex: number, propIdx: number) => {
+  const cond: any = ruleData.ruleGroups[groupIndex]?.conditions[condIndex]
+  if (!cond?.eventProperties) return
+  cond.eventProperties.splice(propIdx, 1)
+}
+
+const onEventPropertyChange = (groupIndex: number, condIndex: number, propIdx: number, key: string, val: any) => {
+  const cond: any = ruleData.ruleGroups[groupIndex]?.conditions[condIndex]
+  if (!cond?.eventProperties?.[propIdx]) return
+  const prop = cond.eventProperties[propIdx]
+  prop[key] = val
+  // 切换属性时重置 value/values
+  if (key === 'propertyId') {
+    const field = getEventPropertyField(cond.fieldId, val)
+    if (field?.subType === 'number') {
+      prop.value = null
+      prop.values = []
+    } else {
+      prop.values = []
+      prop.value = null
+    }
+  }
+}
+
+// 排除条件的事件属性 CRUD
+const addExcludeEventProperty = (groupIndex: number, condIndex: number) => {
+  const cond: any = ruleData.excludeGroups[groupIndex]?.conditions[condIndex]
+  if (!cond) return
+  cond.eventProperties = cond.eventProperties || []
+  const used = new Set(cond.eventProperties.map((p: any) => p.propertyId))
+  const props = getEventProperties(cond.fieldId)
+  const next = props.find((p: any) => !used.has(p.id))
+  if (!next) return
+  cond.eventProperties.push({
+    id: `ep_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    propertyId: next.id,
+    operator: 'equals',
+    values: [],
+    value: null
+  })
+}
+
+const removeExcludeEventProperty = (groupIndex: number, condIndex: number, propIdx: number) => {
+  const cond: any = ruleData.excludeGroups[groupIndex]?.conditions[condIndex]
+  if (!cond?.eventProperties) return
+  cond.eventProperties.splice(propIdx, 1)
+}
+
+const onExcludeEventPropertyChange = (groupIndex: number, condIndex: number, propIdx: number, key: string, val: any) => {
+  const cond: any = ruleData.excludeGroups[groupIndex]?.conditions[condIndex]
+  if (!cond?.eventProperties?.[propIdx]) return
+  const prop = cond.eventProperties[propIdx]
+  prop[key] = val
+  if (key === 'propertyId') {
+    const field = getEventPropertyField(cond.fieldId, val)
+    if (field?.subType === 'number') {
+      prop.value = null
+      prop.values = []
+    } else {
+      prop.values = []
+      prop.value = null
+    }
+  }
 }
 
 // ============ 预估人数 ============
@@ -1106,23 +1505,42 @@ const logicSummary = computed(() => {
 })
 
 // ============ Props & Emits ============
+// 架构修复（v3.3 上线失败复盘）
+// - 此组件是数据 source-of-truth：内部 reactive(ruleData) 全权维护。
+// - 不再用 v-model + deep watch 同步（那是一条回环路径：arco 内部 watch -> v-model 回写 -> 我们 watch -> emit -> 父级 reactive 替换 -> 子组件 re-render）。
+// - 改为：完全不自驱同步。所有写动作完成后调用同步函数 syncToParent()（在内部封装）。
+// - 父组件可在 preCalculate / saveAudience 时通过 ref 拿当前 ruleData；不强制实时同步。
 const props = defineProps<{
   modelValue?: any
 }>()
 
 const emit = defineEmits(['update:modelValue'])
 
-// 同步到父组件
-watch(
-  ruleData,
-  (val) => {
-    emit('update:modelValue', JSON.parse(JSON.stringify(val)))
-  },
-  { deep: true }
-)
+// 暴露给父级：获得内部快照（用于保存接口）
+defineExpose({
+  getRuleData: () => JSON.parse(JSON.stringify(ruleData))
+})
 
-// 引入 Message 用于示例填充反馈
-import { Message } from '@arco-design/web-vue'
+// 节流：把同一帧内的多次写合并为单次 emit
+let _syncing = false
+let _pendingSync: number | null = null
+function syncToParent() {
+  if (_syncing) {
+    _pendingSync = (_pendingSync ?? 0) + 1
+    return
+  }
+  _syncing = true
+  emit('update:modelValue', JSON.parse(JSON.stringify(ruleData)))
+  // 在下一 microtask 释放，允许新一次 emit 排队
+  queueMicrotask(() => {
+    _syncing = false
+    if (_pendingSync && _pendingSync > 0) {
+      _pendingSync = null
+      syncToParent()
+    }
+  })
+}
+
 </script>
 
 <style scoped>
@@ -1769,6 +2187,41 @@ import { Message } from '@arco-design/web-vue'
   color: #646a73;
   font-size: 12px;
   padding: 0 4px;
+}
+
+/* 事件属性筛选（加购产品、加购数量等二级条件） */
+.event-properties {
+  margin: 6px 0 6px 28px;
+  padding: 8px 10px;
+  background: #f7f8fa;
+  border-radius: 6px;
+  border-left: 3px solid #165dff;
+}
+
+.event-properties-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.event-properties-label {
+  color: #1d2129;
+  font-weight: 600;
+}
+
+.event-properties-hint {
+  color: #86909c;
+  font-size: 11px;
+  flex: 1;
+}
+
+.event-property-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
 }
 
 /* 删除按钮 */

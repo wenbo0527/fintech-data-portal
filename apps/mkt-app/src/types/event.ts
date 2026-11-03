@@ -27,15 +27,21 @@ export interface VirtualEventData {
   createTime: string;
   description: string;
   realEventId: string | null;
+  // 是否组合事件（OR/AND of multiple events）
+  combineType?: 'OR' | 'AND';
+  combineEvents?: Array<{ id: string; name: string }>;
   version: number;
   versions: VirtualEventVersion[];
   expireAt?: string;
   archived?: boolean;
   outputFields?: OutputField[];
   permissions?: string[];
-  // 虚拟事件组合字段(P1#2 虚拟事件组合创建 - 2026-08-02)
-  combineType?: 'OR' | 'AND';
-  combineEvents?: string[];
+  // rebase 解冲突（auto-merge 语义重复）：此处 main 侧的
+  // combineType/combineEvents(string[]) 与上方分支侧同名成员重复，已删除 main 侧这一组。
+  // 依据：mock/event.ts 的 createCombineVirtualEvent 实际产出为 combineEvents: params.events
+  // （Array<{id,name}>），main 的 string[] 与 main 自身 mock 实现矛盾（既存类型缺陷）；
+  // 该字段无页面消费点（virtual-event-combine.vue 的 form.combineEvents 是页面本地表单，
+  // 为事件 id 数组，与 VirtualEventData.combineEvents 无关），故改为与 runtime 真值一致。
 }
 
 export interface OutputField {
@@ -228,6 +234,11 @@ export interface MessageDetail {
   content: Record<string, any>; // 消息内容
   properties?: MessageProperty[]; // 消息属性（可选）
   format: 'json' | 'xml' | 'text' | 'binary'; // 消息格式
+  // 该消息触发的虚拟事件（VIRT***）。真实事件来源的消息也可能由虚拟事件触发
+  triggeredVirtualEvent?: {
+    id: string;     // VIRT***
+    name: string;   // 触发事件名称（用于表格显示）
+  } | null;
 }
 
 // 消息属性

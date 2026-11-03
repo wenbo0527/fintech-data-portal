@@ -1,9 +1,9 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import ArcoVue from '@arco-design/web-vue'
+import ArcoVue, { Message } from '@arco-design/web-vue'
 import ArcoVueIcon from '@arco-design/web-vue/es/icon'
 import '@arco-design/web-vue/es/index.css'
-import '../../../src/styles/subapp-tokens.css'
+import './styles/subapp-tokens.css'
 import Root from './Root.vue'
 import router from './router'
 

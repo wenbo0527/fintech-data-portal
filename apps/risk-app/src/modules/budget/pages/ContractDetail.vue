@@ -90,7 +90,9 @@
                     <a-form-item field="supplier" label="签约主体（两轴派生）">
                       <!-- 两轴派生不出时回显存量主体：存量合同里有「同盾科技」这类不在十二家名单的老写法，
                            抹成空框会让用户以为主体丢了 -->
-                      <a-input :model-value="derivedSubject" disabled :placeholder="form.cooperationOrg ? '两轴推不出已登记主体' : '先选合作机构'" />
+                      <!-- D2：派生成功时 placeholder 置空，避免框内同时挂着“推不出”的告警字样；
+                           下方 a-alert 仍按 axisDerivedSubject 为空时渲染（存量主体回显场景保留告警）。 -->
+                      <a-input :model-value="derivedSubject" disabled :placeholder="derivedSubject ? '' : (form.cooperationOrg ? '两轴推不出已登记主体' : '先选合作机构')" />
                     </a-form-item>
                   </a-col>
                 </a-row>

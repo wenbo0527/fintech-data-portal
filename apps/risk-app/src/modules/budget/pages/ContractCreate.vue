@@ -74,7 +74,9 @@
                   <a-col :span="8">
                     <a-form-item field="supplier" label="签约主体（两轴派生）">
                       <!-- 只读：主体不再手选，避免“合同上的机构”与“档案的两轴”又各自漂 -->
-                      <a-input :model-value="derivedSubject" disabled :placeholder="form.cooperationOrg ? '两轴推不出已登记主体' : '先选合作机构'" />
+                      <!-- D2：派生成功时 placeholder 必须置空（否则框内同时挂着“推不出”的告警字样）；
+                           告警本身由下方 a-alert 按 derivedSubject 为空时才渲染。 -->
+                      <a-input :model-value="derivedSubject" disabled :placeholder="derivedSubject ? '' : (form.cooperationOrg ? '两轴推不出已登记主体' : '先选合作机构')" />
                     </a-form-item>
                   </a-col>
                 </a-row>

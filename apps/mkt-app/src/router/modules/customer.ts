@@ -54,12 +54,9 @@ export const customerRoutes: RouteRecordRaw[] = [
     meta: { title: '虚拟事件' }
   },
   // P1#2 虚拟事件组合创建 - 2026-08-02 (补 commit 7cb2cadb 漏注册的路由)
-  {
-    path: 'customer/virtual-event-combine',
-    name: 'VirtualEventCombine',
-    component: () => import('@/pages/customer/event-center/virtual-event-combine.vue'),
-    meta: { title: '虚拟事件组合' }
-  },
+  // rebase 解冲突（auto-merge 语义重复）：main 与分支各自新增了同一条
+  // customer/virtual-event-combine 路由，auto-merge 后两条并存（route name
+  // VirtualEventCombine 重复）。已删去分支侧的重复条目，保留 main 侧（含溯源注释）。
   {
     path: 'customer/virtual-event-combine',
     name: 'VirtualEventCombine',

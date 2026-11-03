@@ -373,6 +373,7 @@ import {
   getOperationTypesByStorage 
 } from '../mock/storageClusters'
 import type { StorageCluster, Database, OperationType } from '../mock/storageClusters'
+import { hashUnit } from '../mock/stableHash'
 
 const emit = defineEmits(['success'])
 
@@ -643,7 +644,9 @@ const handleSubmit = () => {
     
     if (form.serviceType === '在线批量调用' && tableForm.columns.some(c => c.name === 'mobile')) {
       validationResult.hasDataRules = true
-      validationResult.dataCheck = Math.random() > 0.2
+      // 结论按「样本表 + SQL 逻辑」稳定散列派生，不再用 Math.random：
+      // 同一份配置反复提交不会换结论，改了表名或 SQL 才会重新判定
+      validationResult.dataCheck = hashUnit(`${tableForm.database}.${tableForm.tableName}|${sqlForm.content}`) > 0.2
     } else {
       validationResult.hasDataRules = false
       validationResult.dataCheck = true

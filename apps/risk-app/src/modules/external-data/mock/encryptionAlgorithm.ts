@@ -1,8 +1,10 @@
 /**
  * 样本加密算法 Mock 模块
  * 依据：《外部数据回溯标准化落库流程》B1 样本校验 R02「主流加密方式为 sm3 和 sha256，不再使用 md5」
- * 说明：项目仅用于前端展示，无后端服务，加密校验结果均为模拟数据。
+ * 说明：项目仅用于前端展示，无后端服务，加密校验结果均为模拟数据，
+ *      模拟值统一由 mock/stableHash.ts 的稳定散列派生（同一输入永远同一结果）。
  */
+import { hashUnit } from './stableHash'
 
 /** 加密算法标识 */
 export type EncryptionAlgorithm = 'SM3' | 'SHA256' | 'MD5'
@@ -121,20 +123,6 @@ export function mockDigest(fieldName: string, algorithm: EncryptionAlgorithm, ro
 }
 
 /**
- * 字符串哈希（FNV-1a），用于生成稳定的确定性随机值
- * 保证同一字段 + 同一算法多次校验结果一致，避免区块与弹窗结论矛盾
- * @param text 待哈希字符串
- */
-function hashString(text: string): number {
-  let h = 2166136261
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
-  return (h >>> 0) / 4294967295
-}
-
-/**
  * 执行样本加密校验
  * 按各字段配置的加密算法校验密文长度，输出逐字段结果与通过率
  * 结果由「字段名 + 算法」确定性推导，重复执行结论稳定
@@ -147,7 +135,7 @@ export function runEncryptionCheck(configs: FieldEncryptionConfig[], rowTotal = 
     const opt = getEncryptionAlgorithm(cfg.algorithm)
     // 模拟按比例的异常率：MD5 与非推荐算法略高
     const failRatio = cfg.algorithm === 'MD5' ? 0.04 : 0.01
-    const lengthMatched = hashString(`${cfg.fieldName}|${cfg.algorithm}|${rowTotal}`) >= failRatio
+    const lengthMatched = hashUnit(`${cfg.fieldName}|${cfg.algorithm}|${rowTotal}`) >= failRatio
     return {
       fieldName: cfg.fieldName,
       encrypted: true,

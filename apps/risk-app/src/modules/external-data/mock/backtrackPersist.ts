@@ -145,7 +145,6 @@ export interface PersistRecord {
     agencyId: string
     agencyCode: string
     agencyName: string
-    agencyType: string
     licenseNo: string
   }
   /** 文件信息 */
@@ -172,6 +171,11 @@ export interface PersistRecord {
     product: string
     /** 接口号 */
     interfaceId: string
+    /**
+     * 关联的档案产品编码（与档案主键同口径）
+     * 空串 = 该产品尚未建档，本批次没有可继承的产品级默认映射，也没回写档案
+     */
+    productCode?: string
     /** 映射规则版本（R43） */
     mappingVersion: string
     /** 标准字段数 */
@@ -180,6 +184,8 @@ export interface PersistRecord {
     nonStdFieldCount: number
     /** 非标字段列表 */
     nonStdFields: string[]
+    /** 本次批次从档案默认映射继承下来的行数 */
+    inheritedFieldCount?: number
   }
   /** 存储信息 */
   storageInfo: {
@@ -296,8 +302,6 @@ export interface TaskResumeContext {
   agencyCode: string
   /** 机构名称 */
   agencyName: string
-  /** 机构类型（个人征信 / 企业征信） */
-  agencyType: string
   /** 文件名 */
   fileName: string
   /** 文件指纹（文件名 + 文件大小） */
@@ -330,7 +334,7 @@ export interface AsyncTask {
   taskType: AsyncTaskType
   /** 关联 backid */
   backid: string
-  /** 征信机构 */
+  /** 合作机构 */
   agencyName: string
   /** 文件名 */
   fileName: string
@@ -372,9 +376,10 @@ export const persistRecordsMock: PersistRecord[] = [
   {
     backid: 'BACK20260924017',
     baseInfo: { operator: '王琳（风控数据组）', operateTime: '2026-09-24 10:32:05', status: 'Hive已落库' },
-    agencyInfo: { agencyId: 'AG-001', agencyCode: 'BH', agencyName: '百行征信有限公司', agencyType: '个人征信', licenseNo: 'JC证-JXKP-2023-0001' },
+    agencyInfo: { agencyId: 'AG-001', agencyCode: 'BH', agencyName: '百行征信有限公司', licenseNo: 'JC证-JXKP-2023-0001' },
     fileInfo: { fileName: 'BH_RETRO_20260922_01.csv', acquireMode: 'SFTP拉取', fileSize: 64159744, fileRows: 96210, encoding: 'UTF-8', delimiter: '逗号', encrypted: false, outboundTaskIds: ['OUT20260905'] },
-    mappingInfo: { product: '百行-多头借贷汇总 V4', interfaceId: 'BH1023', mappingVersion: 'v1.3', stdFieldCount: 8, nonStdFieldCount: 2, nonStdFields: ['ext_score_v2', 'ext_tag_list'] },
+    // 百行「多头借贷汇总」未建档（档案 21 条里没有该产品），因此没有可继承的产品级默认映射
+    mappingInfo: { product: '百行-多头借贷汇总 V4', interfaceId: 'BH1023', productCode: '', mappingVersion: 'v1.3', stdFieldCount: 8, nonStdFieldCount: 2, nonStdFields: ['ext_score_v2', 'ext_tag_list'], inheritedFieldCount: 0 },
     storageInfo: { tempTable: 'tmp_ext_retro_raw', hiveTable: 'dw_ods.ods_ext_bh_retro_std', partitionField: 'datax', partitionValue: '2026-09-22', loadedRows: 96210, writeStrategy: '主键（身份证号+review_date）直接覆盖', tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理', uploadFileCleanup: '落库完成后 24 小时清理' },
     billing: { billingSubject: '风控策略组', billingType: '按条数', billingRows: 96210, billingFieldCount: 10, unitPrice: 0.35, estimatedAmount: 33673.5, billingStatus: '未计费' },
   },
@@ -382,9 +387,10 @@ export const persistRecordsMock: PersistRecord[] = [
     // 朴道批次：推进 Hive 任务失败、一致性校验失败，仅落临时库成功，故状态为「临时库已落库」
     backid: 'BACK20260930003',
     baseInfo: { operator: '陈昊（模型算法组）', operateTime: '2026-09-30 09:15:42', status: '临时库已落库' },
-    agencyInfo: { agencyId: 'AG-002', agencyCode: 'PD', agencyName: '朴道征信有限公司', agencyType: '个人征信', licenseNo: 'JC证-JXKP-2022-0037' },
+    agencyInfo: { agencyId: 'AG-002', agencyCode: 'PD', agencyName: '朴道征信有限公司', licenseNo: 'JC证-JXKP-2022-0037' },
     fileInfo: { fileName: 'PD_BACK_0929_2.csv', acquireMode: 'SFTP拉取', fileSize: 47915008, fileRows: 45320, encoding: 'UTF-8', delimiter: '逗号', encrypted: false, outboundTaskIds: ['OUT20260912'] },
-    mappingInfo: { product: '朴道-历史逾期明细', interfaceId: 'PD2048', mappingVersion: 'v1.1', stdFieldCount: 6, nonStdFieldCount: 1, nonStdFields: ['ext_ovd_level'] },
+    // 朴道「历史逾期明细」同样未建档，本批次字段结论全部来自自动碰撞与人工选择
+    mappingInfo: { product: '朴道-历史逾期明细', interfaceId: 'PD2048', productCode: '', mappingVersion: 'v1.1', stdFieldCount: 6, nonStdFieldCount: 1, nonStdFields: ['ext_ovd_level'], inheritedFieldCount: 0 },
     storageInfo: { tempTable: 'tmp_ext_retro_raw', hiveTable: 'dw_ods.ods_ext_pd_retro_std', partitionField: 'datax', partitionValue: '2026-09-29', loadedRows: 45320, writeStrategy: '主键（身份证号+review_date）直接覆盖', tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理', uploadFileCleanup: '落库完成后 24 小时清理' },
     billing: { billingSubject: '贷中管理团队', billingType: '按条数', billingRows: 45320, billingFieldCount: 7, unitPrice: 0.4, estimatedAmount: 18128, billingStatus: '未计费' },
   },
@@ -392,9 +398,11 @@ export const persistRecordsMock: PersistRecord[] = [
     // 上海数据集团批次：行数验证任务执行中，说明已完成落 Hive，故存在落库记录
     backid: 'BACK20261021002',
     baseInfo: { operator: '赵磊（模型算法组）', operateTime: '2026-10-21 08:55:12', status: 'Hive已落库' },
-    agencyInfo: { agencyId: 'AG-005', agencyCode: 'SHGJ', agencyName: '上海数据集团金融科技有限公司', agencyType: '企业征信', licenseNo: '沪ICP备备案-2020-1145' },
+    agencyInfo: { agencyId: 'AG-005', agencyCode: 'SHGJ', agencyName: '上海数据集团金融科技有限公司', licenseNo: '沪ICP备备案-2020-1145' },
     fileInfo: { fileName: 'SHGJ_CREDIT_20261020.csv', acquireMode: 'SFTP拉取', fileSize: 39845888, fileRows: 38000, encoding: 'UTF-8', delimiter: '逗号', encrypted: false, outboundTaskIds: ['OUT20260925'] },
-    mappingInfo: { product: '上海数据集团-工商司法信息回溯', interfaceId: 'SHGJ2006', mappingVersion: 'v1.0', stdFieldCount: 5, nonStdFieldCount: 1, nonStdFields: ['q_id'] },
+    // 上海数据集团批次：映射的 5 行结论直接继承档案 SHGJ_ENTERPRISE_JUDICIAL 的产品级默认映射，
+    // 其中 legal_case_cnt 按 R61 原样透传（底表无语义对应的涉诉列），q_id 是本批次新增的非标列
+    mappingInfo: { product: '上海数据集团-工商司法信息回溯', interfaceId: 'SHGJ2006', productCode: 'SHGJ_ENTERPRISE_JUDICIAL', mappingVersion: 'v1.0', stdFieldCount: 4, nonStdFieldCount: 2, nonStdFields: ['legal_case_cnt', 'q_id'], inheritedFieldCount: 5 },
     storageInfo: { tempTable: 'tmp_ext_retro_raw', hiveTable: 'dw_ods.ods_ext_shgj_retro_std', partitionField: 'datax', partitionValue: '2026-10-20', loadedRows: 38000, writeStrategy: '主键（身份证号+review_date）直接覆盖', tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理', uploadFileCleanup: '落库完成后 24 小时清理' },
     billing: { billingSubject: '贷中管理团队', billingType: '按条数', billingRows: 38000, billingFieldCount: 6, unitPrice: 0.5, estimatedAmount: 19000, billingStatus: '未计费' },
   },
@@ -412,7 +420,6 @@ const RESUME_BASE_BH: TaskResumeContext = {
   agencyId: 'AG-001',
   agencyCode: 'BH',
   agencyName: '百行征信有限公司',
-  agencyType: '个人征信',
   fileName: 'BH_RETRO_20260922_01.csv',
   fileFingerprint: 'BH_RETRO_20260922_01.csv@64159744',
   backid: 'BACK20260924017',
@@ -430,7 +437,6 @@ const RESUME_BASE_PD: TaskResumeContext = {
   agencyId: 'AG-002',
   agencyCode: 'PD',
   agencyName: '朴道征信有限公司',
-  agencyType: '个人征信',
   fileName: 'PD_BACK_0929_2.csv',
   fileFingerprint: 'PD_BACK_0929_2.csv@47915008',
   backid: 'BACK20260930003',
@@ -448,7 +454,6 @@ const RESUME_BASE_QT: TaskResumeContext = {
   agencyId: 'AG-003',
   agencyCode: 'QT',
   agencyName: '钱塘征信有限公司',
-  agencyType: '个人征信',
   fileName: 'QT_resp_20261020.csv',
   fileFingerprint: 'QT_resp_20261020.csv@23902208',
   backid: 'BACK20261021001',
@@ -466,7 +471,6 @@ const RESUME_BASE_PBC: TaskResumeContext = {
   agencyId: 'AG-004',
   agencyCode: 'PBC',
   agencyName: '中国人民银行征信中心',
-  agencyType: '个人征信',
   fileName: 'PBC_BASE_20261020.csv',
   fileFingerprint: 'PBC_BASE_20261020.csv@220200960',
   backid: 'BACK20261021003',
@@ -484,7 +488,6 @@ const RESUME_BASE_SHGJ: TaskResumeContext = {
   agencyId: 'AG-005',
   agencyCode: 'SHGJ',
   agencyName: '上海数据集团金融科技有限公司',
-  agencyType: '企业征信',
   fileName: 'SHGJ_CREDIT_20261020.csv',
   fileFingerprint: 'SHGJ_CREDIT_20261020.csv@39845888',
   backid: 'BACK20261021002',

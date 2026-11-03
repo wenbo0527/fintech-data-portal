@@ -6,10 +6,20 @@
  *   1. 已收录产品沿用 BacktrackPersist.vue 既有 productOptions（百行-多头借贷汇总 V4 / 朴道-历史逾期明细 /
  *      钱塘-授信评分回溯）及接口号（BH1023 / PD2048 / QT3015），保持改造前后口径一致；
  *   2. 每个产品的出参字段列表取自原 sourceFieldCatalog，字段说明一并保留；
- *   3. 与 external-data/mock/supplierProducts.ts 的 externalDataFieldsMap 区分：
+ *   3. **产品一律带 productCode**（与档案主键 id 同一口径）：回溯/离线型的档案产品由
+ *      listBacktrackProducts 直接从 archiveProducts 主数据派生（字段名与说明取档案出参）；
+ *      静态条目只给已建档的填 productCode，其余为 ''（这类场景产品尚未建档，
+ *      没有产品级默认映射可继承，只能走自动碰撞 + 人工匹配）；
+ *   4. 与 external-data/mock/supplierProducts.ts 的 externalDataFieldsMap 区分：
  *      后者是「在线调用外数底表字段字典」，本文件是「回溯落库场景的产品与 CSV 出参字段字典」；
- *   4. R28/R30/R31：未收录产品为固定选项，字段说明统一显示「—」，标准库字段用输入框人工填写。
+ *   5. R28/R30/R31：未收录产品为固定选项，字段说明统一显示「—」，标准库字段用输入框人工填写；
+ *   6. 字段名→标准库字段的碰撞字典不在本文件维护（单一事实源在 interfaceFieldMapping.AUTO_MATCH_DICT）。
  */
+import { creditAgenciesMock } from './creditAgencies'
+import { loadArchiveProducts, resolveOutputParams, type ArchiveProduct } from './archiveProducts'
+
+/** 有落库环节、可进回溯向导的档案数据类型（在线实时调用无落库概念，不进列表） */
+const PERSIST_DATA_TYPES = ['外数离线回溯申请', '离线批量调用']
 
 /** 外数产品出参字段 */
 export interface ProductSourceField {
@@ -27,6 +37,11 @@ export interface BacktrackProduct {
   interfaceId: string
   /** 归属机构编码 */
   agencyCode: string
+  /**
+   * 关联的档案产品编码（与档案主键 id / productCode 同一口径）
+   * 非空才能继承档案的产品级默认映射；空串表示该产品尚未建档
+   */
+  productCode: string
   /** 是否已收录（R28：已收录拉底表字段，未收录走固定选项） */
   registered: boolean
   /** 出参字段清单 */
@@ -42,6 +57,8 @@ export const backtrackProductsMock: BacktrackProduct[] = [
     name: '百行-多头借贷汇总 V4',
     interfaceId: 'BH1023',
     agencyCode: 'BH',
+    // 档案侧只有信用评分/查询类百行产品，与「多头借贷汇总」不同口径，不强行关联
+    productCode: '',
     registered: true,
     fields: [
       { name: 'id_md5', comment: '主体标识（MD5加密）' },
@@ -59,6 +76,8 @@ export const backtrackProductsMock: BacktrackProduct[] = [
     name: '朴道-历史逾期明细',
     interfaceId: 'PD2048',
     agencyCode: 'PD',
+    // 朴道档案产品均为设备/位置/行为风控类，无逐期明细回溯产品
+    productCode: '',
     registered: true,
     fields: [
       { name: 'id_md5', comment: '主体标识（MD5加密）' },
@@ -72,6 +91,8 @@ export const backtrackProductsMock: BacktrackProduct[] = [
     name: '钱塘-授信评分回溯',
     interfaceId: 'QT3015',
     agencyCode: 'QT',
+    // 钱塘三个产品（QT_CREDIT_RISK_SCORE 等）只在供应商产品清单里，尚未建档（一致性守卫 G2 已跟踪）
+    productCode: '',
     registered: true,
     fields: [
       { name: 'id_md5', comment: '主体标识（MD5加密）' },
@@ -85,6 +106,7 @@ export const backtrackProductsMock: BacktrackProduct[] = [
     name: '人行征信-公共基础信息回溯',
     interfaceId: 'PBC1001',
     agencyCode: 'PBC',
+    productCode: '',
     registered: true,
     fields: [
       { name: 'id_md5', comment: '主体标识（MD5加密）' },
@@ -99,6 +121,8 @@ export const backtrackProductsMock: BacktrackProduct[] = [
     name: '上海数据集团-工商司法信息回溯',
     interfaceId: 'SHGJ2006',
     agencyCode: 'SHGJ',
+    /** 已建档：档案 ED-021「工商司法信息回溯」，向导可直接继承其产品级默认映射 */
+    productCode: 'SHGJ_ENTERPRISE_JUDICIAL',
     registered: true,
     fields: [
       { name: 'id_md5', comment: '主体标识（MD5加密）' },
@@ -112,6 +136,7 @@ export const backtrackProductsMock: BacktrackProduct[] = [
     name: CUSTOM_PRODUCT,
     interfaceId: '',
     agencyCode: '',
+    productCode: '',
     registered: false,
     fields: [
       { name: 'q_id', comment: '—' },
@@ -125,31 +150,41 @@ export const backtrackProductsMock: BacktrackProduct[] = [
   },
 ]
 
-/** 外数出参字段 → 标准库字段的自动碰撞字典（R33） */
-export const collisionDict: Record<string, string> = {
-  phone_md5: 'phone_md5',
-  inst_cnt_1m: 'std_apply_inst_cnt_1m',
-  loan_cnt_1m: 'std_loan_cnt_1m',
-  loan_cnt_3m: 'std_loan_cnt_3m',
-  loan_cnt_12m: 'std_loan_cnt_12m',
-  max_overdue_amt: 'std_overdue_amt_max',
-  overdue_cnt_24m: 'std_overdue_cnt_24m',
-  overdue_days_max: 'std_overdue_days_max',
-  credit_score: 'std_credit_score',
-  risk_band: 'std_risk_level_code',
-  credit_query_cnt_6m: 'std_credit_query_cnt_6m',
-  card_cnt: 'std_card_cnt',
-  account_open_months: 'std_account_open_months',
-  limit_amt_total: 'std_limit_amt_total',
+/** 机构编码 → 合作机构全称（档案上的 cooperationOrg 就是这个字符串） */
+function agencyCodeOfName(agencyName: string): string {
+  return creditAgenciesMock.find((a) => a.agencyName === agencyName)?.agencyCode || ''
+}
+
+/** 全量清单＝静态场景条目 + 档案派生条目（按 productCode 去重，已建档的不重复出现） */
+function allBacktrackProducts(): BacktrackProduct[] {
+  const linked = new Set(backtrackProductsMock.map((p) => p.productCode).filter(Boolean))
+  const derived: BacktrackProduct[] = loadArchiveProducts()
+    .filter((p: ArchiveProduct) => PERSIST_DATA_TYPES.includes(String(p.externalDataType || '')) && !linked.has(String(p.id)))
+    .map((p: ArchiveProduct) => ({
+      name: p.name,
+      interfaceId: p.interfaceNo || '',
+      agencyCode: agencyCodeOfName(p.cooperationOrg),
+      productCode: String(p.id),
+      registered: true,
+      fields: resolveOutputParams(p).map((f) => ({ name: f.name, comment: f.description || '—' })),
+    }))
+  return [...backtrackProductsMock, ...derived]
 }
 
 /** 按名称查询产品 */
 export async function getBacktrackProduct(name: string): Promise<BacktrackProduct | undefined> {
-  return backtrackProductsMock.find((p) => p.name === name)
+  return allBacktrackProducts().find((p) => p.name === name)
 }
 
-/** 按机构查询产品（R29 已收录产品随机构联动） */
+/** 按产品编码查询产品（映射继承与回写靠这个键，不再靠名称） */
+export async function getBacktrackProductByCode(productCode: string): Promise<BacktrackProduct | undefined> {
+  if (!productCode) {return undefined}
+  return allBacktrackProducts().find((p) => p.productCode === productCode)
+}
+
+/** 按机构查询产品（R29 已收录产品随机构联动，未收录选项恒在列表里） */
 export async function listBacktrackProducts(agencyCode?: string): Promise<BacktrackProduct[]> {
-  if (!agencyCode) return [...backtrackProductsMock]
-  return backtrackProductsMock.filter((p) => p.agencyCode === agencyCode || !p.registered)
+  const all = allBacktrackProducts()
+  if (!agencyCode) {return all}
+  return all.filter((p) => p.agencyCode === agencyCode || !p.registered)
 }

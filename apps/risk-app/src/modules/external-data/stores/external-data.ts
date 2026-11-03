@@ -1,13 +1,22 @@
 import { defineStore } from 'pinia'
 import { getEvaluationReports, getEvaluationReportDetail, createEvaluationReport, getRegisteredProducts, publishReport, archiveReport } from '@/modules/external-data/api/evaluation'
-import { getTasks, getTaskDetail, createTask, updateTaskProgress } from '@/modules/external-data/api/task'
-import type { Task, TaskConfig } from '@/modules/external-data/api/task'
+import { saveArchiveProduct, transitionArchiveStatus, checkTechProfileComplete } from '@/modules/external-data/api/archiveProduct'
+import type { ArchiveProduct, ArchiveStatus } from '@/modules/external-data/mock/archiveProducts'
+import {
+  getTasks, getTaskDetail, createTask, updateTaskProgress,
+  type Task, type TaskConfig,
+} from '@/modules/external-data/api/task'
 import { getBurndown, getWarnings } from '@/modules/external-data/api/monitor'
 
 export interface Pagination { page: number; pageSize: number; total: number }
 export interface EvaluationReport { id: string | number; supplier?: string; reportType?: string; status?: string; createdAt?: string; score?: number; title?: string }
 export interface EvaluationDetail { id: string | number; title?: string; status?: string; score?: number; content?: unknown; fields?: Record<string, unknown> }
-export interface ProductSummary { id: string | number; name: string; supplier?: string; status?: string; interfaces?: number; channel?: string; unitPrice?: number; frameworkAgreements?: Array<{ id: string; name: string; signDate: string; amount: number }>; totalSupplementAmount?: number }
+/**
+ * 产品摘要 —— 统一为 mock/archiveProducts.ts 的 ArchiveProduct
+ * 改造前 Store 自有一套窄接口，导致 budget 合同创建、对账、档案列表各自读不同字段名，
+ * 类型上又互不约束；现收敛为同一事实源，保留旧导出名以免打穿引用。
+ */
+export type ProductSummary = ArchiveProduct
 export interface BurndownPoint { granularity?: 'month' | 'quarter'; month?: string; period?: string; budget?: number; actual?: number; initialBudget?: number; cumulativeBudget?: number; cumulativeActual?: number }
 export interface WarningItem { id: string | number; level: 'info' | 'warning' | 'critical'; message: string; createdAt?: string; tag?: string; businessType?: string; platform?: string; year?: string | number; targetLoan?: number; estimatedLoan?: number; actualLoan?: number; estimatedCost?: number; actualCost?: number; estimatedAnnualCost?: number; actualAnnualCost?: number; estimatedRiskFreeReturn?: number; actualRiskFreeReturn?: number; externalDataCost?: number; budgetStatus?: string }
 
@@ -87,27 +96,52 @@ export const useExternalDataStore = defineStore('externalData', {
       this.productsLoading = true
       this.error = null
       try {
-        console.log('[Store Debug] 开始 fetchProducts...')
         const res: any = await getRegisteredProducts()
-        console.log('[Store Debug] API 返回结果:', res)
-        
-        // 统一处理标准 Mock 响应结构 { code: 200, data: [...] }
-        // 兼容 res.data 为数组的情况
+        // 统一处理标准 Mock 响应结构 { code: 200, data: [...] }，兼容直接返回数组
         const list = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : [])
-        
-        console.log('[Store Debug] 解析后的产品列表长度:', list?.length)
-        if (list.length > 0) {
-           console.log('[Store Debug] 首个产品示例:', list[0].name, list[0].supplier)
-        }
-        
-        this.products = [...list] as ProductSummary[]
-        console.log('[Store Debug] Store state products updated, length:', this.products.length)
+        this.products = list as ArchiveProduct[]
       } catch (e: any) {
-        console.error('[Store Debug] fetchProducts 失败:', e)
         this.error = e?.message ?? '获取产品列表失败'
       } finally {
         this.productsLoading = false
       }
+    },
+    /**
+     * 写入档案（新建与编辑的唯一入口）
+     * 落库后立即回灌 store.products，避免页面各自维护副本导致状态漂移。
+     * 普通编辑不携带 status（R129 状态由业务事件写入），新建可携带初始状态。
+     */
+    async saveProduct(payload: Partial<ArchiveProduct> & { id: string }, reason?: string) {
+      const saved = await saveArchiveProduct(payload, reason)
+      const idx = this.products.findIndex((p) => String(p.id) === String(saved.id))
+      if (idx >= 0) this.products.splice(idx, 1, saved)
+      else this.products.push(saved)
+      return saved
+    },
+    /** 状态流转（业务事件写入 + 自动留痕） */
+    async transitionProductStatus(id: string, to: ArchiveStatus, reason: string) {
+      const saved = await transitionArchiveStatus(id, to, reason)
+      const idx = this.products.findIndex((p) => String(p.id) === String(id))
+      if (idx >= 0) this.products.splice(idx, 1, saved)
+      return saved
+    },
+    /**
+     * 按技术档案齐备度校正状态（R123 / R129）
+     * 供上游业务事件调用：落库映射保存后、接口/落库表配置变更后都走这一个入口，
+     * 避免各页面自己拼「配齐了就置为已上线」这种重复规则。
+     * @returns 发生流转时返回新产品，否则返回 undefined
+     */
+    async syncTechProfileStatus(id: string, reason: string) {
+      const p = this.productById(id)
+      if (!p) return undefined
+      const target = await checkTechProfileComplete(p)
+      if (!target || target === p.status) return undefined
+      return this.transitionProductStatus(id, target, reason)
+    },
+    /** 按业务主键取产品（详情/向导共用，避免各页面自己 find） */
+    productById(id: string | number | undefined): ArchiveProduct | undefined {
+      if (id === undefined || id === null || id === '') return undefined
+      return (this.products as ArchiveProduct[]).find((p) => String(p.id) === String(id))
     },
     async fetchBurndown(params?: { range?: 'month' | 'quarter'; productId?: string | number; businessType?: string; platform?: string; year?: string; targetLoan?: number }) {
       this.burndownLoading = true
@@ -148,12 +182,9 @@ export const useExternalDataStore = defineStore('externalData', {
           this.lifecycle = { currentStage: 'deployment', currentStatus: 'in_progress', stages: s }
           this.currentProductId = params.productId as any
         } else {
-          const platforms = ['字节','京东','美团','百度','腾讯']
-          const base = (this.products && this.products.length > 0 ? this.products : Array.from({ length: 6 }, (_, i) => ({
-            id: i + 1,
-            name: `平台产品-${i + 1}`,
-            supplier: platforms[i % platforms.length]
-          }))) as any[]
+          // 不再造“产品不存在则凭空编 6 个平台产品”的兑底分支：
+          // 产品主数据已由 mock/archiveProducts 确定性提供，伪造条目会让生命周期页出现档案里找不到的产品
+          const base = (this.products || []) as any[]
           this.lifecycleList = base.map((p: any, i: number) => {
             const s = [
               { stage: 'registration', status: 'completed', startDate: fmt(new Date(now.getFullYear(), 0, 2)), endDate: fmt(new Date(now.getFullYear(), 0, 5)) },
@@ -181,7 +212,7 @@ export const useExternalDataStore = defineStore('externalData', {
         
         const base = (this.products || []).map((p: any, idx: number) => {
           const now = new Date()
-          const createTime = new Date(now.getTime() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString()
+          const createTime = new Date(now.getTime() - (idx + 1) * 24 * 60 * 60 * 1000).toISOString()
           
           return {
             id: String(p.id ?? idx + 1),

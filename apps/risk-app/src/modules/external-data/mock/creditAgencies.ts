@@ -1,19 +1,19 @@
 /**
- * 征信机构管理 · Mock 数据源
- * 需求文档《外数文件落库》模块一 A1/A2（R01-R10）
+ * 合作机构主数据 · Mock 数据源
+ * 需求文档《外数文件落库》模块一 A1/A2（R01-R10）+ 《外数档案》R09（机构术语与名单口径）
+ *
+ * 术语口径（R09）：对外统一称「合作机构」，全文不再使用「征信机构」表述；
+ * 本模块的**代码标识符**（CreditAgency / creditAgencies.ts / 路由 path）为历史命名，保留不改，
+ * 以免影响已接的 56 处引用；用户可见文案已全部改为「合作机构」。
  *
  * 数据来源说明：
- *   1. 机构主体（agencyCode / agencyName / 联系人）派生自
- *      modules/budget/api/supplierDictionary.ts 的 suppliersMock（SUP-002 百行、SUP-003 朴道、
- *      SUP-004 钱塘、SUP-005 上海数据集团、SUP-006 厦门信息集团、SUP-012 人行征信中心）；
+ *   1. 机构名单以 R09 列出的十二家工商登记全称为准（本文件是唯一事实源），
+ *      档案的「合作机构」下拉、回溯落库的机构选项都仍从本文件取，不得另写一份常量；
  *   2. SFTP 连接参数、路径管理策略为文档 R04/R07 新增字段，无历史来源，按业务约定构造；
- *   3. 文档 4.1「仅纳入持牌机构及已完成备案的企业征信机构」→ 机构类型只保留个人征信 / 企业征信两类。
+ *   3. 业务上不区分个人征信 / 企业征信，机构主数据不再维护「机构类型」维度（字段已整体下线）。
  *
  * 本文件充当「内存数据库」，供 api/creditAgency.ts 在 VITE_USE_MOCK=true 时短路调用。
  */
-
-/** 机构类型（R02） */
-export type AgencyType = '个人征信' | '企业征信'
 
 /** 机构状态（R06：停用后业务场景不可选，仅置灰） */
 export type AgencyStatus = '启用' | '停用'
@@ -31,14 +31,13 @@ export interface AgencySftpConfig {
   directory: string
 }
 
-/** 征信机构主数据 */
+/** 合作机构主数据 */
 export interface CreditAgency {
   id: string
   /** 机构编码（R01 唯一，R08 创建后锁定不可改） */
   agencyCode: string
   agencyName: string
-  agencyType: AgencyType
-  /** 牌照 / 备案编号（R03 资质信息登记） */
+  /** 社会统一征信编号（R03 资质信息登记，字段名沿用 licenseNo） */
   licenseNo: string
   status: AgencyStatus
   pathStrategy: PathStrategy
@@ -56,13 +55,12 @@ export interface CreditAgency {
 
 const now = '2026-10-20 09:00:00'
 
-/** 征信机构初始枚举（6 家：5 启用 + 1 停用，用于验证 R06 停用约束） */
-const creditAgenciesMock: CreditAgency[] = [
+/** 合作机构初始枚举（R09 十二家：10 启用 + 2 停用，用于验证 R06 停用约束） */
+export const creditAgenciesMock: CreditAgency[] = [
   {
     id: 'AG-001',
     agencyCode: 'BH',
     agencyName: '百行征信有限公司',
-    agencyType: '个人征信',
     licenseNo: 'JC证-JXKP-2023-0001',
     status: '启用',
     pathStrategy: 'fixed',
@@ -80,7 +78,6 @@ const creditAgenciesMock: CreditAgency[] = [
     id: 'AG-002',
     agencyCode: 'PD',
     agencyName: '朴道征信有限公司',
-    agencyType: '个人征信',
     licenseNo: 'JC证-JXKP-2022-0037',
     status: '启用',
     pathStrategy: 'fixed',
@@ -98,7 +95,6 @@ const creditAgenciesMock: CreditAgency[] = [
     id: 'AG-003',
     agencyCode: 'QT',
     agencyName: '钱塘征信有限公司',
-    agencyType: '个人征信',
     licenseNo: 'JC证-JXKP-2021-0089',
     status: '启用',
     pathStrategy: 'auto_clean',
@@ -116,7 +112,6 @@ const creditAgenciesMock: CreditAgency[] = [
     id: 'AG-004',
     agencyCode: 'PBC',
     agencyName: '中国人民银行征信中心',
-    agencyType: '个人征信',
     licenseNo: '央行征信中心（国家级）',
     status: '启用',
     pathStrategy: 'fixed',
@@ -132,9 +127,12 @@ const creditAgenciesMock: CreditAgency[] = [
   },
   {
     id: 'AG-005',
+    /**
+     * 上海数据集团金融科技有限公司（上数金科）在 R09 口径下就是「合作机构」本体，
+     * 档案直接落在 cooperationOrg（旧版本错放在 partnerOrg、并将征信档位记「其他」，已修正）。
+     */
     agencyCode: 'SHGJ',
     agencyName: '上海数据集团金融科技有限公司',
-    agencyType: '企业征信',
     licenseNo: '沪ICP备备案-2020-1145',
     status: '启用',
     pathStrategy: 'fixed',
@@ -142,7 +140,7 @@ const creditAgenciesMock: CreditAgency[] = [
     sftp: { host: '10.21.8.73', port: 22, username: 'shgj_sftp', password: '****', directory: '/sftp/external_retro/shgj/download/' },
     contactPerson: '陈昊',
     contactPhone: '021-55667788',
-    remark: '企业类外数数据来源',
+    remark: '上数金科外数数据来源',
     createdAt: now,
     updatedAt: now,
     createdBy: 'admin',
@@ -152,7 +150,6 @@ const creditAgenciesMock: CreditAgency[] = [
     id: 'AG-006',
     agencyCode: 'XMXX',
     agencyName: '厦门信息集团大数据运营有限公司',
-    agencyType: '企业征信',
     licenseNo: '厦ICP备备案-2019-0822',
     status: '停用',
     pathStrategy: 'auto_clean',
@@ -166,14 +163,119 @@ const creditAgenciesMock: CreditAgency[] = [
     createdBy: 'admin',
     updatedBy: 'admin',
   },
+  {
+    id: 'AG-007',
+    agencyCode: 'ZGBX',
+    agencyName: '中国银行保险信息技术管理有限公司',
+    licenseNo: '银保信-JXKP-2021-0006',
+    status: '启用',
+    pathStrategy: 'fixed',
+    pathStrategyDesc: '返回文件固定保存在 download 目录，历史文件不会自动清理',
+    sftp: { host: '10.21.8.91', port: 22, username: 'zgbx_sftp', password: '****', directory: '/sftp/external_retro/zgbx/download/' },
+    contactPerson: '吴静',
+    contactPhone: '010-88990011',
+    remark: '银保行业共享平台数据来源',
+    createdAt: now,
+    updatedAt: now,
+    createdBy: 'admin',
+    updatedBy: 'admin',
+  },
+  {
+    id: 'AG-008',
+    agencyCode: 'RQN',
+    agencyName: '北京融七牛信息技术有限公司',
+    licenseNo: '京ICP备备案-2018-3311',
+    status: '启用',
+    pathStrategy: 'auto_clean',
+    pathStrategyDesc: '会定期自动清理历史路径文件，请及时处理最新返回文件',
+    sftp: { host: '10.21.8.92', port: 22, username: 'rqn_sftp', password: '****', directory: '/sftp/external_retro/rqn/download/' },
+    contactPerson: '孙倩',
+    contactPhone: '010-77889900',
+    remark: '多头与行为类特征数据',
+    createdAt: now,
+    updatedAt: now,
+    createdBy: 'admin',
+    updatedBy: 'admin',
+  },
+  {
+    id: 'AG-009',
+    agencyCode: 'SHLX',
+    agencyName: '上海理想信息（集团）有限公司',
+    licenseNo: '沪ICP备备案-2017-2208',
+    status: '启用',
+    pathStrategy: 'fixed',
+    pathStrategyDesc: '返回文件固定保存在 download 目录，历史文件不会自动清理',
+    sftp: { host: '10.21.8.93', port: 22, username: 'shlx_sftp', password: '****', directory: '/sftp/external_retro/shlx/download/' },
+    contactPerson: '郑爱丽',
+    contactPhone: '021-66778899',
+    remark: '运营商与位置类数据',
+    createdAt: now,
+    updatedAt: now,
+    createdBy: 'admin',
+    updatedBy: 'admin',
+  },
+  {
+    id: 'AG-010',
+    agencyCode: 'BJYD',
+    agencyName: '北京移动系统集成有限公司',
+    licenseNo: '京ICP备备案-2019-4507',
+    status: '停用',
+    pathStrategy: 'auto_clean',
+    pathStrategyDesc: '会定期自动清理历史路径文件，请及时处理最新返回文件',
+    sftp: { host: '10.21.8.94', port: 22, username: 'bjyd_sftp', password: '****', directory: '/sftp/external_retro/bjyd/download/' },
+    contactPerson: '冯洋',
+    contactPhone: '010-55667788',
+    remark: '在网时长核验合作已到期',
+    createdAt: now,
+    updatedAt: '2026-08-31 10:00:00',
+    createdBy: 'admin',
+    updatedBy: 'admin',
+  },
+  {
+    id: 'AG-011',
+    agencyCode: 'YLJZ',
+    agencyName: '原力金智（北京）科技有限公司',
+    licenseNo: '京ICP备备案-2022-6120',
+    status: '启用',
+    pathStrategy: 'fixed',
+    pathStrategyDesc: '返回文件固定保存在 download 目录，历史文件不会自动清理',
+    sftp: { host: '10.21.8.95', port: 22, username: 'yljz_sftp', password: '****', directory: '/sftp/external_retro/yljz/download/' },
+    contactPerson: '许岚',
+    contactPhone: '010-44556677',
+    remark: '模型分与风险评级类数据',
+    createdAt: now,
+    updatedAt: now,
+    createdBy: 'admin',
+    updatedBy: 'admin',
+  },
+  {
+    id: 'AG-012',
+    /**
+     * R09：学信网为网站名，运营主体为教育部学生服务与素质发展中心；
+     * 枚举展示沿用网站名，运营主体在备注标明。agencyCode 取 XUEXIN，与产品编码前缀 XUEXIN_ 对齐。
+     */
+    agencyCode: 'XUEXIN',
+    agencyName: '中国高等教育学生信息网（学信网）',
+    licenseNo: '教服中心-2016-0001',
+    status: '启用',
+    pathStrategy: 'fixed',
+    pathStrategyDesc: '返回文件固定保存在 download 目录，历史文件不会自动清理',
+    sftp: { host: '10.21.8.96', port: 22, username: 'xuexin_sftp', password: '****', directory: '/sftp/external_retro/xuexin/download/' },
+    contactPerson: '苗雨',
+    contactPhone: '010-62515053',
+    remark: '运营主体：教育部学生服务与素质发展中心；学籍/学历核验数据唯一来源',
+    createdAt: now,
+    updatedAt: now,
+    createdBy: 'admin',
+    updatedBy: 'admin',
+  },
 ]
 
-/** 查询征信机构列表（支持机构名称/类型/状态过滤） */
-export async function listCreditAgencies(params?: { keyword?: string; agencyType?: string; status?: string }) {
+/** 查询合作机构列表（支持机构名称/状态过滤） */
+export async function listCreditAgencies(params?: { keyword?: string; status?: string }) {
   const keyword = params?.keyword?.trim()
   return creditAgenciesMock.filter((a) => {
     if (keyword && !a.agencyName.includes(keyword) && !a.agencyCode.includes(keyword)) return false
-    if (params?.agencyType && a.agencyType !== params.agencyType) return false
     if (params?.status && a.status !== params.status) return false
     return true
   })
@@ -193,7 +295,6 @@ export async function createCreditAgency(payload: Partial<CreditAgency>) {
     id: `AG-${String(creditAgenciesMock.length + 1).padStart(3, '0')}`,
     agencyCode: payload.agencyCode || '',
     agencyName: payload.agencyName || '',
-    agencyType: payload.agencyType || '个人征信',
     licenseNo: payload.licenseNo || '',
     status: payload.status || '启用',
     pathStrategy: payload.pathStrategy || 'fixed',
@@ -246,7 +347,7 @@ export async function getEnabledAgencies() {
   return creditAgenciesMock.filter((a) => a.status === '启用')
 }
 
-/** 获取全部机构（含停用，供征信机构管理列表展示） */
+/** 获取全部机构（含停用，供合作机构管理列表展示） */
 export async function getAllAgencies() {
   return [...creditAgenciesMock]
 }

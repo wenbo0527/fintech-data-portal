@@ -32,22 +32,39 @@ export interface EvaluationReportItem {
   updatedAt: string
 }
 
-type EvaluationType = 'quality' | 'performance' | 'cost_effectiveness' | 'comprehensive'
-type EvaluationStatus = 'draft' | 'in_progress' | 'completed' | 'archived'
+export type EvaluationType = 'quality' | 'performance' | 'cost_effectiveness' | 'comprehensive'
+export type EvaluationStatus = 'draft' | 'in_progress' | 'completed' | 'archived'
 
-const TYPE_LABEL: Record<EvaluationType, string> = {
+/** 评估类型展示名 —— 列表筛选下拉、表格列、报告标题共用同一份 */
+export const EVALUATION_TYPE_LABEL: Record<EvaluationType, string> = {
   quality: '质量',
   performance: '性能',
   cost_effectiveness: '性价比',
   comprehensive: '综合',
 }
 
-/** 列表英文状态 -> 详情页中文状态（详情页按中文文案渲染按钮） */
+/**
+ * 评估状态展示名 + 标签色 —— 列表页与详情页共用同一份。
+ * 改造前列页自己写了一套「进行中/已完成」，与详情页的「分析中/已发布」口径不一致；
+ * 现以本字典为唯一事实源，详情页中文文案由它派生（见 STATUS_CN）。
+ * color 必须是 Arco Tag 的合法预设色名（Tag 没有 status prop）。
+ */
+export const EVALUATION_STATUS_META: Record<EvaluationStatus, { label: string; color: string }> = {
+  draft: { label: '草稿', color: 'gray' },
+  in_progress: { label: '分析中', color: 'orange' },
+  completed: { label: '已发布', color: 'green' },
+  archived: { label: '已归档', color: 'gray' },
+}
+
+export const evaluationTypeLabel = (t?: string) => (t ? EVALUATION_TYPE_LABEL[t as EvaluationType] || '—' : '—')
+export const evaluationStatusMeta = (s?: string) => EVALUATION_STATUS_META[s as EvaluationStatus]
+
+/** 详情页按中文文案渲染按钮，展示名从 EVALUATION_STATUS_META 取，不再各写一份 */
 const STATUS_CN: Record<EvaluationStatus, string> = {
-  draft: '草稿',
-  in_progress: '分析中',
-  completed: '已发布',
-  archived: '已归档',
+  draft: EVALUATION_STATUS_META.draft.label,
+  in_progress: EVALUATION_STATUS_META.in_progress.label,
+  completed: EVALUATION_STATUS_META.completed.label,
+  archived: EVALUATION_STATUS_META.archived.label,
 }
 
 /** 详情页中文状态 -> 列表英文状态 */
@@ -125,8 +142,8 @@ function buildSeedReports(count = 32): EvaluationReportItem[] {
 
     list.push({
       id: 1001 + i,
-      title: `${product.name}·${TYPE_LABEL[type]}评估报告_${fmtDate(createdAt).replace(/-/g, '')}`,
-      reportName: `${product.name}·${TYPE_LABEL[type]}评估报告_${fmtDate(createdAt).replace(/-/g, '')}`,
+      title: `${product.name}·${EVALUATION_TYPE_LABEL[type]}评估报告_${fmtDate(createdAt).replace(/-/g, '')}`,
+      reportName: `${product.name}·${EVALUATION_TYPE_LABEL[type]}评估报告_${fmtDate(createdAt).replace(/-/g, '')}`,
       productName: product.name,
       supplier: product.supplier,
       type,
@@ -147,12 +164,84 @@ function buildSeedReports(count = 32): EvaluationReportItem[] {
     })
   }
 
+  // 台账外数 / 征信特征反查用的三份已完成报告：自动生成区里运营商与核验类产品按 STATUS_PATTERN
+  // 分到的都是 in_progress，而特征台账（VAR-0001 / VAR-0002 / VAR-0004）要能点开已完成结论，
+  // 所以显式补三条固定 id（9001 段，避开 1001+i 自动生成区）的确定种子，时间线对齐准入复评任务 EVAL-2026-001
+  list.push({
+    id: 9001,
+    title: '身份有效性核验·综合评估报告_20260624',
+    reportName: '身份有效性核验·综合评估报告_20260624',
+    productName: '身份有效性核验',
+    supplier: '百行征信',
+    type: 'comprehensive',
+    reportType: 'comprehensive',
+    status: 'completed',
+    score: 91,
+    progress: 100,
+    creator: '李衡',
+    analysisType: '批量回溯分析',
+    templateType: '外数评估-产品级分析报告模板',
+    sampleTimeSpan: '2026-05-20 至 2026-06-19',
+    sampleCount: 32000,
+    generateDate: '2026-06-24',
+    analysisTime: '2026-06-24 18:20:00',
+    failureReason: null,
+    createdAt: new Date(BASE_TS - 220 * DAY).toISOString(),
+    updatedAt: new Date(BASE_TS - 218 * DAY).toISOString(),
+  })
+  list.push({
+    id: 9002,
+    title: '手机号风险评估·综合评估报告_20260624',
+    reportName: '手机号风险评估·综合评估报告_20260624',
+    productName: '手机号风险评估',
+    supplier: '百行征信',
+    type: 'comprehensive',
+    reportType: 'comprehensive',
+    status: 'completed',
+    score: 86,
+    progress: 100,
+    creator: '李衡',
+    analysisType: '批量回溯分析',
+    templateType: '外数评估-产品级分析报告模板',
+    sampleTimeSpan: '2026-05-20 至 2026-06-19',
+    sampleCount: 28000,
+    generateDate: '2026-06-24',
+    analysisTime: '2026-06-24 18:20:00',
+    failureReason: null,
+    createdAt: new Date(BASE_TS - 220 * DAY).toISOString(),
+    updatedAt: new Date(BASE_TS - 218 * DAY).toISOString(),
+  })
+
+  list.push({
+    id: 9003,
+    title: '百行征信查询·综合评估报告_20260624',
+    reportName: '百行征信查询·综合评估报告_20260624',
+    productName: '百行征信查询',
+    supplier: '百行征信',
+    type: 'comprehensive',
+    reportType: 'comprehensive',
+    status: 'completed',
+    score: 93,
+    progress: 100,
+    creator: '李衡',
+    analysisType: '批量回溯分析',
+    templateType: '外数评估-产品级分析报告模板',
+    sampleTimeSpan: '2026-05-20 至 2026-06-19',
+    sampleCount: 15000,
+    generateDate: '2026-06-24',
+    analysisTime: '2026-06-24 18:20:00',
+    failureReason: null,
+    createdAt: new Date(BASE_TS - 220 * DAY).toISOString(),
+    updatedAt: new Date(BASE_TS - 218 * DAY).toISOString(),
+  })
+
   return list
 }
 
 // ————————————————————— 内存数据库 —————————————————————
 let REPORT_DB: EvaluationReportItem[] = buildSeedReports()
-let DETAIL_OVERRIDES: Record<number, any> = {}
+/** 详情可编辑内容的覆盖层：只改属性、整体不重赋值，故用 const */
+const DETAIL_OVERRIDES: Record<number, any> = {}
 let SEQ = 2000
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v))
@@ -447,7 +536,7 @@ export function getEvaluationReportDetail(id: string | number) {
     title: item.title,
     productName: item.productName,
     supplier: item.supplier,
-    reportType: TYPE_LABEL[item.type],
+    reportType: EVALUATION_TYPE_LABEL[item.type],
     type: item.type,
     analysisType: item.analysisType,
     templateType: item.templateType,
@@ -491,10 +580,11 @@ export function getEvaluationReportDetail(id: string | number) {
 export function createEvaluationReport(payload: any) {
   const now = Date.now()
   const type = (payload?.type || payload?.reportType || 'comprehensive') as EvaluationType
-  const product = PRODUCTS[Math.floor(Math.random() * PRODUCTS.length)]
+  const product = PRODUCTS[SEQ % PRODUCTS.length]
   const item: EvaluationReportItem = {
+    // 产品按序号轮转取，不用 Math.random：同一次会话内重复创建的结果可复现、可断言
     id: ++SEQ,
-    title: payload?.title || `${product.name}·${TYPE_LABEL[type]}评估报告_${fmtDate(now).replace(/-/g, '')}`,
+    title: payload?.title || `${product.name}·${EVALUATION_TYPE_LABEL[type]}评估报告_${fmtDate(now).replace(/-/g, '')}`,
     reportName: payload?.title || '',
     productName: payload?.productName || product.name,
     supplier: payload?.supplier || product.supplier,

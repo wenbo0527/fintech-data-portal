@@ -66,7 +66,7 @@
               <span v-else class="dim">—</span>
             </template>
           </a-table-column>
-          <a-table-column title="征信机构" data-index="agencyName" :width="200" ellipsis tooltip />
+          <a-table-column title="合作机构" data-index="agencyName" :width="200" ellipsis tooltip />
           <a-table-column title="文件名" data-index="fileName" :width="230" ellipsis tooltip />
           <a-table-column title="创建时间" data-index="createTime" :width="170" />
           <a-table-column title="执行状态" data-index="status" :width="120">
@@ -120,7 +120,7 @@
               <a-descriptions-item label="关联backid">
                 <span class="mono">{{ detailTask.backid || '—' }}</span>
               </a-descriptions-item>
-              <a-descriptions-item label="征信机构">{{ detailTask.agencyName }}</a-descriptions-item>
+              <a-descriptions-item label="合作机构">{{ detailTask.agencyName }}</a-descriptions-item>
               <a-descriptions-item label="文件名" :span="2">{{ detailTask.fileName }}</a-descriptions-item>
               <a-descriptions-item label="创建时间">{{ detailTask.createTime }}</a-descriptions-item>
               <a-descriptions-item label="完成时间">{{ detailTask.finishTime || '—' }}</a-descriptions-item>
@@ -177,9 +177,8 @@
               </a-descriptions-item>
               <a-descriptions-item label="操作人">{{ persistRecord.baseInfo.operator }}</a-descriptions-item>
               <a-descriptions-item label="操作时间">{{ persistRecord.baseInfo.operateTime }}</a-descriptions-item>
-              <a-descriptions-item label="征信机构">{{ persistRecord.agencyInfo.agencyName }}</a-descriptions-item>
-              <a-descriptions-item label="机构类型">{{ persistRecord.agencyInfo.agencyType }}</a-descriptions-item>
-              <a-descriptions-item label="牌照编号">{{ persistRecord.agencyInfo.licenseNo }}</a-descriptions-item>
+              <a-descriptions-item label="合作机构">{{ persistRecord.agencyInfo.agencyName }}</a-descriptions-item>
+              <a-descriptions-item label="社会统一征信编号">{{ persistRecord.agencyInfo.licenseNo }}</a-descriptions-item>
               <a-descriptions-item label="获取方式">{{ persistRecord.fileInfo.acquireMode }}</a-descriptions-item>
               <a-descriptions-item label="文件名" :span="2">{{ persistRecord.fileInfo.fileName }}</a-descriptions-item>
               <a-descriptions-item label="文件行数">{{ persistRecord.fileInfo.fileRows.toLocaleString() }}</a-descriptions-item>
@@ -187,11 +186,13 @@
               <a-descriptions-item label="编码格式">{{ persistRecord.fileInfo.encoding }}</a-descriptions-item>
               <a-descriptions-item label="分隔符">{{ persistRecord.fileInfo.delimiter }}</a-descriptions-item>
               <a-descriptions-item label="外数产品">{{ persistRecord.mappingInfo.product }}</a-descriptions-item>
+              <a-descriptions-item label="关联档案">{{ persistRecord.mappingInfo.productCode || '未建档（无可继承映射）' }}</a-descriptions-item>
               <a-descriptions-item label="接口号">{{ persistRecord.mappingInfo.interfaceId || '—' }}</a-descriptions-item>
               <a-descriptions-item label="映射版本">{{ persistRecord.mappingInfo.mappingVersion }}</a-descriptions-item>
               <a-descriptions-item label="标准 / 非标字段数">
                 {{ persistRecord.mappingInfo.stdFieldCount }} / {{ persistRecord.mappingInfo.nonStdFieldCount }}
               </a-descriptions-item>
+              <a-descriptions-item label="继承档案映射">{{ persistRecord.mappingInfo.inheritedFieldCount || 0 }} 行</a-descriptions-item>
               <a-descriptions-item label="Hive 目标表" :span="2">
                 <span class="mono">{{ persistRecord.storageInfo.hiveTable }}</span>
               </a-descriptions-item>

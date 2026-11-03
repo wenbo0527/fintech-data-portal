@@ -1,6 +1,6 @@
 <template>
   <div class="credit-agency-page">
-    <a-page-header title="征信机构管理" subtitle="维护征信机构主数据与 SFTP 目录配置，供外数落库、外数档案、费用核算统一引用">
+    <a-page-header title="合作机构管理" subtitle="维护合作机构主数据与 SFTP 目录配置，供外数落库、外数档案、费用核算统一引用">
       <template #extra>
         <a-button type="primary" @click="openCreate">
           <template #icon><icon-plus /></template>
@@ -21,12 +21,6 @@
       <a-form :model="filters" layout="inline" class="filter-bar">
         <a-form-item label="机构名称 / 编码">
           <a-input v-model="filters.keyword" placeholder="搜索机构名称或编码" allow-clear style="width: 220px" />
-        </a-form-item>
-        <a-form-item label="机构类型">
-          <a-select v-model="filters.agencyType" placeholder="全部类型" allow-clear style="width: 160px">
-            <a-option value="个人征信">个人征信</a-option>
-            <a-option value="企业征信">企业征信</a-option>
-          </a-select>
         </a-form-item>
         <a-form-item label="状态">
           <a-select v-model="filters.status" placeholder="全部状态" allow-clear style="width: 140px">
@@ -53,12 +47,7 @@
             </template>
           </a-table-column>
           <a-table-column title="机构名称" data-index="agencyName" ellipsis tooltip />
-          <a-table-column title="机构类型" data-index="agencyType" :width="100">
-            <template #cell="{ record }">
-              <a-tag size="small" :color="record.agencyType === '个人征信' ? 'arcoblue' : 'purple'">{{ record.agencyType }}</a-tag>
-            </template>
-          </a-table-column>
-          <a-table-column title="牌照 / 备案编号" data-index="licenseNo" :width="200" ellipsis tooltip />
+          <a-table-column title="社会统一征信编号" data-index="licenseNo" :width="200" ellipsis tooltip />
           <a-table-column title="SFTP 连接" :width="230">
             <template #cell="{ record }">
               <div class="mono sftp-cell">{{ record.sftp.host }}:{{ record.sftp.port }}</div>
@@ -77,12 +66,6 @@
               <a-tag size="small" :color="record.status === '启用' ? 'green' : 'gray'">{{ record.status }}</a-tag>
             </template>
           </a-table-column>
-          <a-table-column title="联系人" :width="140">
-            <template #cell="{ record }">
-              <div>{{ record.contactPerson || '—' }}</div>
-              <div class="dim">{{ record.contactPhone || '—' }}</div>
-            </template>
-          </a-table-column>
           <a-table-column title="更新时间" data-index="updatedAt" :width="170" />
           <a-table-column title="操作" :width="170" fixed="right">
             <template #cell="{ record }">
@@ -92,7 +75,7 @@
                 <a-button
                   type="text"
                   size="small"
-                  :status="record.status === '启用' ? 'warning' : 'success'"
+                  :status="record.status === '启用' ? 'warning' : 'normal'"
                   @click="toggleStatus(record)"
                 >
                   {{ record.status === '启用' ? '停用' : '启用' }}
@@ -108,7 +91,7 @@
     <a-drawer
       v-model:visible="drawerVisible"
       :width="720"
-      :title="isEdit ? '编辑征信机构' : '新增征信机构'"
+      :title="isEdit ? '编辑合作机构' : '新增合作机构'"
       :ok-loading="submitting"
       @ok="handleSubmit"
     >
@@ -128,28 +111,8 @@
         </a-row>
         <a-row :gutter="16">
           <a-col :span="12">
-            <a-form-item label="机构类型" field="agencyType" required help="个人征信 / 企业征信，影响后续外数产品目录">
-              <a-select v-model="form.agencyType" placeholder="请选择机构类型">
-                <a-option value="个人征信">个人征信</a-option>
-                <a-option value="企业征信">企业征信</a-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="牌照 / 备案编号" field="licenseNo" required help="作为准入校验字段">
-              <a-input v-model="form.licenseNo" placeholder="请输入牌照或备案编号" allow-clear />
-            </a-form-item>
-          </a-col>
-        </a-row>
-        <a-row :gutter="16">
-          <a-col :span="12">
-            <a-form-item label="联系人">
-              <a-input v-model="form.contactPerson" placeholder="请输入联系人" allow-clear />
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="联系电话">
-              <a-input v-model="form.contactPhone" placeholder="请输入联系电话" allow-clear />
+            <a-form-item label="社会统一征信编号" field="licenseNo" required help="作为准入校验字段">
+              <a-input v-model="form.licenseNo" placeholder="请输入社会统一征信编号" allow-clear />
             </a-form-item>
           </a-col>
         </a-row>
@@ -214,12 +177,11 @@
     </a-drawer>
 
     <!-- 查看抽屉（只读） -->
-    <a-drawer v-model:visible="viewVisible" :width="640" title="征信机构详情" :footer="false">
+    <a-drawer v-model:visible="viewVisible" :width="640" title="合作机构详情" :footer="false">
       <a-descriptions :column="1" bordered size="small">
         <a-descriptions-item label="机构编码">{{ current.agencyCode }}</a-descriptions-item>
         <a-descriptions-item label="机构名称">{{ current.agencyName }}</a-descriptions-item>
-        <a-descriptions-item label="机构类型">{{ current.agencyType }}</a-descriptions-item>
-        <a-descriptions-item label="牌照 / 备案编号">{{ current.licenseNo }}</a-descriptions-item>
+        <a-descriptions-item label="社会统一征信编号">{{ current.licenseNo }}</a-descriptions-item>
         <a-descriptions-item label="状态">
           <a-tag size="small" :color="current.status === '启用' ? 'green' : 'gray'">{{ current.status }}</a-tag>
         </a-descriptions-item>
@@ -233,7 +195,6 @@
         <a-descriptions-item label="SFTP 目录">
           <span class="mono">{{ current.sftp?.directory }}</span>
         </a-descriptions-item>
-        <a-descriptions-item label="联系人">{{ current.contactPerson || '—' }} {{ current.contactPhone }}</a-descriptions-item>
         <a-descriptions-item label="备注">{{ current.remark || '—' }}</a-descriptions-item>
         <a-descriptions-item label="创建信息">{{ current.createdBy }} · {{ current.createdAt }}</a-descriptions-item>
         <a-descriptions-item label="更新信息">{{ current.updatedBy }} · {{ current.updatedAt }}</a-descriptions-item>
@@ -247,8 +208,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { Message, Modal } from '@arco-design/web-vue'
-import type { FormInstance } from '@arco-design/web-vue'
+import { Message, Modal, type FormInstance } from '@arco-design/web-vue'
 import { IconPlus, IconSearch, IconLink, IconCheckCircleFill, IconCloseCircleFill } from '@arco-design/web-vue/es/icon'
 import {
   fetchCreditAgencies,
@@ -262,11 +222,11 @@ import type { CreditAgency } from '../mock/creditAgencies'
 const emptyForm = (): Partial<CreditAgency> & { sftp: CreditAgency['sftp'] } => ({
   agencyCode: '',
   agencyName: '',
-  agencyType: '个人征信',
   licenseNo: '',
   status: '启用',
   pathStrategy: 'fixed',
   sftp: { host: '', port: 22, username: '', password: '', directory: '' },
+  /** 联系人与电话业务上不涉及，已从表单与列表移除，仅保留字段以兼容存量数据 */
   contactPerson: '',
   contactPhone: '',
   remark: '',
@@ -278,7 +238,7 @@ const testing = ref(false)
 const agencies = ref<CreditAgency[]>([])
 
 /** 筛选条件 */
-const filters = reactive({ keyword: '', agencyType: '', status: '' })
+const filters = reactive({ keyword: '', status: '' })
 
 /** 分页配置 */
 const pagination = reactive({ current: 1, pageSize: 10, total: 0 })
@@ -288,7 +248,6 @@ const filteredAgencies = computed(() => {
   const kw = filters.keyword.trim()
   return agencies.value.filter((a) => {
     if (kw && !a.agencyName.includes(kw) && !a.agencyCode.includes(kw)) return false
-    if (filters.agencyType && a.agencyType !== filters.agencyType) return false
     if (filters.status && a.status !== filters.status) return false
     return true
   })
@@ -307,7 +266,7 @@ const loadAgencies = async () => {
     agencies.value = await fetchCreditAgencies()
     pagination.total = agencies.value.length
   } catch (e: any) {
-    Message.error(e?.message ?? '获取征信机构列表失败')
+    Message.error(e?.message ?? '获取合作机构列表失败')
   } finally {
     loading.value = false
   }
@@ -316,7 +275,6 @@ const loadAgencies = async () => {
 /** 重置筛选条件 */
 const resetFilters = () => {
   filters.keyword = ''
-  filters.agencyType = ''
   filters.status = ''
   pagination.current = 1
 }
@@ -336,8 +294,7 @@ const form = reactive(emptyForm())
 const rules = {
   agencyCode: [{ required: true, message: '请输入机构编码' }],
   agencyName: [{ required: true, message: '请输入机构名称' }],
-  agencyType: [{ required: true, message: '请选择机构类型' }],
-  licenseNo: [{ required: true, message: '请输入牌照 / 备案编号' }],
+  licenseNo: [{ required: true, message: '请输入社会统一征信编号' }],
   'sftp.host': [{ required: true, message: '请输入 SFTP IP 地址' }],
   'sftp.port': [{ required: true, message: '请输入 SFTP 端口' }],
   'sftp.username': [{ required: true, message: '请输入 SFTP 用户名' }],
@@ -397,8 +354,9 @@ const handleTestConnection = async () => {
 
 /** 提交保存（E2 编码重复 / E3 必填缺失由表单与 mock 层校验） */
 const handleSubmit = async () => {
-  const valid = await formRef.value?.validate()
-  if (!valid) return
+  // Arco validate() 校验通过时 resolve undefined、失败时 resolve errors 对象，不能按布尔语义反着判
+  const errors = await formRef.value?.validate()
+  if (errors) return
   submitting.value = true
   try {
     if (isEdit.value) {

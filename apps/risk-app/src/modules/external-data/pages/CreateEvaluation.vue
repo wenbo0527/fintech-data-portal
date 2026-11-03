@@ -294,9 +294,9 @@ import type { FileItem } from '@arco-design/web-vue/es/upload/interfaces';
 const router = useRouter();
 const formRef = ref();
 
-// 返回上一页
+// 返回列表页：真实路由是 /variable-hub/external-data/evaluation，旧代码里的 /evaluation/list 并不存在
 const handleBack = () => {
-  router.push('/variable-hub/external-data/evaluation/list');
+  router.push('/variable-hub/external-data/evaluation');
 };
 
 // 当前步骤
@@ -754,8 +754,9 @@ const customUpload = (options: UploadOptions) => {
   });
 };
 
-// 导入任务API服务
-import { createTask } from '@/modules/external-data/api/task';
+// 评估报告统一走 api/evaluation（与列表页 / 详情页同一事实源）；旧 createTask 接口配套写的是 /evaluation/progress
+// 与 /evaluation/list 两条不存在的路由，提交后用户会落进空白页
+import { createEvaluationReport } from '@/modules/external-data/api/evaluation';
 
 // 表单提交
 const handleSubmit = async () => {
@@ -763,30 +764,20 @@ const handleSubmit = async () => {
   if (!res) {
     // 验证通过，提交数据
     try {
-      // 准备任务数据
-      const taskData = {
-        taskName: form.reportName,
-        config: {
-          productName: form.reportName,
-          reportType: form.templateType || '外部数据评估',
-          analysisPeriod: form.analysisPeriod.length > 0 ? `${form.analysisPeriod[0]}-${form.analysisPeriod[1]}` : ''
-        }
-      };
-      
-      // 调用任务创建API
-      const response = await createTask(taskData);
-      
-      AMessage.success('任务创建成功');
-      // 跳转到进度页面
-      router.push({
-        path: '/variable-hub/external-data/evaluation/progress',
-        query: {
-          taskId: response.data.id,
-          taskName: form.reportName
-        }
+      const created: any = await createEvaluationReport({
+        title: form.reportName,
+        type: 'comprehensive',
+        status: 'draft',
+        score: 0,
+        templateType: form.templateType || '外数评估-产品级分析报告模板',
+        analysisPeriod: form.analysisPeriod.length > 0 ? `${form.analysisPeriod[0]}-${form.analysisPeriod[1]}` : ''
       });
+
+      AMessage.success('评估报告已创建');
+      // 创建成功后直达详情，让用户立刻看到自己的产出（与列表页新建行为一致）
+      router.push(`/variable-hub/external-data/evaluation/${encodeURIComponent(String(created?.id))}`);
     } catch (error) {
-      AMessage.error('任务创建失败，请重试');
+      AMessage.error('创建失败，请重试');
       console.error('提交失败:', error);
     }
   }

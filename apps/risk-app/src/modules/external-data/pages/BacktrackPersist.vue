@@ -69,14 +69,14 @@
       <div class="step-content">
         <!-- ============ 步骤1：B1 选择机构与文件获取 ============ -->
         <div v-show="currentStep === 0">
-          <a-divider orientation="left" style="margin-top: 0">1.1 选择征信机构</a-divider>
+          <a-divider orientation="left" style="margin-top: 0">1.1 选择合作机构</a-divider>
           <a-form :model="formModel" layout="vertical">
             <a-row :gutter="16">
               <a-col :span="8">
-                <a-form-item label="征信机构" required help="仅展示征信机构管理中状态为「启用」的机构">
-                  <a-select v-model="selectedAgencyId" placeholder="请选择征信机构" @change="onAgencyChange">
+                <a-form-item label="合作机构" required help="仅展示合作机构管理中状态为「启用」的机构">
+                  <a-select v-model="selectedAgencyId" placeholder="请选择合作机构" @change="onAgencyChange">
                     <a-option v-for="a in agencies" :key="a.id" :value="a.id">
-                      {{ a.agencyName }}（{{ a.agencyCode }} · {{ a.agencyType }}）
+                      {{ a.agencyName }}（{{ a.agencyCode }}）
                     </a-option>
                   </a-select>
                 </a-form-item>
@@ -428,9 +428,9 @@
                       <template #icon><icon-find-replace /></template>
                       执行自动字段碰撞
                     </a-button>
-                    <a-button :disabled="!fieldMappings.length" @click="applyMappingFile">
-                      <template #icon><icon-upload /></template>
-                      上传映射表批量匹配
+                    <a-button :disabled="!fieldMappings.length" @click="applyArchiveBaseline">
+                      <template #icon><icon-archive /></template>
+                      继承档案默认映射
                     </a-button>
                     <a-tag color="gray">
                       {{ isCustomProduct ? '未收录产品：标准库字段为输入框，字段说明显示「—」' : '外数出参字段 → 标准库字段（字段顺序无关）' }}
@@ -510,8 +510,8 @@
               <a-table-column title="匹配方式" :width="140">
                 <template #cell="{ record }">
                   <a-tag v-if="record.targetField === NON_STD_FIELD" color="gray" size="small">非标准化</a-tag>
+                  <a-tag v-else-if="record.matchedBy === 'inherit'" color="purple" size="small">继承档案</a-tag>
                   <a-tag v-else-if="record.matchedBy === 'auto'" color="green" size="small">自动匹配</a-tag>
-                  <a-tag v-else-if="record.matchedBy === 'file'" color="blue" size="small">映射表批量</a-tag>
                   <a-tag v-else-if="record.matchedBy === 'manual'" color="orange" size="small">人工调整</a-tag>
                   <a-tag v-else-if="record.matchedLabel === '默认保留原始字段名'" color="cyan" size="small">保留原字段名</a-tag>
                   <a-tag v-else color="red" size="small">待匹配</a-tag>
@@ -520,8 +520,8 @@
             </template>
           </a-table>
           <div v-if="fieldMappings.length" class="table-tip">
-            映射列表已映射 {{ mappedCount }} / {{ fieldMappings.length }} 项（其中非标准化 {{ nonStdCount }} 项，另含必选独立区 {{ requiredPassedCount }} / {{ activeRequiredFieldMatch.length }} 项）。
-            未匹配字段已排在列表最前方，便于优先处理；映射规则版本 <b>{{ mappingVersion }}</b> 将写入落库记录。
+            映射列表已映射 {{ mappedCount }} / {{ fieldMappings.length }} 项（其中非标准化 {{ nonStdCount }} 项、继承档案默认映射 {{ inheritedCount }} 项，另含必选独立区 {{ requiredPassedCount }} / {{ activeRequiredFieldMatch.length }} 项）。
+            未匹配字段已排在列表最前方，便于优先处理；映射规则版本 <b>{{ mappingVersion }}</b> 将写入落库记录，已建档产品的本次结论会回写档案默认映射。
           </div>
         </div>
 
@@ -863,9 +863,8 @@
         </a-descriptions-item>
         <a-descriptions-item label="操作人">{{ persistRecord.baseInfo.operator }}</a-descriptions-item>
         <a-descriptions-item label="操作时间">{{ persistRecord.baseInfo.operateTime }}</a-descriptions-item>
-        <a-descriptions-item label="征信机构">{{ persistRecord.agencyInfo.agencyName }}</a-descriptions-item>
-        <a-descriptions-item label="机构类型">{{ persistRecord.agencyInfo.agencyType }}</a-descriptions-item>
-        <a-descriptions-item label="牌照编号">{{ persistRecord.agencyInfo.licenseNo }}</a-descriptions-item>
+        <a-descriptions-item label="合作机构">{{ persistRecord.agencyInfo.agencyName }}</a-descriptions-item>
+        <a-descriptions-item label="社会统一征信编号">{{ persistRecord.agencyInfo.licenseNo }}</a-descriptions-item>
         <a-descriptions-item label="获取方式">{{ persistRecord.fileInfo.acquireMode }}</a-descriptions-item>
         <a-descriptions-item label="文件名" :span="2">{{ persistRecord.fileInfo.fileName }}</a-descriptions-item>
         <a-descriptions-item label="文件行数">{{ persistRecord.fileInfo.fileRows.toLocaleString() }}</a-descriptions-item>
@@ -873,11 +872,13 @@
         <a-descriptions-item label="编码格式">{{ persistRecord.fileInfo.encoding }}</a-descriptions-item>
         <a-descriptions-item label="分隔符">{{ persistRecord.fileInfo.delimiter }}</a-descriptions-item>
         <a-descriptions-item label="外数产品">{{ persistRecord.mappingInfo.product }}</a-descriptions-item>
+        <a-descriptions-item label="关联档案">{{ persistRecord.mappingInfo.productCode || '未建档（无可继承映射）' }}</a-descriptions-item>
         <a-descriptions-item label="接口号">{{ persistRecord.mappingInfo.interfaceId || '—' }}</a-descriptions-item>
         <a-descriptions-item label="映射版本">{{ persistRecord.mappingInfo.mappingVersion }}</a-descriptions-item>
         <a-descriptions-item label="标准 / 非标字段数">
           {{ persistRecord.mappingInfo.stdFieldCount }} / {{ persistRecord.mappingInfo.nonStdFieldCount }}
         </a-descriptions-item>
+        <a-descriptions-item label="继承档案映射">{{ persistRecord.mappingInfo.inheritedFieldCount || 0 }} 行</a-descriptions-item>
         <a-descriptions-item label="Hive 目标表" :span="2">
           <span class="mono">{{ persistRecord.storageInfo.hiveTable }}</span>
         </a-descriptions-item>
@@ -907,6 +908,8 @@
         <template #extra>
           <a-space>
             <a-button @click="openPersistRecord">查看落库记录</a-button>
+            <!-- 落库完成不等于资产已登记：补上通向特征台账的出口，接住「新外数 → 落库 → 上台账」主干的最后一环 -->
+            <a-button @click="goLedgerRegister">登记为特征</a-button>
             <a-button type="primary" @click="goTaskList">查看服务任务列表</a-button>
           </a-space>
         </template>
@@ -945,7 +948,7 @@ const formModel = reactive<Record<string, unknown>>({})
 const stepsList = [
   {
     title: '选择机构与文件获取',
-    sections: ['1.1 选择征信机构', '1.2 SFTP 拉取 / 手动上传', '1.3 已获取文件'],
+    sections: ['1.1 选择合作机构', '1.2 SFTP 拉取 / 手动上传', '1.3 已获取文件'],
   },
   {
     title: '预览与字段映射',
@@ -977,8 +980,8 @@ const {
   REQUIRED_FIELD_MATCH, activeRequiredFieldMatch, requiredSourceSelection, catalogSourceFields, sourceFieldComment,
   requiredMappingStatus, requiredAllPassed, requiredPassedCount,
   loadProducts, onMappingProductChange, onRequiredSourceChange,
-  applyAutoCollision, applyMappingFile, setMappingTarget,
-  mappedCount, nonStdCount, nonStdFieldNames,
+  applyAutoCollision, applyArchiveBaseline, setMappingTarget,
+  mappedCount, nonStdCount, nonStdFieldNames, inheritedCount,
   mappingPagination, pagedFieldMappings, onMappingPageChange, onMappingPageSizeChange,
   mappingVersion, buildMappingVersion, NON_STD_FIELD,
   outboundTasks, matchedTaskIds, loadOutboundTasks,
@@ -1005,7 +1008,7 @@ interface BatchContext {
   sectionTitle: string
   /** 定位到的环节锚点 key（用于高亮） */
   sectionKey: string
-  /** 征信机构 */
+  /** 合作机构 */
   agencyName: string
   /** 来源文件 */
   fileName: string
@@ -1153,7 +1156,7 @@ const finishAll = async () => {
 const nextStep = async () => {
   if (currentStep.value === 0) {
     if (!selectedAgency.value) {
-      Message.warning('请先选择征信机构')
+      Message.warning('请先选择合作机构')
       return
     }
     if (!activeFile.value) {
@@ -1234,6 +1237,12 @@ const goBack = () => {
 const goTaskList = () => {
   successVisible.value = false
   router.push({ name: 'RiskExternalDataTaskList' })
+}
+
+/** 落库完成后去特征台账登记新特征：带着落库表名过去，台账侧直接弹注册抽屉 */
+const goLedgerRegister = () => {
+  successVisible.value = false
+  router.push({ path: '/variable-management', query: { action: 'register_from_external', table: hiveTable.value || '' } })
 }
 
 onMounted(async () => {

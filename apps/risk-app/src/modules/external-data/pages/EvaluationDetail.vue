@@ -37,6 +37,10 @@
             <template #icon><IconLeft /></template>
             返回列表
           </AButton>
+          <!-- 一次性准入评估后的下一环在任务域：补一个入口，两套评估体系不再互不可见 -->
+          <AButton type="primary" @click="goCreateRoutineTask" v-if="!isEditMode">
+            发起周期评估
+          </AButton>
           <AButton type="primary" status="warning" @click="archiveReport" v-if="!isEditMode && reportData.status === '已发布'">
             <template #icon><IconArchive /></template>
             归档报告
@@ -731,6 +735,11 @@ const basicInfo = computed<Array<{ label: string; value: string }>>(() => [
 // 返回上一页
 const handleBack = () => {
   router.push('/variable-hub/external-data/evaluation');
+};
+
+// 报告看完后的下一环：到任务管理新建常态性评估，把一次性结论变成长期巡检
+const goCreateRoutineTask = () => {
+  router.push('/tasks/evaluation/create');
 };
 
 // 归档报告

@@ -14,7 +14,7 @@
         </div>
       </div>
     </div>
-    <a-grid :cols="4" :col-gap="12" :row-gap="12" class="section-grid nav-grid">
+    <a-grid :cols="6" :col-gap="12" :row-gap="12" class="section-grid nav-grid">
       <a-grid-item>
         <a-card hoverable class="nav-card" @click="goNav('/budget/overview')">
           <div class="nav-title">预算管理</div>
@@ -39,33 +39,25 @@
           <div class="nav-sub">场景与申请</div>
         </a-card>
       </a-grid-item>
+      <!-- 外数上台账后的下一环在风险要素侧：补两个出口，避免两个域互不可见 -->
+      <a-grid-item>
+        <a-card hoverable class="nav-card" @click="goNav('/variable-management')">
+          <div class="nav-title">特征台账</div>
+          <div class="nav-sub">资产与状态</div>
+        </a-card>
+      </a-grid-item>
+      <a-grid-item>
+        <a-card hoverable class="nav-card" @click="goNav('/tasks')">
+          <div class="nav-title">任务管理</div>
+          <div class="nav-sub">周期评估与效果</div>
+        </a-card>
+      </a-grid-item>
     </a-grid>
-    <a-grid :cols="4" :col-gap="12" :row-gap="12" class="section-grid">
-      <a-grid-item>
-        <a-card hoverable @click="goArchive('importing')" class="metric-card importing">
-          <div class="metric-title">引入中</div>
-          <div class="metric-value">{{ statusCounts.importing }}</div>
-          <div class="metric-sub">点击查看对应档案</div>
-        </a-card>
-      </a-grid-item>
-      <a-grid-item>
-        <a-card hoverable @click="goArchive('online')" class="metric-card online">
-          <div class="metric-title">已上线</div>
-          <div class="metric-value">{{ statusCounts.online }}</div>
-          <div class="metric-sub">点击查看对应档案</div>
-        </a-card>
-      </a-grid-item>
-      <a-grid-item>
-        <a-card hoverable @click="goArchive('pending_evaluation')" class="metric-card pending">
-          <div class="metric-title">待评估</div>
-          <div class="metric-value">{{ statusCounts.pending_evaluation }}</div>
-          <div class="metric-sub">点击查看对应档案</div>
-        </a-card>
-      </a-grid-item>
-      <a-grid-item>
-        <a-card hoverable @click="goArchive('archived')" class="metric-card archived">
-          <div class="metric-title">已归档</div>
-          <div class="metric-value">{{ statusCounts.archived }}</div>
+    <a-grid :cols="statusCards.length" :col-gap="12" :row-gap="12" class="section-grid">
+      <a-grid-item v-for="card in statusCards" :key="card.status">
+        <a-card hoverable :class="['metric-card', `metric-card--${card.status}`]" @click="goArchive(card.status)">
+          <div class="metric-title">{{ card.label }}</div>
+          <div class="metric-value">{{ card.count }}</div>
           <div class="metric-sub">点击查看对应档案</div>
         </a-card>
       </a-grid-item>
@@ -89,7 +81,7 @@
                 <template #cell="{ record }"><a-progress :percent="Number(record.progress||0)" size="small" /></template>
               </a-table-column>
               <a-table-column title="状态" :width="120">
-                <template #cell="{ record }"><a-tag :status="taskTag(record.status)">{{ taskStatusLabel(record.status) }}</a-tag></template>
+                <template #cell="{ record }"><a-tag :color="taskStatusColor(record.status)">{{ taskStatusLabel(record.status) }}</a-tag></template>
               </a-table-column>
             </template>
             <template #empty><a-empty description="暂无待办项" /></template>
@@ -107,15 +99,22 @@ import { Message } from '@arco-design/web-vue'
 import { useExternalDataStore } from '@/modules/external-data/stores'
 import { useRouter } from 'vue-router'
 import BudgetBurndownTabs from '@/components/modals/BudgetBurndownTabs.vue'
+import { ARCHIVE_STATUS_META, ARCHIVE_STATUS_OPTIONS, progressStatusMeta, type ArchiveStatus } from '../mock/archiveProducts'
 const store = useExternalDataStore()
 const router = useRouter()
 
-const mapStatus = (s?: string) => { if (s === 'active') return 'online'; if (s === 'inactive') return 'archived'; if (s === 'pending_evaluation') return 'pending_evaluation'; if (s === 'importing') return 'importing'; return (s || 'online') }
-const statusCounts = computed(() => {
+/**
+ * 状态计数卡：直接按档案主数据的 status 字段分档，枚举、展示名与详情页共用 ARCHIVE_STATUS_META。
+ * 改造前这里手写 4 张卡 + 一层 active/inactive 别名映射，导致「待完善技术档案」这一档
+ * 既没有卡片也不在计数里，与列表页的六状态口径不一致。
+ */
+const statusCards = computed(() => {
   const list = Array.isArray(store.products) ? store.products : []
-  const counts = { importing: 0, online: 0, pending_evaluation: 0, archived: 0 }
-  list.forEach((p: any) => { const st = mapStatus(p.status); if (st in counts) (counts as any)[st]++ })
-  return counts
+  return ARCHIVE_STATUS_OPTIONS.filter((o) => o.value !== 'all').map((o) => ({
+    status: o.value as ArchiveStatus,
+    label: ARCHIVE_STATUS_META[o.value as ArchiveStatus].label,
+    count: list.filter((p: any) => p.status === o.value).length,
+  }))
 })
 const burndownChartData = computed(() => store.burndown || [])
 const todoList = computed(() => store.tasks || [])
@@ -127,8 +126,9 @@ onMounted(load)
 const goArchive = (status: string) => { router.push({ path: '/variable-hub/external-data/archive', query: { status } }) }
 const goNav = (path: string) => { router.push(path) }
 const onGranularityChange = async (g: 'month' | 'quarter') => { await store.fetchBurndown({ range: g }) }
-const taskTag = (s?: string) => s === 'pending' ? 'default' : s === 'in_progress' ? 'warning' : s === 'completed' ? 'success' : 'default'
-const taskStatusLabel = (s?: string) => s === 'pending' ? '待处理' : s === 'in_progress' ? '进行中' : s === 'completed' ? '已完成' : '—'
+/** 待办任务状态：展示名与色取 PROGRESS_STATUS_META，与档案详情页生命周期页签同一字典 */
+const taskStatusLabel = (s?: string) => progressStatusMeta(s)?.label || s || '—'
+const taskStatusColor = (s?: string) => progressStatusMeta(s)?.color || 'gray'
 </script>
 
 <style scoped>

@@ -6,18 +6,19 @@ import {
   testAgencySftpConnection,
   getEnabledAgencies,
   getAllAgencies,
+  type CreditAgency,
+  type AgencySftpConfig,
 } from '../mock/creditAgencies'
-import type { CreditAgency, AgencySftpConfig } from '../mock/creditAgencies'
 
 /**
- * 征信机构管理 API 层
+ * 合作机构管理 API 层
  * 项目无后端服务，VITE_USE_MOCK=true 时直接短路到 mock 数据源；
  * 未来接入真实接口时仅需替换此处的实现，页面调用方式保持不变。
  */
 const useMock = import.meta.env.VITE_USE_MOCK === 'true'
 
-/** 查询征信机构列表 */
-export async function fetchCreditAgencies(params?: { keyword?: string; agencyType?: string; status?: string }): Promise<CreditAgency[]> {
+/** 查询合作机构列表 */
+export async function fetchCreditAgencies(params?: { keyword?: string; status?: string }): Promise<CreditAgency[]> {
   if (useMock) return listCreditAgencies(params)
   return []
 }

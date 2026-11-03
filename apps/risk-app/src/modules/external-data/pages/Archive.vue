@@ -19,11 +19,7 @@
         <a-form-item label="快速状态">
           <a-radio-group v-model="filters.statusQuick">
             <a-radio value="">全部</a-radio>
-            <a-radio value="importing">引入中</a-radio>
-            <a-radio value="pending_tech_profile">待完善技术档案</a-radio>
-            <a-radio value="online">已上线</a-radio>
-            <a-radio value="pending_evaluation">待评估</a-radio>
-            <a-radio value="archived">已归档</a-radio>
+            <a-radio v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</a-radio>
           </a-radio-group>
         </a-form-item>
         <a-form-item field="suppliers" label="供应商">
@@ -32,11 +28,9 @@
           </a-select>
         </a-form-item>
         <a-form-item field="status" label="状态">
-          <a-select v-model="filters.status" allow-clear placeholder="选择状态" style="width: 160px">
-            <a-option value="importing">引入中</a-option>
-            <a-option value="online">已上线</a-option>
-            <a-option value="pending_evaluation">待评估</a-option>
-            <a-option value="archived">已归档</a-option>
+          <!-- R04：状态下拉与快速状态共用同一份六状态枚举，改造前缺「待完善技术档案」 -->
+          <a-select v-model="filters.status" allow-clear placeholder="选择状态" style="width: 180px">
+            <a-option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</a-option>
           </a-select>
         </a-form-item>
         <a-form-item field="usageScene" label="使用场景">
@@ -66,15 +60,17 @@
               <a-button type="text" @click="goDetailPage(record)">{{ record.name }}</a-button>
             </template>
           </a-table-column>
-          <a-table-column title="合作机构" :width="200">
-            <template #cell="{ record }">{{ record.partnerOrg || '—' }}</template>
+          <a-table-column title="合作机构" :width="120">
+            <!-- 2026-11-03 两轴口径：合作机构是闭集四档（百行 / 朴道 / 钱塘 / 其他），不再是十二家工商全称 -->
+            <template #cell="{ record }">{{ record.cooperationOrg || '—' }}</template>
           </a-table-column>
           <a-table-column title="供应商" data-index="supplier" :width="160" />
           <a-table-column title="接口号" :width="140">
-            <template #cell="{ record }">{{ record.interfaceNo || '—' }}</template>
+            <!-- R10：先签协议后引入的档案接口号为空，按文档口径显示「待补充」而非「—」 -->
+            <template #cell="{ record }">{{ record.interfaceNo || '待补充' }}</template>
           </a-table-column>
           <a-table-column title="状态" :width="120">
-            <template #cell="{ record }"><a-tag :status="statusTag(record.status)">{{ statusLabel(record.status) }}</a-tag></template>
+            <template #cell="{ record }"><a-tag :color="statusColor(record.status)">{{ statusLabel(record.status) }}</a-tag></template>
           </a-table-column>
           <a-table-column title="接入时间" :width="180">
             <template #cell="{ record }">{{ formatDate(record.createdAt) }}</template>
@@ -95,81 +91,22 @@
           <a-table-column title="监控状态" :width="120">
             <template #cell="{ record }">{{ record.monitorStatus ?? '—' }}</template>
           </a-table-column>
-          <a-table-column title="操作" :width="260" fixed="right">
+          <a-table-column title="操作" :width="160" fixed="right">
             <template #cell="{ record }">
               <a-space>
-                <a-button size="small" type="text" @click="openEdit(record)">编辑档案</a-button>
+                <!-- R06：列表操作列只保留「查看档案」跳转详情，编辑在详情页完成 -->
+                <a-button size="small" type="text" @click="goDetailPage(record)">查看档案</a-button>
               </a-space>
             </template>
           </a-table-column>
         </template>
-        <template #empty><a-empty description="没有匹配的档案" /></template>
+        <template #empty><a-empty description="没有符合条件的外数档案" /></template>
       </a-table>
   </a-card>
 
-    <a-drawer v-model:visible="detailVisible" :width="780" title="外数档案详情">
-      <a-space direction="vertical" style="width:100%">
-        <a-card title="基础信息">
-          <a-descriptions :column="2" :data="detailBaseItems" bordered />
-        </a-card>
-        <a-card title="定价信息">
-          <template #extra><span v-if="!pricingData">未配置（以档案单价为准）</span></template>
-          <div v-if="pricingData">
-            <a-descriptions :column="2" :data="pricingSummary" bordered />
-            <div v-if="pricingData.billingType==='fixed'" style="margin-top:8px">基础单价：{{ pricingData.basePrice ?? '—' }}</div>
-            <div v-else-if="pricingData.billingType==='tiered'" style="margin-top:8px">
-              <a-table :data="pricingData.tiers || []" :pagination="false">
-                <template #columns>
-                  <a-table-column title="下限" data-index="lower" :width="160" />
-                  <a-table-column title="上限" data-index="upper" :width="160" />
-                  <a-table-column title="单价" data-index="price" :width="160" />
-                </template>
-              </a-table>
-            </div>
-            <div v-else style="margin-top:8px">备注：{{ pricingData.remark || '—' }}</div>
-          </div>
-          <div v-else>
-            <a-descriptions :column="2" :data="[{label:'档案单价',value: formatCurrency(detailTarget?.unitPrice)},{label:'计费模式',value: billingModeLabel(detailTarget?.billingMode)}]" bordered />
-          </div>
-        </a-card>
-        <a-card title="月度计价快照" style="margin-top:12px">
-          <a-table :data="monthlySnapshots" :pagination="false">
-            <template #columns>
-              <a-table-column title="月份" data-index="month" :width="120" />
-              <a-table-column title="供应商" data-index="supplier" :width="160" />
-              <a-table-column title="合同编号" data-index="contractNo" :width="140" />
-              <a-table-column title="月度金额" :width="140">
-                <template #cell="{ record }">{{ formatCurrency(record.monthlyAmount) }}</template>
-              </a-table-column>
-              <a-table-column title="状态" data-index="status" :width="120" />
-            </template>
-            <template #empty><a-empty description="暂无月度快照" /></template>
-          </a-table>
-        </a-card>
-        <a-card title="关联采购项目">
-          <a-table :data="relatedContracts" :pagination="false">
-            <template #columns>
-              <a-table-column title="合同名称" data-index="contractName" :width="240" />
-              <a-table-column title="合同编号" data-index="contractNo" :width="160" />
-              <a-table-column title="类型" :width="120">
-                <template #cell="{ record }">{{ record.contractType==='supplement'?'补充合同':'框架协议' }}</template>
-              </a-table-column>
-              <a-table-column title="金额" :width="160">
-                <template #cell="{ record }">{{ formatCurrency(record.amount) }}</template>
-              </a-table-column>
-              <a-table-column title="到期" :width="160">
-                <template #cell="{ record }">{{ formatDate(record.endDate) }}</template>
-              </a-table-column>
-              <a-table-column title="状态" data-index="status" :width="120" />
-            </template>
-            <template #empty><a-empty description="暂无关联项目" /></template>
-          </a-table>
-        </a-card>
-      </a-space>
-    </a-drawer>
-
     <!-- 档案编辑弹窗 (分步表单) -->
-    <a-modal v-model:visible="editVisible" :title="editTarget ? '编辑档案' : '新建外数档案'" :width="800" :footer="false" :mask-closable="false">
+    <!-- R06/R20：列表只提供「新建外数档案」，编辑入口在详情页 -->
+    <a-modal v-model:visible="editVisible" title="新建外数档案" :width="800" :footer="false" :mask-closable="false">
       <a-steps :current="currentStep" style="margin-bottom: 24px" small>
         <a-step title="基础信息" />
         <a-step title="接口信息" />
@@ -185,29 +122,32 @@
                 <a-input v-model="editForm.name" placeholder="请输入外数名称" />
               </a-form-item>
             </a-col>
-            <!-- PRD R01/R05: 新增合作机构字段，放在供应商前面 -->
+            <!-- 两轴口径：合作机构＝持牌征信机构四档，供应商＝实际供数/接入厂商，口径见 mock/orgDictionaries.ts -->
             <a-col :span="8">
-              <a-form-item field="partnerOrg" label="合作机构">
-                <a-select v-model="editForm.partnerOrg" allow-clear allow-search placeholder="选择合作机构" :options="partnerOrgOptions" />
+              <a-form-item field="cooperationOrg" label="合作机构" required>
+                <a-select v-model="editForm.cooperationOrg" allow-clear allow-search placeholder="选择合作机构" :options="cooperationOrgOptions" />
               </a-form-item>
             </a-col>
-            <!-- PRD R02: 供应商由文本输入改为选项列表 -->
             <a-col :span="8">
+              <!-- 原「渠道」轴已并入供应商（2026-11-03），候选取字典枚举且允许输入新厂商 -->
               <a-form-item field="supplier" label="供应商">
                 <a-select v-model="editForm.supplier" allow-clear allow-create allow-search placeholder="选择或输入供应商名称">
-                  <a-option v-for="s in supplierOptions" :key="s" :value="s">{{ s }}</a-option>
+                  <a-option v-for="s in supplierDictOptions" :key="s" :value="s">{{ s }}</a-option>
                 </a-select>
               </a-form-item>
             </a-col>
             <a-col :span="8">
-              <a-form-item field="status" label="当前状态" required>
-                <a-select v-model="editForm.status" placeholder="选择当前状态">
-                  <a-option value="importing">引入中</a-option>
-                  <a-option value="pending_tech_profile">待完善技术档案</a-option>
-                  <a-option value="online">已上线</a-option>
-                  <a-option value="pending_evaluation">待评估</a-option>
-                  <a-option value="archived">已归档</a-option>
+              <!-- R22：外数类型决定是否存落库环节，为必填 -->
+              <a-form-item field="externalDataType" label="外数类型" required>
+                <a-select v-model="editForm.externalDataType" placeholder="选择外数类型">
+                  <a-option v-for="t in EXTERNAL_DATA_TYPES" :key="t" :value="t">{{ t }}</a-option>
                 </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <!-- R129：新建档案一律进入「引入中」，状态由业务事件流转，不开放人工任选 -->
+              <a-form-item field="status" label="当前状态">
+                <a-input :model-value="ARCHIVE_STATUS_META.importing.label" disabled />
               </a-form-item>
             </a-col>
             <a-col :span="24">
@@ -315,27 +255,21 @@
 
         <!-- 步骤3：数据存储与血缘 -->
         <div v-show="currentStep === 3">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-            <span><strong>落库表配置 (支持多个)</strong></span>
-            <a-button type="primary" size="small" @click="addTargetTable">新增落库表</a-button>
-          </div>
-          
-          <a-card v-for="(table, index) in editForm.targetTables" :key="index" style="margin-bottom: 16px; background: var(--color-fill-2);" :bordered="false">
-            <a-row :gutter="16" align="center">
-              <a-col :span="14">
-                <a-form-item :label="`落库表名 ${index + 1}`" style="margin-bottom: 0;">
-                  <a-input v-model="table.name" placeholder="请输入落库表名，如 dwd_external_data_detail" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="10" style="text-align: right; padding-top: 28px;">
-                <a-space>
-                  <a-button type="outline" size="small" @click="viewTableFields(table.name)" :disabled="!table.name">查看字段</a-button>
-                  <a-button type="outline" size="small" @click="viewDataLineage(table.name)" :disabled="!table.name">查看血缘</a-button>
-                  <a-button type="text" status="danger" @click="removeTargetTable(index)" v-if="editForm.targetTables.length > 1">删除</a-button>
-                </a-space>
-              </a-col>
-            </a-row>
-          </a-card>
+          <a-alert type="info" style="margin-bottom: 16px;">
+            新建阶段这些信息可先留空（需求文档 R07「先签协议后引入」），后续在详情页补齐。
+          </a-alert>
+          <a-form-item field="targetTable" label="落库目标表">
+            <a-input v-model="editForm.targetTable" placeholder="如 dw_ods.ods_ext_retro_std，在线实时调用可留空" allow-clear />
+            <template #extra>
+              <div style="font-size: 12px; color: var(--color-text-3); margin-top: 4px;">
+                一张权威落库目标表，字段具体落位在详情页「落库字段映射」页签维护
+              </div>
+            </template>
+          </a-form-item>
+          <a-space v-if="editForm.targetTable">
+            <a-button type="outline" size="small" @click="viewTableFields(editForm.targetTable)">查看字段</a-button>
+            <a-button type="outline" size="small" @click="viewDataLineage(editForm.targetTable)">查看血缘</a-button>
+          </a-space>
         </div>
 
         <!-- 底部导航按钮 -->
@@ -352,8 +286,8 @@
     </a-modal>
 
     <!-- 查看表字段抽屉 -->
-    <a-drawer v-model:visible="tableFieldsVisible" :width="500" title="表字段详情">
-      <a-table :data="mockTableFields" :pagination="false">
+    <a-drawer v-model:visible="tableFieldsVisible" :width="500" :title="tableFieldsTitle">
+      <a-table :data="tableFields" :pagination="false">
         <template #columns>
           <a-table-column title="字段名" data-index="name" />
           <a-table-column title="类型" data-index="type" />
@@ -365,83 +299,103 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, onMounted, computed, ref } from 'vue'
+import { reactive, onMounted, computed, ref, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { useRouter } from 'vue-router'
 import { useExternalDataStore } from '@/modules/external-data/stores'
 import { IconDownload } from '@arco-design/web-vue/es/icon'
 import DateUtils from '@/utils/dateUtils'
-import { partnerOrgNames } from '@/modules/budget/api/supplierDictionary'
+import { COOPERATION_ORG_OPTIONS, SUPPLIER_OPTIONS } from '../mock/orgDictionaries'
+import {
+  ARCHIVE_STATUS_META, ARCHIVE_STATUS_OPTIONS, EXTERNAL_DATA_TYPES,
+  type ArchiveStatus, type ExternalDataType, type InterfaceParam,
+} from '../mock/archiveProducts'
+import { getStdTableColumns } from '../mock/stdTableSchema'
 
 const router = useRouter()
 const store = useExternalDataStore()
 const archiveId = ref(sessionStorage.getItem('archiveId') || 'ARCH-001')
-const products = computed(() => store.products)
 const loading = ref(false)
-const productsView = ref<any[]>([])
 const saving = ref(false)
-const partnerOrgOptions = computed(() => partnerOrgNames.map(n => ({ label: n, value: n })))
-// PRD R02: 供应商改为选项列表，枚举值待补充，先上线框架支持allow-create
+/** 列表直接读 Store 的产品主数据（唯一事实源 mock/archiveProducts），不再在本页二次加工造值 */
+const productsView = computed(() => store.products as any[])
+/** 合作机构候选 = 闭集四档（百行 / 朴道 / 钱塘 / 其他）；供应商候选池见 mock/orgDictionaries.ts */
+const cooperationOrgOptions = computed(() => COOPERATION_ORG_OPTIONS.map((n) => ({ label: n, value: n })))
+/** 新建表单的供应商候选：走字典全集，不按存量数据反推（否则刚下线的厂商就选不到了） */
+const supplierDictOptions = SUPPLIER_OPTIONS
+/** 列表筛选用供应商：只取存量里真出现过的值，避免选了空结果 */
 const supplierOptions = computed(() => Array.from(new Set(productsView.value.map((p: any) => p.supplier).filter(Boolean))))
+/** 六状态选项：快速过滤条、状态下拉、详情页徽标共用同一份枚举 */
+const statusOptions = ARCHIVE_STATUS_OPTIONS.filter(o => o.value !== 'all').map(o => ({ value: o.value as string, label: o.label }))
 const filters = reactive<{ suppliers: string[]; status?: string; statusQuick?: string; usageScene?: string; keyword?: string }>({ suppliers: [], statusQuick: '' })
-const pagination = reactive({ total: 0, pageSize: 10, current: 1, showTotal: true })
-const displayedList = computed(() => productsView.value.filter((p: any) => { if (filters.statusQuick && !filters.status) filters.status = filters.statusQuick; if (filters.suppliers.length && !filters.suppliers.includes(p.supplier)) return false; if (filters.status && p.status !== filters.status) return false; if (filters.usageScene && !String(p.usageScene || '').includes(filters.usageScene)) return false; if (filters.keyword) { const k = filters.keyword.toLowerCase(); const name = String(p.name || '').toLowerCase(); const code = String(p.code || '').toLowerCase(); if (!name.includes(k) && !code.includes(k)) return false } return true }))
-const applyFilter = () => { pagination.current = 1; Message.success('筛选已更新') }
-const resetFilter = () => { filters.suppliers = []; filters.status = undefined; filters.usageScene = undefined; filters.keyword = undefined }
-const onPageChange = (page: number) => { pagination.current = page }
-const randBetween = (min: number, max: number) => Math.floor(min + Math.random() * (max - min + 1))
-const randomDateWithinYear = () => { const now = Date.now(); const delta = randBetween(0, 365) * 24 * 60 * 60 * 1000; return new Date(now - delta).toISOString() }
-const buildProductsView = () => {
-  const list = Array.isArray(products.value) ? products.value : []
-  const normalizeStatus = (s?: string) => { if (s === 'active') return 'online'; if (s === 'inactive') return 'archived'; if (s === 'pending_evaluation') return 'pending_evaluation'; if (s === 'importing') return 'importing'; return (s || '') }
-  productsView.value = list.map((p: any, idx: number) => {
-    const id = String(p.id ?? idx + 1)
-    const name = p.name || p.productName || p.code || `外数产品-${idx+1}`
-    const code = p.code || `ED-${idx+1}`
-    const supplier = p.supplier || '—'
-    const hasInterfaces = Number(p.interfaces || 0) > 0
-    const hasBottomTable = Boolean(p.bottomTable || p.dbTable || p.tableName)
-    const baseStatus = normalizeStatus(p.status)
-    const derivedStatus = (hasInterfaces && hasBottomTable) ? 'online' : (baseStatus || 'importing')
-    return { 
-      id, name, code, supplier, partnerOrg: p.partnerOrg || p.creditAgency || '—', interfaceNo: p.interfaceNo || '', status: derivedStatus, 
-      createdAt: p.createdAt || randomDateWithinYear(), 
-      usageScene: p.usageScene || '贷前评分/贷中监控', 
-      billingMode: p.billingMode || 'per_call', 
-      unitPrice: typeof p.unitPrice === 'number' ? p.unitPrice : randBetween(1, 10), 
-      billingCycle: p.billingCycle || 'month', 
-      currency: p.currency || 'CNY', 
-      effectiveDate: p.effectiveDate || new Date(Date.now() - 30 * 86400000).toISOString(), 
-      expireDate: p.expireDate || new Date(Date.now() + 335 * 86400000).toISOString(), 
-      tags: Array.isArray(p.tags) ? p.tags : ['外数','风控'], 
-      evaluationScore: p.evaluationScore ?? randBetween(60, 95), 
-      monitorStatus: p.monitorStatus || (Math.random() > 0.15 ? '正常' : '异常'), 
-      hasInterfaces, hasBottomTable,
-      frameworkAgreements: p.frameworkAgreements || [],
-      totalSupplementAmount: p.totalSupplementAmount || 0
-    }
-  })
-  if (!productsView.value.length && !loading.value) {
-    // 移除本地 Seed 数据，强制依赖 Store/API 数据，保持全局数据一致性
-    // 如果 Store 为空，页面应显示 Empty 状态，提示用户去配置或检查 Mock 数据
-    productsView.value = [] 
+/** R07：默认每页 20 条 */
+const pagination = reactive({ total: 0, pageSize: 20, current: 1, showTotal: true })
+
+/**
+ * 过滤逻辑
+ * 改造前在 computed 内部改写 filters.status（副作用），且 pagination.total 取未过滤总数，
+ * 造成「点快速状态会把下拉一起改掉、分页条数与列表不一致」。
+ * 现 computed 只做纯读取，快速状态与下拉状态作为两个独立条件参与过滤。
+ */
+const displayedList = computed(() => productsView.value.filter((p: any) => {
+  if (filters.statusQuick && p.status !== filters.statusQuick) return false
+  if (filters.status && p.status !== filters.status) return false
+  if (filters.suppliers.length && !filters.suppliers.includes(p.supplier)) return false
+  if (filters.usageScene && !String(p.usageScene || '').includes(filters.usageScene)) return false
+  if (filters.keyword) {
+    const k = filters.keyword.toLowerCase()
+    const hit = [p.name, p.code, p.interfaceNo].some((v) => String(v || '').toLowerCase().includes(k))
+    if (!hit) return false
   }
-  pagination.total = productsView.value.length
+  return true
+}))
+/** 分页总数与过滤后的列表保持同一口径（R03/R07） */
+watch(displayedList, (list) => { pagination.total = list.length }, { immediate: true })
+const applyFilter = () => { pagination.current = 1 }
+/** 重置需同时清掉快速状态，否则“已重置”但列表仍被过滤 */
+const resetFilter = () => { filters.suppliers = []; filters.status = undefined; filters.statusQuick = ''; filters.usageScene = undefined; filters.keyword = undefined; pagination.current = 1 }
+const onPageChange = (page: number) => { pagination.current = page }
+const refreshProducts = async () => { loading.value = true; try { await store.fetchProducts() } catch { Message.error('刷新失败') } finally { loading.value = false } }
+
+/**
+ * R25 导出列表：导出当前过滤结果（而非全量），避开“导出的东西和看到的不一样”
+ */
+const exportList = () => {
+  const rows = displayedList.value
+  if (!rows.length) { Message.warning('当前没有可导出的档案'); return }
+  const header = ['产品名称', '档案编号', '接口编号', '合作机构', '供应商', '状态', '接入时间', '使用场景', '评估得分']
+  const cell = (v: unknown) => { const s = v === undefined || v === null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
+  const csv = [header.join(','), ...rows.map((p: any) => [p.name, p.code, p.interfaceNo || '待补充', p.cooperationOrg, p.supplier, statusLabel(p.status), formatDate(p.createdAt), p.usageScene, p.evaluationScore ?? ''].map(cell).join(','))].join('\n')
+  const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `外数档案_${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+  Message.success(`已导出 ${rows.length} 条档案`)
 }
-const refreshProducts = async () => { loading.value = true; await store.fetchProducts().catch(() => { Message.error('刷新失败') }); buildProductsView(); loading.value = false; Message.success('已刷新档案数据') }
-const exportList = () => { Message.success('导出任务已创建') }
-onMounted(async () => { await store.fetchProducts(); sessionStorage.setItem('archiveId', archiveId.value); buildProductsView(); const q = router.currentRoute.value.query as any; const status = q?.status; const supplier = q?.supplier; if (status) { filters.status = String(status) } if (supplier) { filters.suppliers = [String(supplier)] } if (status || supplier) applyFilter() })
-const goWithQuery = (path: string, extra: Record<string, any> = {}) => { router.push({ path, query: { archiveId: archiveId.value, from: 'archive', ...extra } }).then(() => { Message.info('已跳转') }).catch(() => { Message.error('跳转失败') }) }
+onMounted(async () => { await store.fetchProducts(); sessionStorage.setItem('archiveId', archiveId.value); const q = router.currentRoute.value.query as any; const status = q?.status; const supplier = q?.supplier; if (status) { filters.status = String(status); filters.statusQuick = String(status) } if (supplier) { filters.suppliers = [String(supplier)] } if (status || supplier) applyFilter() })
 const editVisible = ref(false)
-const detailVisible = ref(false)
-const editTarget = ref<any>(null)
-const detailTarget = ref<any>(null)
 const currentStep = ref(1)
 
 const nextStep = () => {
   if (currentStep.value === 1) {
     if (!editForm.name || !editForm.usageScene) {
       Message.warning('请填写必填的基础信息')
+      return
+    }
+    // R21：产品名称、合作机构、供应商、外数类型四项建案必填，缺任何一项不得进步骤2
+    if (!editForm.cooperationOrg) {
+      Message.warning('请选择合作机构（需求文档 R21 建案必填）')
+      return
+    }
+    if (!editForm.supplier) {
+      Message.warning('请选择供应商（需求文档 R21 建案必填）')
+      return
+    }
+    // R22：外数类型决后方能判定是否需走落库环节，步骤1 就拦住
+    if (!editForm.externalDataType) {
+      Message.warning('请选择外数类型')
       return
     }
   } else if (currentStep.value === 2) {
@@ -453,67 +407,40 @@ const nextStep = () => {
   currentStep.value++
 }
 
-const addTargetTable = () => {
-  editForm.targetTables.push({ name: '' })
-}
-const removeTargetTable = (index: number) => {
-  editForm.targetTables.splice(index, 1)
-}
-
 const editForm = reactive({ 
-  name: '', partnerOrg: '', supplier: '', status: 'importing', apiUrl: '', requestMethod: 'POST', interfaceNo: '',
-  inputParams: [{ name: '', type: 'string', required: true, isElement: false }],
-  outputParams: [{ name: '', type: 'string', description: '' }],
-  targetTables: [{ name: '' }],
+  name: '', cooperationOrg: '', supplier: '', status: 'importing' as ArchiveStatus, apiUrl: '', requestMethod: 'POST', interfaceNo: '', externalDataType: '' as ExternalDataType | '',
+  inputParams: [{ name: '', type: 'string', required: true, isElement: false }] as InterfaceParam[],
+  outputParams: [{ name: '', type: 'string', description: '' }] as InterfaceParam[],
+  targetTable: '',
   businessGoal: '', expectedBenefit: '', usageScene: '', billingMode: 'per_call', unitPrice: 0, billingCycle: 'month', currency: 'CNY', effectiveDate: '', expireDate: '', tags: [] as string[], businessImpact: '', alternativeSolution: '', businessRisk: '', remark: '' 
 })
 
 const tableFieldsVisible = ref(false)
-const mockTableFields = ref([
-  { name: 'id', type: 'bigint', comment: '主键ID' },
-  { name: 'user_name', type: 'varchar', comment: '用户姓名' },
-  { name: 'id_card', type: 'varchar', comment: '身份证号' },
-  { name: 'risk_score', type: 'int', comment: '风险评分' },
-  { name: 'create_time', type: 'timestamp', comment: '创建时间' }
-])
+const tableFieldsTitle = ref('表字段详情')
+/** 表结构取自落库标准底表列级元数据（与详情页抽屉、映射面板右列同一事实源） */
+const tableFields = ref<{ name: string; type: string; comment: string }[]>([])
 
 const viewTableFields = (tableName?: string) => {
+  if (!tableName) { Message.warning('请先填写落库表名'); return }
+  tableFields.value = getStdTableColumns().map((c) => ({ name: c.column, type: c.type, comment: c.comment }))
+  tableFieldsTitle.value = `表字段详情 · ${tableName}`
   tableFieldsVisible.value = true
 }
 
 const viewDataLineage = (tableName?: string) => {
-  Message.info(`即将跳转至表 ${tableName} 的血缘图谱页面...`)
+  if (!tableName) { Message.warning('请先填写落库表名'); return }
+  router.push({ path: '/discovery/lineage', query: { tableName } })
 }
 
 const openCreate = () => { 
-  editTarget.value = null; 
   currentStep.value = 1;
-  editForm.name = ''; editForm.partnerOrg = ''; editForm.supplier = ''; editForm.status = 'importing'; editForm.apiUrl = ''; editForm.requestMethod = 'POST'; editForm.interfaceNo = '';
+  editForm.name = ''; editForm.cooperationOrg = ''; editForm.supplier = ''; editForm.status = 'importing'; editForm.apiUrl = ''; editForm.requestMethod = 'POST'; editForm.interfaceNo = '';
   editForm.inputParams = [{ name: '', type: 'string', required: true, isElement: false }];
   editForm.outputParams = [{ name: '', type: 'string', description: '' }];
-  editForm.targetTables = [{ name: '' }];
+  editForm.targetTable = '';
   editForm.businessGoal = ''; editForm.expectedBenefit = ''; editForm.usageScene = ''; editForm.billingMode = 'per_call'; editForm.unitPrice = 0; editForm.billingCycle = 'month'; editForm.currency = 'CNY'; editForm.effectiveDate = ''; editForm.expireDate = ''; editForm.tags = []; editForm.businessImpact = ''; editForm.alternativeSolution = ''; editForm.businessRisk = ''; editForm.remark = ''; editVisible.value = true 
 }
 
-const openEdit = (record: any) => { 
-  editTarget.value = record; 
-  currentStep.value = 1;
-  editForm.name = record.name || '';
-  editForm.partnerOrg = record.partnerOrg || record.creditAgency || '';
-  editForm.supplier = record.supplier || '';
-  editForm.status = record.status || 'importing';
-  editForm.interfaceNo = record.interfaceNo || '';
-  editForm.usageScene = record.usageScene; 
-  editForm.targetTables = record.targetTables || [{ name: record.targetTable || '' }];
-  editForm.billingMode = record.billingMode; 
-  editForm.unitPrice = record.unitPrice; 
-  editForm.billingCycle = record.billingCycle; 
-  editForm.currency = record.currency; 
-  editForm.effectiveDate = record.effectiveDate; 
-  editForm.expireDate = record.expireDate; 
-  editForm.tags = Array.isArray(record.tags) ? [...record.tags] : []; 
-  editVisible.value = true; 
-}
 // 添加/删除入参
 const addInputParam = () => {
   editForm.inputParams.push({ name: '', type: 'string', required: true, isElement: false })
@@ -530,96 +457,54 @@ const removeOutputParam = (index: number) => {
   editForm.outputParams.splice(index, 1)
 }
 
-const openDetail = (record: any) => { detailTarget.value = record; detailVisible.value = true }
 const goDetailPage = (record: any) => { router.push({ path: `/variable-hub/external-data/archive/${String(record.id)}`, query: { from: 'archive', archiveId: archiveId.value } }) }
-const saveEdit = async () => { if (!editForm.usageScene) { Message.error('请填写使用场景'); return } saving.value = true; try { if (editTarget.value) { editTarget.value.partnerOrg = editForm.partnerOrg; editTarget.value.supplier = editForm.supplier; editTarget.value.interfaceNo = editForm.interfaceNo; editTarget.value.usageScene = editForm.usageScene; editTarget.value.billingMode = editForm.billingMode; editTarget.value.unitPrice = editForm.unitPrice; editTarget.value.billingCycle = editForm.billingCycle; editTarget.value.currency = editForm.currency; editTarget.value.effectiveDate = editForm.effectiveDate; editTarget.value.expireDate = editForm.expireDate; editTarget.value.tags = Array.isArray(editForm.tags) ? [...editForm.tags] : []; if (editTarget.value.status === 'pending_tech_profile') { editTarget.value.status = 'online'; Message.success('技术档案完善成功，状态已更新为【已上线】'); } else { Message.success('档案更新成功'); } } else { Message.success('档案新建成功'); } editVisible.value = false; } finally { saving.value = false } }
+const saveEdit = async () => {
+  if (!editForm.usageScene) { Message.error('请填写使用场景'); return }
+  saving.value = true
+  try {
+    const pick = (arr: InterfaceParam[]) => arr
+      .map((x) => ({ name: String(x.name || '').trim(), type: x.type, required: x.required, description: x.description, isElement: x.isElement }))
+      .filter((x) => x.name)
+    // 业务主键：优先用接口编号，否则按时间戳生成，保证与 productCode 同一命名空间
+    const id = (editForm.interfaceNo || '').trim() || `CUSTOM-${Date.now()}`
+    await store.saveProduct({
+      id,
+      productCode: id,
+      name: editForm.name,
+      cooperationOrg: editForm.cooperationOrg,
+      supplier: editForm.supplier,
+      status: 'importing' as ArchiveStatus,
+      interfaceNo: editForm.interfaceNo,
+      usageScene: editForm.usageScene,
+      billingMode: editForm.billingMode,
+      unitPrice: editForm.unitPrice,
+      billingCycle: editForm.billingCycle,
+      currency: editForm.currency,
+      effectiveDate: editForm.effectiveDate,
+      expireDate: editForm.expireDate,
+      tags: Array.isArray(editForm.tags) && editForm.tags.length ? [...editForm.tags] : ['外数', '风控'],
+      externalDataType: editForm.externalDataType || undefined,
+      targetTable: editForm.targetTable.trim(),
+      inputParams: pick(editForm.inputParams),
+      outputParams: pick(editForm.outputParams),
+    }, '列表页新建档案')
+    Message.success('档案新建成功')
+    editVisible.value = false
+  } catch (e: any) {
+    Message.error(e?.message || '档案新建失败')
+  } finally {
+    saving.value = false
+  }
+}
 const formatDate = (d?: string | Date) => { try { return DateUtils.formatDateTime(d || '') } catch { return '—' } }
 const formatCurrency = (n?: number) => { try { if (n === undefined || n === null) return '—'; return Number(n).toLocaleString('zh-CN', { style: 'currency', currency: 'CNY' }) } catch { return '—' } }
 const billingModeLabel = (m?: string) => m === 'per_call' ? '按次' : m === 'monthly' ? '按月' : m === 'tier' ? '阶梯' : '—'
-const statusLabel = (s?: string) => {
-  switch(s) {
-    case 'online': return '已上线'
-    case 'importing': return '引入中'
-    case 'pending_evaluation': return '待评估'
-    case 'pending_tech_profile': return '待完善技术档案'
-    case 'archived': return '已归档'
-    default: return s || '—'
-  }
-}
-const statusTag = (s?: string) => {
-  switch(s) {
-    case 'online': return 'success'
-    case 'importing': return 'processing'
-    case 'pending_evaluation': return 'warning'
-    case 'pending_tech_profile': return 'warning'
-    case 'archived': return 'normal'
-    default: return 'normal'
-  }
-}
+/** 展示名与标签色统一取自 ARCHIVE_STATUS_META，避免列表/详情各写一份漏分支 */
+const statusMeta = (s?: string) => ARCHIVE_STATUS_META[s as ArchiveStatus]
+const statusLabel = (s?: string) => statusMeta(s)?.label || s || '—'
+const statusColor = (s?: string) => statusMeta(s)?.color || 'gray'
 
-const detailBaseItems = computed(() => {
-  const r: any = detailTarget.value || {}
-  return [
-    { label: '名称', value: r.name || '—' },
-    { label: '编码', value: r.code || '—' },
-    { label: '供应商', value: r.supplier || '—' },
-    { label: '状态', value: statusLabel(r.status) },
-    { label: '接入时间', value: formatDate(r.createdAt) },
-    { label: '使用场景', value: r.usageScene || '—' },
-    { label: '计费模式', value: billingModeLabel(r.billingMode) },
-    { label: '档案单价', value: formatCurrency(r.unitPrice) }
-  ]
-})
 
-const pricingData = computed<any>(() => null)
-const pricingSummary = computed(() => [])
-
-const monthlySnapshots = computed(() => {
-  const supplier = detailTarget.value?.supplier
-  if (!supplier) return []
-  const genMonths = (start: string, end: string) => {
-    try {
-      const s = new Date(start)
-      const e = new Date(end)
-      const arr: string[] = []
-      const cur = new Date(s.getFullYear(), s.getMonth(), 1)
-      const last = new Date(e.getFullYear(), e.getMonth(), 1)
-      while (cur <= last) {
-        const m = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}`
-        arr.push(m)
-        cur.setMonth(cur.getMonth() + 1)
-      }
-      return arr
-    } catch { return [] }
-  }
-  const rows: any[] = []
-  const months = genMonths(new Date().toISOString(), new Date(Date.now() + 180 * 86400000).toISOString())
-  months.slice(-6).forEach((m) => {
-    rows.push({ month: m, supplier: supplier, contractNo: 'ED-001', monthlyAmount: 5000, status: 'active' })
-  })
-  return rows.sort((a, b) => a.month.localeCompare(b.month))
-})
-
-const relatedContracts = computed(() => {
-  const target = detailTarget.value
-  if (!target) return []
-  
-  if (Array.isArray(target.frameworkAgreements) && target.frameworkAgreements.length > 0) {
-    return target.frameworkAgreements.map((fa: any) => ({
-      supplier: target.supplier,
-      contractName: fa.name,
-      contractNo: fa.id,
-      amount: fa.amount,
-      endDate: new Date(Date.now() + 365 * 86400000).toISOString(),
-      status: 'active',
-      contractType: 'framework'
-    }))
-  }
-
-  const supplier = target.supplier
-  if (!supplier) return []
-  return [{ supplier, contractName: '框架协议', contractNo: 'FA-001', amount: 120000, endDate: new Date(Date.now() + 90 * 86400000).toISOString(), status: 'active', contractType: 'framework' }]
-})
 </script>
 
 <style scoped>

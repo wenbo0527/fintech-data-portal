@@ -9,27 +9,31 @@
         <div class="title-section">
           <div class="title-wrapper">
             <h1 class="title">{{ header.name }}</h1>
-            <a-tag :status="statusTag(header.status)" class="status-tag" size="medium">{{ statusLabel(header.status) }}</a-tag>
+            <a-tag :color="statusColor(header.status)" class="status-tag" size="medium">{{ statusLabel(header.status) }}</a-tag>
           </div>
           <a-descriptions :column="{ xs: 1, sm: 2, md: 3, lg: 4 }" class="header-info" :label-style="{ 'color': 'var(--color-text-3)' }" :value-style="{ 'font-weight': 500 }">
             <a-descriptions-item label="产品编码">{{ header.code || '—' }}</a-descriptions-item>
+            <a-descriptions-item label="合作机构">{{ header.cooperationOrg || '—' }}</a-descriptions-item>
             <a-descriptions-item label="供应商"><a-tag size="small" bordered>{{ header.supplier || '—' }}</a-tag></a-descriptions-item>
-            <a-descriptions-item label="合作机构">{{ header.creditAgency || '—' }}</a-descriptions-item>
             <a-descriptions-item label="外数类型"><a-tag color="arcoblue" size="small">{{ header.externalDataType || '—' }}</a-tag></a-descriptions-item>
             <a-descriptions-item label="产品分类">{{ header.productCategory || '—' }}</a-descriptions-item>
-            <a-descriptions-item label="数据管理人">{{ header.manager || '—' }}</a-descriptions-item>
-            
-            <!-- 在线实时调用专属字段 -->
-            <template v-if="header.externalDataType === '在线实时调用'">
-              <a-descriptions-item label="接口编号">{{ header.interfaceId || '—' }}</a-descriptions-item>
-              <a-descriptions-item label="落库表名">{{ header.targetTable || '—' }}</a-descriptions-item>
-            </template>
-            
-            <!-- 离线批量调用专属字段 -->
-            <template v-if="header.externalDataType === '离线批量调用'">
+            <!-- R30：档案负责人（业务）与数据管理人（技术）是两个独立角位，不得用一个字符串顶替 -->
+            <a-descriptions-item label="档案负责人">{{ header.archiveOwner || '待补充' }}</a-descriptions-item>
+            <a-descriptions-item label="数据管理人">{{ header.dataManager || '待补充' }}</a-descriptions-item>
+            <!-- R31：接口编号为档案核心字段，全类型都展示；为空按 R10 显示「待补充」 -->
+            <a-descriptions-item label="接口编号">{{ header.interfaceNo || '待补充' }}</a-descriptions-item>
+            <!-- R37/R131：接口状态与档案业务状态是两个独立字段，这里只读接口状态 -->
+            <a-descriptions-item label="接口状态">
+              <a-tag size="small" :color="header.interfaceStatus === 'online' ? 'green' : header.interfaceStatus === 'offline' ? 'gray' : 'orangered'">{{ interfaceStatusLabel }}</a-tag>
+            </a-descriptions-item>
+
+            <!-- 批量/回溯型才有落库环节（口径与 isPersistedType 一致） -->
+            <template v-if="hasPersist">
               <a-descriptions-item label="样本表名">{{ header.sampleTableName || '—' }}</a-descriptions-item>
+              <a-descriptions-item label="落库目标表">{{ header.targetTable || '待补充' }}</a-descriptions-item>
+            </template>
+            <template v-else>
               <a-descriptions-item label="接口名">{{ header.interfaceName || '—' }}</a-descriptions-item>
-              <a-descriptions-item label="外数落库表名">{{ header.targetTable || '—' }}</a-descriptions-item>
             </template>
 
             <a-descriptions-item label="描述" :span="2"><span class="description-text">{{ header.description || '—' }}</span></a-descriptions-item>
@@ -37,7 +41,10 @@
         </div>
         <div class="actions">
           <a-button @click="goBackList"><template #icon><IconArrowLeft /></template>返回档案</a-button>
-          <a-button type="primary" @click="editVisible = true"><template #icon><IconEdit /></template>编辑档案</a-button>
+          <!-- 档案发布后要把数据用起来，下一站是台账与任务：补两个跳去风险要素侧的出口 -->
+          <a-button @click="goLedgerRegister">登记为特征</a-button>
+          <a-button @click="goTaskCenter">发起周期评估</a-button>
+          <a-button type="primary" @click="openEdit"><template #icon><IconEdit /></template>编辑档案</a-button>
         </div>
       </div>
     </div>
@@ -47,11 +54,13 @@
         <a-tab-pane key="basic" title="产品基础信息">
           <a-card class="detail-card" title="基本属性" :bordered="false"><a-descriptions :column="2" :data="productBasic" /></a-card>
           
-          <template v-if="header.externalDataType === '在线实时调用'">
+          <!-- 在线实时调用无落库环节，仅展示接口基本信息 -->
+          <template v-if="isRealtime">
             <a-card class="detail-card" title="接口基本信息" :bordered="false" style="margin-top: 16px;"><a-descriptions :column="2" :data="onlineApiInfo" /></a-card>
           </template>
           
-          <template v-if="header.externalDataType === '离线批量调用'">
+          <!-- 批量/回溯型展示离线调用信息 -->
+          <template v-if="hasPersist">
             <a-card class="detail-card" title="离线调用信息" :bordered="false" style="margin-top: 16px;"><a-descriptions :column="2" :data="offlineCallInfo" /></a-card>
           </template>
 
@@ -67,7 +76,7 @@
               <template #columns>
                 <a-table-column title="阶段" data-index="stage" :width="160" />
                 <a-table-column title="状态" :width="120">
-                  <template #cell="{ record }"><a-tag :status="record.status==='completed'?'success':(record.status==='in_progress'?'warning':'default')">{{ record.status }}</a-tag></template>
+                  <template #cell="{ record }"><a-tag :color="progressColor(record.status)">{{ progressLabel(record.status) }}</a-tag></template>
                 </a-table-column>
                 <a-table-column title="开始时间" data-index="startDate" :width="160" />
                 <a-table-column title="结束时间" data-index="endDate" :width="160" />
@@ -158,31 +167,47 @@
           </a-card>
         </a-tab-pane>
 
-        <!-- 5. 离线落库信息 -->
-        <a-tab-pane key="storage" title="离线落库信息">
-          <a-alert style="margin-bottom: 16px;">
-            此外部数据由于接口出参的复杂性或业务要求，返回数据被分别落入以下多张物理表中。
-          </a-alert>
-          <a-row :gutter="16">
-            <a-col :span="12" v-for="(table, index) in storageTables" :key="index">
-              <a-card class="detail-card" :title="table.name" :bordered="true" style="margin-bottom: 16px; background-color: var(--color-fill-1);">
-                <template #extra>
-                  <a-space>
-                    <a-button type="text" size="small" @click="viewTableFields(table.name)">查看表结构</a-button>
-                    <a-button type="text" size="small" @click="viewDataLineage(table.name)">分析血缘</a-button>
-                  </a-space>
-                </template>
-                <a-descriptions :column="1" :label-style="{ 'color': 'var(--color-text-3)' }">
-                  <a-descriptions-item label="表描述">{{ table.description || '—' }}</a-descriptions-item>
-                  <a-descriptions-item label="存储出参范围">{{ table.fieldsRange || '—' }}</a-descriptions-item>
-                  <a-descriptions-item label="更新策略">{{ table.updateStrategy || '—' }}</a-descriptions-item>
-                </a-descriptions>
-              </a-card>
-            </a-col>
-          </a-row>
+        <!-- 5. 落库字段映射 -->
+        <a-tab-pane key="fieldMapping" title="落库字段映射">
+          <InterfaceFieldMappingPanel
+            :product-code="dataId"
+            :product-name="header.name || ''"
+            :supplier="header.supplier || ''"
+            :target-table="header.targetTable || ''"
+          />
         </a-tab-pane>
 
-        <!-- 6. 调用样本准备相关信息 -->
+        <!-- 6. 离线落库信息 -->
+        <a-tab-pane key="storage" title="离线落库信息">
+          <template v-if="storageTables.length">
+            <a-alert style="margin-bottom: 16px;">
+              此外部数据由于接口出参的复杂性或业务要求，返回数据被分别落入以下 {{ storageTables.length }} 张物理表中。
+            </a-alert>
+            <a-row :gutter="16">
+              <a-col :span="12" v-for="(table, index) in storageTables" :key="index">
+                <a-card class="detail-card" :title="table.name" :bordered="true" style="margin-bottom: 16px; background-color: var(--color-fill-1);">
+                  <template #extra>
+                    <a-space>
+                      <a-button type="text" size="small" @click="viewTableFields(table.name)">查看表结构</a-button>
+                      <a-button type="text" size="small" @click="viewDataLineage(table.name)">分析血缘</a-button>
+                    </a-space>
+                  </template>
+                  <a-descriptions :column="1" :label-style="{ 'color': 'var(--color-text-3)' }">
+                    <a-descriptions-item label="表描述">{{ table.description || '—' }}</a-descriptions-item>
+                    <a-descriptions-item label="存储出参范围">{{ table.fieldsRange || '—' }}</a-descriptions-item>
+                    <a-descriptions-item label="更新策略">{{ table.updateStrategy || '—' }}</a-descriptions-item>
+                  </a-descriptions>
+                </a-card>
+              </a-col>
+            </a-row>
+          </template>
+          <!-- 未配置落库表时给空态，不再凭空造出 main / detail 两张表（R75） -->
+          <a-card v-else class="detail-card">
+            <a-empty :description="hasPersist ? '尚未配置落库目标表，请在「编辑档案 - 数据存储与血缘」中补充' : '该产品为在线实时调用，无落库环节'" />
+          </a-card>
+        </a-tab-pane>
+
+        <!-- 7. 调用样本准备相关信息 -->
         <a-tab-pane key="sample" title="调用样本准备信息">
           <template v-if="sampleTemplates.length > 0">
             <a-card class="detail-card" v-for="template in sampleTemplates" :key="template.id" style="margin-bottom: 16px;">
@@ -229,14 +254,14 @@
           </a-card>
         </a-tab-pane>
 
-        <!-- 7. 效果评估 -->
+        <!-- 8. 效果评估 -->
         <a-tab-pane key="evaluation" title="效果评估">
           <div class="eval-filter-bar" style="margin-bottom: 16px;">
             <a-space wrap>
-              <a-select v-model="evalSelectedChannels" multiple style="min-width: 260px" placeholder="选择渠道（可多选）" allow-clear>
-                <a-option v-for="ch in evalChannels" :key="ch" :value="ch">{{ ch }}</a-option>
+              <a-select v-model="evalSelectedSuppliers" multiple style="min-width: 260px" placeholder="选择供应商（可多选）" allow-clear>
+                <a-option v-for="sp in evalSuppliers" :key="sp" :value="sp">{{ sp }}</a-option>
               </a-select>
-              <a-checkbox v-model="evalAllChannels">全选</a-checkbox>
+              <a-checkbox v-model="evalAllSuppliers">全选</a-checkbox>
               <a-select v-model="evalMonthStart" style="width: 150px" placeholder="起始月份">
                 <a-option v-for="m in evalMonths" :key="m" :value="m">{{ m }}</a-option>
               </a-select>
@@ -246,7 +271,7 @@
               </a-select>
             </a-space>
             <a-alert type="info" style="margin-top: 8px;">
-              支持单月多渠道对比 或 单渠道多月趋势，不可同时多选渠道和多选月份。
+              支持单月多供应商对比 或 单供应商多月趋势，不可同时多选供应商和多选月份。
             </a-alert>
           </div>
 
@@ -281,19 +306,36 @@
               </a-form-item>
             </a-col>
             <a-col :span="8">
-              <a-form-item field="supplier" label="供应商">
-                <a-input v-model="editForm.supplier" placeholder="请输入供应商名称" />
+              <a-form-item field="cooperationOrg" label="合作机构" required>
+                <a-select v-model="editForm.cooperationOrg" allow-clear allow-search placeholder="选择合作机构" :options="cooperationOrgOptions" />
               </a-form-item>
             </a-col>
             <a-col :span="8">
-              <a-form-item field="status" label="当前状态" required>
-                <a-select v-model="editForm.status" placeholder="选择当前状态">
-                  <a-option value="importing">引入中</a-option>
-                  <a-option value="pending_tech_profile">待完善技术档案</a-option>
-                  <a-option value="online">已上线</a-option>
-                  <a-option value="pending_evaluation">待评估</a-option>
-                  <a-option value="archived">已归档</a-option>
-                </a-select>
+              <!-- 原「渠道」轴已并入供应商（2026-11-03）；候选取字典全集且 allow-create 兼容新厂商 -->
+              <a-form-item field="supplier" label="供应商" required>
+                <a-select v-model="editForm.supplier" allow-clear allow-create allow-search placeholder="选择或输入供应商名称" :options="supplierOptions" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <!-- R129：档案状态由业务事件写入，普通编辑不得改状态，这里只读展示当前值 -->
+              <a-form-item field="status" label="当前状态">
+                <a-tag :color="statusColor(editForm.status)" size="large">{{ statusLabel(editForm.status) }}</a-tag>
+                <div style="margin-top: 4px; font-size: 12px; color: var(--color-text-3);">状态由业务事件驱动，不可人工修改</div>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item field="archiveOwner" label="档案负责人">
+                <a-input v-model="editForm.archiveOwner" placeholder="业务负责人姓名" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item field="dataManager" label="数据管理人">
+                <a-input v-model="editForm.dataManager" placeholder="技术负责人姓名" />
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item field="interfaceNo" label="接口编号">
+                <a-input v-model="editForm.interfaceNo" placeholder="如 IF-2026-001，先签协议后引入可暂不填" />
               </a-form-item>
             </a-col>
             <a-col :span="24">
@@ -400,27 +442,21 @@
 
         <!-- 步骤3：数据存储与血缘 -->
         <div v-show="currentStep === 3">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-            <span><strong>落库表配置 (支持多个)</strong></span>
-            <a-button type="primary" size="small" @click="addTargetTable">新增落库表</a-button>
-          </div>
-          
-          <a-card v-for="(table, index) in editForm.targetTables" :key="index" style="margin-bottom: 16px; background: var(--color-fill-2);" :bordered="false">
-            <a-row :gutter="16" align="center">
-              <a-col :span="14">
-                <a-form-item :label="`落库表名 ${index + 1}`" style="margin-bottom: 0;">
-                  <a-input v-model="table.name" placeholder="请输入落库表名，如 dwd_external_data_detail" />
-                </a-form-item>
-              </a-col>
-              <a-col :span="10" style="text-align: right; padding-top: 28px;">
-                <a-space>
-                  <a-button type="outline" size="small" @click="viewTableFields(table.name)" :disabled="!table.name">查看字段</a-button>
-                  <a-button type="outline" size="small" @click="viewDataLineage(table.name)" :disabled="!table.name">查看血缘</a-button>
-                  <a-button type="text" status="danger" @click="removeTargetTable(index)" v-if="editForm.targetTables.length > 1">删除</a-button>
-                </a-space>
-              </a-col>
-            </a-row>
-          </a-card>
+          <a-alert v-if="!hasPersist" type="info" style="margin-bottom: 16px;">
+            该产品为在线实时调用，无落库环节，落库目标表可留空。
+          </a-alert>
+          <a-form-item field="targetTable" label="落库目标表" :required="hasPersist">
+            <a-input v-model="editForm.targetTable" :placeholder="hasPersist ? '如 dw_ods.ods_ext_retro_std' : '在线实时调用无需填写'" allow-clear />
+            <template #extra>
+              <div style="font-size: 12px; color: var(--color-text-3); margin-top: 4px;">
+                档案只登记一张权威落库目标表，字段具体落位在「落库字段映射」页签维护
+              </div>
+            </template>
+          </a-form-item>
+          <a-space v-if="editForm.targetTable">
+            <a-button type="outline" size="small" @click="viewTableFields(editForm.targetTable)">查看字段</a-button>
+            <a-button type="outline" size="small" @click="viewDataLineage(editForm.targetTable)">查看血缘</a-button>
+          </a-space>
         </div>
 
         <!-- 底部导航按钮 -->
@@ -429,15 +465,15 @@
             <a-button @click="editVisible = false">取消</a-button>
             <a-button v-if="currentStep > 1" @click="currentStep--">上一步</a-button>
             <a-button v-if="currentStep < 3" type="primary" @click="nextStep">下一步</a-button>
-            <a-button v-if="currentStep === 3" type="primary" @click="saveEdit">保存并完成</a-button>
+            <a-button v-if="currentStep === 3" type="primary" :loading="savingEdit" @click="saveEdit">保存并完成</a-button>
           </a-space>
         </div>
       </a-form>
     </a-modal>
 
     <!-- 查看表字段抽屉 -->
-    <a-drawer v-model:visible="tableFieldsVisible" :width="500" title="表字段详情">
-      <a-table :data="mockTableFields" :pagination="false">
+    <a-drawer v-model:visible="tableFieldsVisible" :width="500" :title="tableFieldsTitle">
+      <a-table :data="tableFields" :pagination="false">
         <template #columns>
           <a-table-column title="字段名" data-index="name" />
           <a-table-column title="类型" data-index="type" />
@@ -457,6 +493,24 @@ import { useSettlementFlowStore } from '../../budget/stores/settlementFlow'
 import { IconArrowLeft, IconEdit, IconStorage } from '@arco-design/web-vue/es/icon'
 import { Message } from '@arco-design/web-vue'
 import DateUtils from '@/utils/dateUtils'
+import InterfaceFieldMappingPanel from '../components/InterfaceFieldMappingPanel.vue'
+import { getStdTableColumns } from '../mock/stdTableSchema'
+import { COOPERATION_ORG_OPTIONS, SUPPLIER_OPTIONS, cooperationOrgOfProduct } from '../mock/orgDictionaries'
+import { hashUnit } from '../mock/stableHash'
+import {
+  ARCHIVE_STATUS_META,
+  INTERFACE_STATUS_LABEL,
+  PRODUCT_CATEGORY_LABEL,
+  isPersistedType,
+  techProfileOf,
+  progressStatusMeta,
+  resolveInputParams,
+  resolveOutputParams,
+  type ArchiveProduct,
+  type ArchiveStatus,
+  type InterfaceStatus,
+  type InterfaceParam,
+} from '../mock/archiveProducts'
 
 const route = useRoute()
 const router = useRouter()
@@ -466,28 +520,37 @@ const settlementFlowStore = useSettlementFlowStore()
 
 const activeTab = ref('basic')
 const dataId = computed(() => String(route.params.id || ''))
+/** 合作机构（闭集四档）与供应商（开放枚举）两轴候选，与档案列表共用 mock/orgDictionaries.ts 同一字典 */
+const cooperationOrgOptions = COOPERATION_ORG_OPTIONS.map((n) => ({ label: n, value: n }))
+/** 供应商候选：走字典全集，不按存量数据反推（否则刚下线的厂商在编辑时就选不到了） */
+const supplierOptions = SUPPLIER_OPTIONS.map((n) => ({ label: n, value: n }))
 const header = ref<any>({})
 const editVisible = ref(false)
+const savingEdit = ref(false)
 const currentStep = ref(1)
 
-const editForm = ref({ 
-  name: '', supplier: '', status: 'importing', description: '', usageScene: '', tags: [] as string[], manager: '',
+const editForm = ref({
+  name: '', cooperationOrg: '', supplier: '',
+  /** R129：只读展示，不随普通编辑提交 */
+  status: 'importing' as ArchiveStatus,
+  archiveOwner: '', dataManager: '', interfaceNo: '',
+  description: '', usageScene: '', tags: [] as string[],
   apiUrl: '', requestMethod: 'POST',
-  inputParams: [{ name: '', type: 'string', required: true, isElement: false }],
-  outputParams: [{ name: '', type: 'string', description: '' }],
-  targetTables: [{ name: '' }]
+  inputParams: [{ name: '', type: 'string', required: true, isElement: false }] as InterfaceParam[],
+  outputParams: [{ name: '', type: 'string', description: '' }] as InterfaceParam[],
+  /** 与档案主数据 targetTable 同名同义，一张权威表 */
+  targetTable: ''
 })
 
 const tableFieldsVisible = ref(false)
-const mockTableFields = ref([
-  { name: 'id', type: 'bigint', comment: '主键ID' },
-  { name: 'user_name', type: 'varchar', comment: '用户姓名' },
-  { name: 'id_card', type: 'varchar', comment: '身份证号' },
-  { name: 'risk_score', type: 'int', comment: '风险评分' },
-  { name: 'create_time', type: 'timestamp', comment: '创建时间' }
-])
+const tableFieldsTitle = ref('表字段详情')
+/** 表结构取自落库标准底表列级元数据（mock/stdTableSchema.ts），改造前是写死的 5 个字段 */
+const tableFields = ref<{ name: string; type: string; comment: string }[]>([])
 
 const viewTableFields = (tableName?: string) => {
+  if (!tableName) { Message.warning('落库表名为空，无法查看表结构'); return }
+  tableFields.value = getStdTableColumns().map((c) => ({ name: c.column, type: c.type, comment: c.comment }))
+  tableFieldsTitle.value = `表字段详情 · ${tableName}`
   tableFieldsVisible.value = true
 }
 
@@ -519,27 +582,28 @@ const nextStep = () => {
   currentStep.value++
 }
 
-const addTargetTable = () => {
-  editForm.value.targetTables.push({ name: '' })
-}
-const removeTargetTable = (index: number) => {
-  editForm.value.targetTables.splice(index, 1)
-}
-
-const openEdit = () => { 
+const openEdit = () => {
+  const base = store.productById(dataId.value)
+  if (!base) { Message.error('档案主数据未就绪，请返回列表重新进入'); return }
+  const tech = techProfileOf(base)
   currentStep.value = 1
-  editForm.value.name = header.value.name || ''
-  editForm.value.supplier = header.value.supplier || ''
-  editForm.value.status = 'online'
-  editForm.value.description = header.value.description
-  editForm.value.usageScene = header.value.usageScene || ''
-  editForm.value.tags = [...(header.value.tags || [])]
-  editForm.value.apiUrl = 'https://api.provider.com/v1/query'
-  editForm.value.requestMethod = 'POST'
-  editForm.value.targetTables = [{ name: header.value.targetTable || 'dwd_external_data_detail' }]
-  editForm.value.inputParams = [{ name: 'id_card', type: 'string', required: true, isElement: true }]
-  editForm.value.outputParams = [{ name: 'risk_score', type: 'number', description: '风险评分' }]
-  editVisible.value = true 
+  editForm.value.name = base.name || ''
+  editForm.value.cooperationOrg = base.cooperationOrg || ''
+  editForm.value.supplier = base.supplier || ''
+  // R129：状态只读回填，不作为可改字段
+  editForm.value.status = base.status
+  editForm.value.archiveOwner = base.archiveOwner || ''
+  editForm.value.dataManager = base.dataManager || ''
+  editForm.value.interfaceNo = base.interfaceNo || ''
+  editForm.value.usageScene = base.usageScene || ''
+  editForm.value.description = base.description || tech.description
+  editForm.value.tags = [...(base.tags || [])]
+  editForm.value.apiUrl = tech.apiUrl
+  editForm.value.requestMethod = tech.requestMethod
+  editForm.value.inputParams = resolveInputParams(base).map((x) => ({ ...x }))
+  editForm.value.outputParams = resolveOutputParams(base).map((x) => ({ ...x }))
+  editForm.value.targetTable = base.targetTable || ''
+  editVisible.value = true
 }
 
 // 添加/删除入参
@@ -594,18 +658,91 @@ const lift = ref(18)
 const avgLatency = ref(120)
 
 const goBackList = () => { router.push({ path: '/variable-hub/external-data/archive' }) }
-const statusLabel = (s?: string) => s === 'importing' ? '引入中' : s === 'online' ? '已上线' : s === 'pending_evaluation' ? '待评估' : s === 'archived' ? '已归档' : '—'
-const statusTag = (s?: string) => s === 'online' ? 'success' : s === 'pending_evaluation' ? 'warning' : s === 'importing' ? 'warning' : 'default'
+
+/** 拿着落库目标表去特征台账登记新特征 */
+const goLedgerRegister = () => {
+  router.push({ path: '/variable-management', query: { action: 'register_from_external', table: header.value?.targetTable || '' } })
+}
+
+/** 档案上线后的下一环：到任务管理为该外数建常态性评估 */
+const goTaskCenter = () => { router.push('/tasks/evaluation/create') }
+/** 展示名/颜色统一取自 ARCHIVE_STATUS_META，改造前本页漏了 pending_tech_profile 分支导致徒标显示「—」 */
+const statusMeta = (s?: string) => ARCHIVE_STATUS_META[s as ArchiveStatus]
+const statusLabel = (s?: string) => statusMeta(s)?.label || s || '—'
+const statusColor = (s?: string) => statusMeta(s)?.color || 'gray'
+/** 生命周期阶段等通用小状态的展示名与色，与 Lifecycle 待办列表同一字典 */
+const progressLabel = (s?: string) => progressStatusMeta(s)?.label || s || '—'
+const progressColor = (s?: string) => progressStatusMeta(s)?.color || 'gray'
+const interfaceStatusLabel = computed(() => INTERFACE_STATUS_LABEL[header.value.interfaceStatus as InterfaceStatus] || '—')
+/** 在线实时调用：无落库环节 */
+const isRealtime = computed(() => header.value.externalDataType === '在线实时调用')
+/** 批量/回溯型：有落库环节 */
+const hasPersist = computed(() => isPersistedType(header.value.externalDataType))
 const formatDate = (d?: string | Date) => { try { return DateUtils.formatDateTime(d || '') } catch { return '—' } }
+// 稳定散列统一取 mock/stableHash（全模块唯一一份），不再在本页私写一份
+/** 最近 n 个自然月（含当月），YYYY-MM */
+function recentMonths(n: number): string[] {
+  const out: string[] = []
+  const d = new Date()
+  for (let i = n - 1; i >= 0; i--) {
+    const m = new Date(d.getFullYear(), d.getMonth() - i, 1)
+    out.push(`${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`)
+  }
+  return out
+}
+/**
+ * 效果评估快照
+ * 分组轴＝供应商（原为「渠道」，该轴已于 2026-11-03 并入供应商），候选只取**同一合作机构下**档案里实际
+ * 登记过的供应商，避免把别家机构的厂商混进来。
+ * 指标本身 owner 是效果评估任务（variable-hub），mock 阶段按（产品,供应商,月份）稳定散列派生，
+ * 替代改造前的 Math.random()，刷新不会换数。
+ */
+function buildEvaluationSnapshot(base: ArchiveProduct) {
+  const ownSupplier = base.supplier || ''
+  const pool = Array.from(new Set(
+    (store.products as ArchiveProduct[])
+      .filter((p) => p.cooperationOrg === base.cooperationOrg)
+      .map((p) => p.supplier)
+      .filter((x) => !!x && x !== '—'),
+  ))
+  if (ownSupplier && !pool.includes(ownSupplier)) {pool.unshift(ownSupplier)}
+  const suppliers = ['全部供应商', ...pool]
+  const months = recentMonths(6)
+  const sampleData: Record<string, Record<string, any>> = {}
+  const effectData: Record<string, Record<string, any>> = {}
+  for (const sp of suppliers) {
+    sampleData[sp] = {}
+    effectData[sp] = {}
+    for (const m of months) {
+      const monthIdx = parseInt(m.split('-')[1], 10) || 1
+      const supplierFactor = sp === '全部供应商' ? 1 : 0.25 + (monthIdx / 12)
+      const seed = `${base.id}|${sp}|${m}`
+      const callCount = Math.floor(8000 * supplierFactor + hashUnit(`${seed}|call`) * 3000)
+      const badRate = 6 + hashUnit(`${seed}|bad`) * 14
+      const nullRate = 0.5 + hashUnit(`${seed}|null`) * 6
+      const badCount = Math.floor((callCount * badRate) / 100)
+      const goodCount = Math.floor(callCount * 0.72)
+      sampleData[sp][m] = { callCount, goodCount, badCount, grayCount: callCount - badCount - goodCount, badRate, nullRate }
+      effectData[sp][m] = {
+        psi: 0.02 + hashUnit(`${seed}|psi`) * 0.35,
+        ks: 0.15 + hashUnit(`${seed}|ks`) * 0.45,
+        lift: 1.1 + hashUnit(`${seed}|lift`) * 3.2,
+      }
+    }
+  }
+  return { suppliers, months, sampleData, effectData }
+}
 const formatCurrency = (n?: number) => { try { if (n == null) return '—'; return Number(n).toLocaleString('zh-CN', { style: 'currency', currency: 'CNY' }) } catch { return '—' } }
 
 const productBasic = computed(() => [
-  { label: '接口编号', value: header.value.interfaceId || '—' },
+  { label: '接口编号', value: header.value.interfaceNo || '待补充' },
   { label: '供应商', value: header.value.supplier || '—' },
   { label: '单价', value: header.value.price ? `${header.value.price}元/次` : '—' },
-  { label: '管理人员', value: header.value.manager || '—' },
-  { label: '上线时间', value: header.value.onlineTime || '—' },
-  { label: '接口状态', value: header.value.status || '—' },
+  { label: '档案负责人', value: header.value.archiveOwner || '待补充' },
+  { label: '数据管理人', value: header.value.dataManager || '待补充' },
+  { label: '接入时间', value: formatDate(header.value.createdAt) },
+  { label: '上线时间', value: header.value.onlineTime ? formatDate(header.value.onlineTime) : '尚未上线' },
+  { label: '接口状态', value: interfaceStatusLabel.value },
   { label: '接口标签', value: header.value.interfaceTag || '—' },
   { label: '更新频率', value: header.value.updateFrequency || '—' },
   { label: '数据来源', value: header.value.dataSource || '—' }
@@ -617,15 +754,16 @@ const onlineApiInfo = computed(() => [
   { label: '测试环境', value: header.value.testEnvUrl || '—' },
   { label: '生产环境', value: header.value.prodEnvUrl || '—' },
   { label: '缓存时间', value: header.value.cacheTime ? `${header.value.cacheTime}分钟` : '—' },
-  { label: '上线时间', value: header.value.onlineTime || '—' },
+  { label: '上线时间', value: header.value.onlineTime ? formatDate(header.value.onlineTime) : '尚未上线' },
   { label: '请求方式', value: header.value.requestMethod || '—' },
   { label: 'Headers', value: header.value.headers || '—' },
   { label: '说明', value: header.value.apiDescription || '—' }
 ])
 
-// 离线批量调用：离线调用信息
+// 批量/回溯型：离线调用信息
 const offlineCallInfo = computed(() => [
   { label: '样本表名', value: header.value.sampleTableName || '—' },
+  { label: '落库目标表', value: header.value.targetTable || '待补充' },
   { label: '关联周期任务', value: header.value.offlineTaskName || '—' }
 ])
 
@@ -635,8 +773,17 @@ const outputParams = ref<any[]>([])
 const inputColumns = [{ title: '参数名称', dataIndex: 'name' },{ title: '参数类型', dataIndex: 'type' },{ title: '是否必填', dataIndex: 'required', render: ({ record }: any) => record.required ? '是' : '否' },{ title: '参数说明', dataIndex: 'description' }]
 const outputColumns = [{ title: '参数名称', dataIndex: 'name' },{ title: '参数类型', dataIndex: 'type' },{ title: '参数说明', dataIndex: 'description' }]
 
-// 离线落库表 Mock 数据
-const storageTables = ref<any[]>([])
+// 离线落库表：直接由主数据上那张权威落库目标表派生（改造前不管有没有配表都凭空造出 main/detail 两张，R75）
+const storageTables = computed(() => {
+  const t = header.value.targetTable
+  if (!t) {return []}
+  return [{
+    name: t,
+    description: '外数调用结果按「落库字段映射」写入该标准底表',
+    fieldsRange: `${outputParams.value.length} 个接口出参字段（详见落库字段映射页签）`,
+    updateStrategy: `${header.value.updateFrequency || 'T+1'} 批量写入`,
+  }]
+})
 
 // 离线样本准备条件 (服务校验模板) Mock 数据
 const sampleTemplates = ref<any[]>([])
@@ -653,12 +800,12 @@ const getRuleTypeName = (type: string) => {
 }
 
 // ===== 效果评估 =====
-const evalSelectedChannels = ref<string[]>([])
+const evalSelectedSuppliers = ref<string[]>([])
 const evalMonthStart = ref('')
 const evalMonthEnd = ref('')
 const evaluationData = ref<any>({})
 
-const evalChannels = computed(() => evaluationData.value.channels || [])
+const evalSuppliers = computed(() => evaluationData.value.suppliers || [])
 const evalMonths = computed(() => evaluationData.value.months || [])
 
 // 选中区间内的月份
@@ -671,17 +818,17 @@ const evalSelectedMonths = computed(() => {
   return months.slice(Math.min(si, ei), Math.max(si, ei) + 1)
 })
 
-// 当前生效的渠道（默认取第一个）
-const activeChannels = computed(() =>
-  evalSelectedChannels.value.length > 0
-    ? evalSelectedChannels.value
-    : (evalChannels.value.length > 0 ? [evalChannels.value[0]] : [])
+// 当前生效的供应商（默认取第一个）
+const activeSuppliers = computed(() =>
+  evalSelectedSuppliers.value.length > 0
+    ? evalSelectedSuppliers.value
+    : (evalSuppliers.value.length > 0 ? [evalSuppliers.value[0]] : [])
 )
 
-// 全选渠道
-const evalAllChannels = computed({
-  get: () => evalChannels.value.length > 0 && evalSelectedChannels.value.length === evalChannels.value.length,
-  set: (val: boolean) => { evalSelectedChannels.value = val ? [...evalChannels.value] : [] }
+// 全选供应商
+const evalAllSuppliers = computed({
+  get: () => evalSuppliers.value.length > 0 && evalSelectedSuppliers.value.length === evalSuppliers.value.length,
+  set: (val: boolean) => { evalSelectedSuppliers.value = val ? [...evalSuppliers.value] : [] }
 })
 
 // 样本指标定义
@@ -717,34 +864,34 @@ function effectColor(key: string, v: number): string {
 }
 
 // 构建 render 函数
-function makeSampleRender(ch: string, m: string) {
+function makeSampleRender(sp: string, m: string) {
   return ({ record }: any) => {
-    const raw = record[`${ch}__${m}`]
+    const raw = record[`${sp}__${m}`]
     if (raw == null) return '—'
     const def = sampleMetricDefs.find(d => d.key === record.metricKey)
     return h('span', { style: { color: sampleColor(record.metricKey, raw), fontWeight: 600 } }, def ? def.fmt(raw) : String(raw))
   }
 }
-function makeEffectRender(ch: string, m: string) {
+function makeEffectRender(sp: string, m: string) {
   return ({ record }: any) => {
-    const raw = record[`${ch}__${m}`]
+    const raw = record[`${sp}__${m}`]
     if (raw == null) return '—'
     const def = effectMetricDefs.find(d => d.key === record.metricKey)
     return h('span', { style: { color: effectColor(record.metricKey, raw), fontWeight: 600 } }, def ? def.fmt(raw) : String(raw))
   }
 }
 
-// 样本表格列（动态，渠道多月时分组表头）
+// 样本表格列（动态，供应商多月时分组表头）
 const evalSampleColumns = computed(() => {
-  const channels = activeChannels.value
+  const suppliers = activeSuppliers.value
   const months = evalSelectedMonths.value
   const cols: any[] = [{ title: '指标', dataIndex: 'metric', width: 100, fixed: 'left', render: ({ record }: any) => h('span', { title: record.metricDesc || '' }, record.metric) }]
-  for (const ch of channels) {
+  for (const sp of suppliers) {
     if (months.length <= 1) {
       const m = months[0] || ''
-      cols.push({ title: ch, dataIndex: `${ch}__${m}`, width: 130, align: 'center', render: makeSampleRender(ch, m) })
+      cols.push({ title: sp, dataIndex: `${sp}__${m}`, width: 130, align: 'center', render: makeSampleRender(sp, m) })
     } else {
-      cols.push({ title: ch, children: months.map((m: string) => ({ title: m, dataIndex: `${ch}__${m}`, width: 100, align: 'center', render: makeSampleRender(ch, m) })) })
+      cols.push({ title: sp, children: months.map((m: string) => ({ title: m, dataIndex: `${sp}__${m}`, width: 100, align: 'center', render: makeSampleRender(sp, m) })) })
     }
   }
   return cols
@@ -754,13 +901,13 @@ const evalSampleColumns = computed(() => {
 const evalSampleTableData = computed(() => {
   const data = evaluationData.value
   if (!data.sampleData) return []
-  const channels = activeChannels.value
+  const suppliers = activeSuppliers.value
   const months = evalSelectedMonths.value
   return sampleMetricDefs.map(def => {
     const row: any = { metric: def.label, metricKey: def.key, metricDesc: def.desc }
-    for (const ch of channels) for (const m of months) {
-      const s = data.sampleData[ch]?.[m]
-      row[`${ch}__${m}`] = s ? s[def.key] : null
+    for (const sp of suppliers) for (const m of months) {
+      const s = data.sampleData[sp]?.[m]
+      row[`${sp}__${m}`] = s ? s[def.key] : null
     }
     return row
   })
@@ -768,15 +915,15 @@ const evalSampleTableData = computed(() => {
 
 // 效果表格列
 const evalEffectColumns = computed(() => {
-  const channels = activeChannels.value
+  const suppliers = activeSuppliers.value
   const months = evalSelectedMonths.value
   const cols: any[] = [{ title: '指标', dataIndex: 'metric', width: 100, fixed: 'left', render: ({ record }: any) => h('span', { title: record.metricDesc || '' }, record.metric) }]
-  for (const ch of channels) {
+  for (const sp of suppliers) {
     if (months.length <= 1) {
       const m = months[0] || ''
-      cols.push({ title: ch, dataIndex: `${ch}__${m}`, width: 130, align: 'center', render: makeEffectRender(ch, m) })
+      cols.push({ title: sp, dataIndex: `${sp}__${m}`, width: 130, align: 'center', render: makeEffectRender(sp, m) })
     } else {
-      cols.push({ title: ch, children: months.map((m: string) => ({ title: m, dataIndex: `${ch}__${m}`, width: 100, align: 'center', render: makeEffectRender(ch, m) })) })
+      cols.push({ title: sp, children: months.map((m: string) => ({ title: m, dataIndex: `${sp}__${m}`, width: 100, align: 'center', render: makeEffectRender(sp, m) })) })
     }
   }
   return cols
@@ -786,28 +933,76 @@ const evalEffectColumns = computed(() => {
 const evalEffectTableData = computed(() => {
   const data = evaluationData.value
   if (!data.effectData) return []
-  const channels = activeChannels.value
+  const suppliers = activeSuppliers.value
   const months = evalSelectedMonths.value
   return effectMetricDefs.map(def => {
     const row: any = { metric: def.label, metricKey: def.key, metricDesc: def.desc }
-    for (const ch of channels) for (const m of months) {
-      const e = data.effectData[ch]?.[m]
-      row[`${ch}__${m}`] = e ? e[def.key] : null
+    for (const sp of suppliers) for (const m of months) {
+      const e = data.effectData[sp]?.[m]
+      row[`${sp}__${m}`] = e ? e[def.key] : null
     }
     return row
   })
 })
 
-// 互斥限制：多渠道时强制单月，多月时强制单渠道
-watch(evalSelectedChannels, (channels) => {
-  if (channels.length > 1 && evalMonthStart.value && evalMonthEnd.value && evalMonthStart.value !== evalMonthEnd.value) {
+// 互斥限制：多供应商时强制单月，多月时强制单供应商
+watch(evalSelectedSuppliers, (suppliers) => {
+  if (suppliers.length > 1 && evalMonthStart.value && evalMonthEnd.value && evalMonthStart.value !== evalMonthEnd.value) {
     evalMonthEnd.value = evalMonthStart.value
   }
 })
 watch([evalMonthStart, evalMonthEnd], () => {
-  if (evalMonthStart.value && evalMonthEnd.value && evalMonthStart.value !== evalMonthEnd.value && evalSelectedChannels.value.length > 1) {
-    evalSelectedChannels.value = [evalSelectedChannels.value[0]]
+  if (evalMonthStart.value && evalMonthEnd.value && evalMonthStart.value !== evalMonthEnd.value && evalSelectedSuppliers.value.length > 1) {
+    evalSelectedSuppliers.value = [evalSelectedSuppliers.value[0]]
   }
+})
+
+/**
+ * 头部通用字段：全部取自产品主数据（唯一事实源），缺值就置空，不再由页面猜值。
+ * 拆成函数是为了把「字段映射」与「加载流程」两件事分开（loadDetail 本身还要拉多个数据源）。
+ */
+const buildHeaderCore = (base: ArchiveProduct, tech: ReturnType<typeof techProfileOf>) => ({
+  name: base.name,
+  code: base.code,
+  supplier: base.supplier,
+  // 两轴口径：合作机构＝持牌征信机构四档，供应商＝实际供数/接入厂商（口径见 mock/orgDictionaries.ts）
+  cooperationOrg: base.cooperationOrg || cooperationOrgOfProduct(base.id),
+  // 外数类型直接取主数据，不再按 id 奇偶猜（猜出来的类型与列表、落库向导对不上）
+  externalDataType: base.externalDataType || '在线实时调用',
+  productCategory: PRODUCT_CATEGORY_LABEL[base.productCategory || ''] || '—',
+  status: base.status,
+  interfaceStatus: base.interfaceStatus,
+  interfaceNo: base.interfaceNo || '',
+  archiveOwner: base.archiveOwner || '',
+  dataManager: base.dataManager || '',
+  createdAt: base.createdAt,
+  onlineTime: base.onlineTime || '',
+  interfaceTag: base.interfaceNo ? '主接口' : '待补充',
+  description: base.description || tech.description,
+  tags: Array.isArray(base.tags) ? base.tags : ['外数', '风控'],
+  price: base.unitPrice || 0,
+  updateFrequency: tech.updateFrequency,
+  dataSource: tech.dataSource,
+  requestMethod: tech.requestMethod,
+  apiUrl: tech.apiUrl,
+  headers: 'Authorization, Content-Type',
+  timeout: tech.timeoutSec,
+  qpsLimit: tech.qpsLimit,
+  // 落库表名只取主数据，不再编一个 dwd.external_table 顶上去
+  targetTable: base.targetTable || '',
+})
+
+/** 头部类型专属字段：在线实时与离线/回溯各自一段 */
+const buildHeaderTypeExtras = (base: ArchiveProduct, tech: ReturnType<typeof techProfileOf>) => ({
+  // 在线实时独有
+  testEnvUrl: 'https://test-api.provider.com/v1',
+  prodEnvUrl: 'https://api.provider.com/v1',
+  cacheTime: tech.cacheTimeSec,
+  apiDescription: tech.description,
+  // 离线/回溯型独有
+  sampleTableName: base.sampleTable || '',
+  interfaceName: base.interfaceName || '',
+  offlineTaskName: tech.offlineTaskName || '',
 })
 
 const loadDetail = async () => {
@@ -815,68 +1010,20 @@ const loadDetail = async () => {
     await store.fetchProducts()
     await store.fetchBurndown({ range: 'month', productId: dataId.value })
     await store.fetchLifecycleData({ productId: dataId.value })
-    const fromStore = (store.products || []).find((p: any) => String(p.id) === dataId.value) as any
-    const base = fromStore || { id: dataId.value, name: '外数产品', supplier: '供应商', status: 'online' }
-    
-    // 模拟外数类型逻辑，偶数ID为离线批量，奇数ID为在线实时
-    const numericId = parseInt(String(dataId.value).replace(/\D/g, '')) || 0
-    const isOffline = numericId % 2 === 0
-    const externalDataType = isOffline ? '离线批量调用' : '在线实时调用'
-
-    header.value = { 
-      name: base.name || '—',
-      code: base.code || `ED-${base.id}`,
-      supplier: base.supplier || '—',
-      creditAgency: '百行征信有限公司', // 合作机构字段
-      externalDataType: externalDataType, // 新增：外数类型
-      productCategory: '反欺诈类', // 新增：产品分类
-      status: base.status || 'importing',
-      manager: '档案负责人',
-      interfaceTag: '主接口',
-      onlineTime: new Date().toISOString(),
-      description: base.description || '提供基础风险评分查询能力',
-      tags: Array.isArray(base.tags) ? base.tags : ['外数','风控'],
-      price: base.unitPrice || 0,
-      updateFrequency: '日',
-      dataSource: '外部API',
-      requestMethod: 'POST',
-      apiUrl: '/api/external/call',
-      headers: 'Authorization, Content-Type',
-      timeout: 30,
-      qpsLimit: 100,
-      targetTable: base.bottomTable || base.dbTable || base.tableName || 'dwd.external_table',
-      interfaceId: `EXT${String(base.id).padStart(3,'0')}`,
-      
-      // 在线实时独有
-      testEnvUrl: 'https://test-api.provider.com/v1',
-      prodEnvUrl: 'https://api.provider.com/v1',
-      cacheTime: 60,
-      apiDescription: '支持高并发，缓存1小时',
-
-      // 离线批量独有
-      sampleTableName: 'tmp_sample_batch_001',
-      interfaceName: 'batch_verify_api',
-      offlineTaskName: 'T+1 离线回溯跑批任务'
+    const fromStore = store.productById(dataId.value) as ArchiveProduct | undefined
+    if (!fromStore) {
+      Message.error(`未找到编号为 ${dataId.value} 的外数档案，请返回列表重新进入`)
+      header.value = { name: '档案不存在' }
+      return
     }
-    inputParams.value = [{ name: 'id_card', type: 'string', required: true, description: '身份证号' },{ name: 'phone', type: 'string', required: false, description: '手机号' }]
-    outputParams.value = [{ name: 'score', type: 'number', description: '风险评分' },{ name: 'risk_level', type: 'string', description: '风险等级' }, { name: 'detail_json', type: 'string', description: '详细风控指标JSON' }]
-    
-    // 模拟一个外数落入多张表的情况
-    storageTables.value = [
-      { 
-        name: `${header.value.targetTable}_main`, 
-        description: '外数调用主表', 
-        fieldsRange: '基础评分、风险等级等核心指标',
-        updateStrategy: '实时/T+1 增量写入'
-      },
-      { 
-        name: `${header.value.targetTable}_detail`, 
-        description: '外数调用明细表', 
-        fieldsRange: '从 detail_json 中解析出的多维度明细特征',
-        updateStrategy: 'T+1 异步解析写入'
-      }
-    ]
-    
+    const base = fromStore
+    const tech = techProfileOf(base)
+
+    header.value = { ...buildHeaderCore(base, tech), ...buildHeaderTypeExtras(base, tech) }
+    // 入参/出参均取产品主数据解析结果（人工维护过则以档案为准），与落库映射候选源同一事实
+    inputParams.value = resolveInputParams(base)
+    outputParams.value = resolveOutputParams(base)
+
     // Load Sample Templates
     sampleTemplates.value = [
       {
@@ -961,40 +1108,61 @@ const loadDetail = async () => {
     }
     contractInfo.value.writeoffs = writeoffList.sort((a, b) => b.month.localeCompare(a.month))
 
-    // 效果评估 mock 数据生成
-    const evalChannelsList = ['蚂蚁', '京东', '美团', '字节', 'SU贷']
-    const evalMonthsList = ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06']
-    const evalSampleData: any = {}
-    const evalEffectData: any = {}
-    for (const ch of evalChannelsList) {
-      evalSampleData[ch] = {}
-      evalEffectData[ch] = {}
-      for (const m of evalMonthsList) {
-        const monthIdx = parseInt(m.split('-')[1]) || 1
-        const channelFactor = ch === '全部渠道' ? 1 : 0.25 + (monthIdx / 12)
-        const callCount = Math.floor(8000 * channelFactor + Math.random() * 3000)
-        const badRate = 6 + Math.random() * 14
-        const nullRate = 0.5 + Math.random() * 6
-        const badCount = Math.floor(callCount * badRate / 100)
-        const goodCount = Math.floor(callCount * 0.72)
-        const grayCount = callCount - badCount - goodCount
-        evalSampleData[ch][m] = { callCount, goodCount, badCount, grayCount, badRate, nullRate }
-        evalEffectData[ch][m] = {
-          psi: 0.02 + Math.random() * 0.35,
-          ks: 0.15 + Math.random() * 0.45,
-          lift: 1.1 + Math.random() * 3.2,
-        }
-      }
-    }
-    evaluationData.value = { channels: evalChannelsList, months: evalMonthsList, sampleData: evalSampleData, effectData: evalEffectData }
-    evalSelectedChannels.value = [evalChannelsList[0]]
-    evalMonthStart.value = evalMonthsList[0]
-    evalMonthEnd.value = evalMonthsList[evalMonthsList.length - 1]
+    // 效果评估快照：供应商口径、月份窗口与指标派生都收在 buildEvaluationSnapshot 里
+    evaluationData.value = buildEvaluationSnapshot(base)
+    evalSelectedSuppliers.value = [evaluationData.value.suppliers[0]]
+    evalMonthStart.value = evaluationData.value.months[0]
+    evalMonthEnd.value = evaluationData.value.months[evaluationData.value.months.length - 1]
   } catch { Message.error('加载详情失败') }
 }
 onMounted(loadDetail)
 
-const saveEdit = () => { editVisible.value = false; Message.success('档案已更新') }
+const saveEdit = async () => {
+  const id = dataId.value
+  const base = store.productById(id)
+  if (!base) { Message.error('档案不存在，无法保存'); return }
+  const name = editForm.value.name.trim()
+  if (!name) { Message.warning('请填写外数名称'); currentStep.value = 1; return }
+  // R15：合作机构、供应商为档案必填；负责人/数据管理人缺失不阻断，由状态位自然标识待补
+  if (!editForm.value.cooperationOrg) { Message.warning('请选择合作机构'); currentStep.value = 1; return }
+  if (!editForm.value.supplier) { Message.warning('请选择或输入供应商'); currentStep.value = 1; return }
+  const targetTable = editForm.value.targetTable.trim()
+  if (hasPersist.value && !targetTable) { Message.warning('批量/回溯型产品必须配置落库目标表'); currentStep.value = 3; return }
+  const pick = (arr: InterfaceParam[]) => arr
+    .map((x) => ({ name: String(x.name || '').trim(), type: x.type, required: x.required, description: x.description, isElement: x.isElement }))
+    .filter((x) => x.name)
+  const inputParams = pick(editForm.value.inputParams)
+  const outputParams = pick(editForm.value.outputParams)
+  // 出参是落库字段映射的候选源（R53），清空它会让映射页签无从生成
+  if (!outputParams.length) { Message.warning('产品出参至少保留一个字段'); currentStep.value = 2; return }
+  savingEdit.value = true
+  try {
+    await store.saveProduct({
+      id,
+      name,
+      cooperationOrg: editForm.value.cooperationOrg,
+      supplier: editForm.value.supplier,
+      archiveOwner: editForm.value.archiveOwner.trim(),
+      dataManager: editForm.value.dataManager.trim(),
+      interfaceNo: editForm.value.interfaceNo.trim(),
+      usageScene: editForm.value.usageScene.trim(),
+      description: editForm.value.description.trim(),
+      tags: editForm.value.tags.map((t) => t.trim()).filter(Boolean),
+      inputParams,
+      outputParams,
+      targetTable,
+    }, '详情页编辑档案')
+    // 接口/落库表/映射三项齐备度变化后由同一入口校正状态，页面不自编流转规则
+    await store.syncTechProfileStatus(id, '详情页编辑档案后校正技术档案齐备度')
+    editVisible.value = false
+    Message.success('档案已保存')
+    await loadDetail()
+  } catch (e: any) {
+    Message.error(e?.message || '保存失败')
+  } finally {
+    savingEdit.value = false
+  }
+}
 </script>
 
 <style scoped>

@@ -25,6 +25,7 @@
     "migration:check": "node scripts/migration-check.js",
     "migration:validate": "npm run lint:check && npm run typecheck && npm run migration:check",
     "sync:app-mocks": "node scripts/sync-app-mocks.mjs",
+    "verify:external-data": "node scripts/verify-external-data-consistency.js",
     "audit": "npm audit --audit-level high",
     "depcheck": "depcheck",
     "clean": "rimraf dist node_modules/.cache"

@@ -2,7 +2,7 @@ import { ref, reactive, computed, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import type { UploadFile } from '@arco-design/web-vue'
 import { fetchEnabledAgencies } from '../api/creditAgency'
-import type { CreditAgency, AgencyType } from '../mock/creditAgencies'
+import type { CreditAgency } from '../mock/creditAgencies'
 import {
   fetchRetroTree,
   decryptArchivePackage,
@@ -39,6 +39,17 @@ import type { ValidationDetail, ConsistencySummary, TripleRowCheck } from '../mo
 import type { NotifyConfig, NotifyContent } from '../mock/notify'
 import type { PersistRecord, PersistStatus, AsyncTask, AsyncTaskType, TaskResumeContext, BatchStage } from '../mock/backtrackPersist'
 import { PERSIST_STATUS_FLOW, resolveStatusFromTasks } from '../mock/backtrackPersist'
+// 映射的分层继承与碰撞字典统一取自映射模块，向导不再自带一份字典或一份占位符
+import {
+  autoMatchStdField,
+  inheritMappingForBatch,
+  productMappingBaseline,
+  diffMappingFromProduct,
+  commitPersistBatchMapping,
+  NON_STD_FIELD,
+  type InterfaceFieldMappingRow,
+} from '../api/interfaceFieldMapping'
+import { hashInt } from '../mock/stableHash'
 
 /**
  * 外数回溯落库流程共享状态与业务逻辑
@@ -57,14 +68,11 @@ export interface FieldMapping {
   comment: string
   /** 落库目标字段（标准库字段名 / 非标准化占位符） */
   targetField: string
-  /** 匹配类型（R39 映射表独立存储匹配结果） */
-  matchedBy: 'auto' | 'file' | 'manual' | 'default'
+  /** 匹配类型（R39 映射表独立存储匹配结果，inherit 为继承档案产品级默认映射） */
+  matchedBy: 'inherit' | 'auto' | 'manual' | 'default'
   /** 匹配类型中文说明 */
   matchedLabel: string
 }
-
-/** 非标准化字段占位符（R34/R38） */
-const NON_STD_FIELD = '__non_standard__'
 
 /** 必填映射规则项 */
 interface RequiredFieldRule {
@@ -78,8 +86,6 @@ interface RequiredFieldRule {
   rule: string
   /** 等同判定：出参字段名是否与该标准字段等同 */
   matcher: (f: string) => boolean
-  /** 适用机构类型；缺省表示所有机构类型均适用 */
-  agencyTypes?: AgencyType[]
 }
 
 /**
@@ -122,7 +128,7 @@ export function useBacktrackPersist() {
   const agencies = ref<CreditAgency[]>([])
   const selectedAgencyId = ref('')
 
-  /** 当前选中的征信机构 */
+  /** 当前选中的合作机构（字段名 agency*，历史命名） */
   const selectedAgency = computed(() => agencies.value.find((a) => a.id === selectedAgencyId.value) || null)
 
   /** 路径清理提醒（R15：钱塘等机构会定期自动清理历史路径文件） */
@@ -252,7 +258,7 @@ export function useBacktrackPersist() {
   /** 加载机构 SFTP 目录树（R14：文件夹 / CSV / 压缩包三级节点） */
   const loadRetroTree = async () => {
     if (!selectedAgency.value) {
-      Message.warning('请先选择征信机构')
+      Message.warning('请先选择合作机构')
       return
     }
     querying.value = true
@@ -496,7 +502,7 @@ export function useBacktrackPersist() {
       return
     }
     // E6：单文件上限 1GB
-    const bytes = f.size ?? Math.round((18 + Math.random() * 60) * 1024 * 1024)
+    const bytes = f.size ?? hashInt(f.name || 'retro-file', 18 * 1024 * 1024, 78 * 1024 * 1024)
     if (bytes > MAX_UPLOAD_SIZE) {
       Message.error('文件大小超出限制，当前上限 1GB')
       uploadFileList.value = []
@@ -618,8 +624,6 @@ export function useBacktrackPersist() {
       defaultSource: 'phone_md5',
       rule: '手机号密文字段（字段名含 phone / mobile / tel 且带 md5 / hash）',
       matcher: (f: string) => /phone|mobile|tel/i.test(f) && /md5|hash/i.test(f),
-      // 三要素（身份证 + 姓名 + 手机号）仅个人征信适用，企业征信无手机号维度
-      agencyTypes: ['个人征信'],
     },
   ]
 
@@ -642,12 +646,11 @@ export function useBacktrackPersist() {
   /**
    * 当前生效的必填映射规则
    * 未收录产品（R31）走自由输入，不参与强制绑定；
-   * phone_md5 属三要素维度，仅个人征信机构适用。
+   * 机构不再区分个人 / 企业征信，必填项对所有机构一致。
    */
   const activeRequiredFieldMatch = computed(() => {
     if (isCustomProduct.value) return []
-    const agencyType = selectedAgency.value?.agencyType
-    return REQUIRED_FIELD_MATCH.filter((r) => !r.agencyTypes || (!!agencyType && r.agencyTypes.includes(agencyType)))
+    return REQUIRED_FIELD_MATCH
   })
 
   /** 必选区已占用的出参字段（仅统计当前生效的必填项） */
@@ -680,19 +683,37 @@ export function useBacktrackPersist() {
     })
   }
 
-  /** 加载产品的出参字段并生成映射列表 */
+  /**
+   * 加载产品的出参字段并生成映射列表
+   * 分层继承：已建档的产品先沿用档案「落库字段映射」页签保存的产品级默认结论（matchedBy=inherit），
+   * 档案没覆盖的字段再走字段名自动碰撞；未建档与未收录产品没有默认可继承。
+   */
   const loadProductFields = async () => {
     ensureRequiredSelection()
     stdFieldOptions.value = await fetchStdFieldNames()
-    const base = productFields.value
-      .filter((f) => !occupiedSourceFields.value.includes(f.name))
-      .map((f) => ({
+    const code = currentProduct.value?.productCode || ''
+    const pendingFields = productFields.value.filter((f) => !occupiedSourceFields.value.includes(f.name))
+    const inherited = code ? inheritMappingForBatch(code, pendingFields.map((f) => f.name)) : []
+    const inheritMap = new Map(inherited.filter((r) => r.inheritSource !== 'pending').map((r) => [r.apiField, r]))
+    const base = pendingFields.map((f) => {
+      const hit = inheritMap.get(f.name)
+      if (hit) {
+        return {
+          sourceField: f.name,
+          comment: f.comment,
+          targetField: hit.stdField,
+          matchedBy: hit.inheritSource === 'inherit' ? 'inherit' as const : 'auto' as const,
+          matchedLabel: hit.inheritSource === 'inherit' ? '继承档案默认映射' : '自动匹配',
+        }
+      }
+      return {
         sourceField: f.name,
         comment: f.comment,
         targetField: '',
-        matchedBy: 'default' as FieldMapping['matchedBy'],
+        matchedBy: 'default' as const,
         matchedLabel: '待匹配',
-      }))
+      }
+    })
     fieldMappings.value = base
     applyAutoCollision(false)
     sortMappingsPendingFirst()
@@ -730,7 +751,11 @@ export function useBacktrackPersist() {
       if (notify) Message.info('未收录外数产品不参与自动碰撞，落库字段名默认取 CSV 原始字段名，可手工修改')
       return
     }
+    // R65：重新自动匹配只处理尚无结论的行，已继承档案或已人工选定的行不被覆掉
     fieldMappings.value.forEach((m) => {
+      if (m.matchedBy !== 'default') {
+        return
+      }
       const target = stdFieldOptions.value.find((s) => s === m.sourceField) || autoMatchStdField(m.sourceField)
       if (target) {
         m.targetField = target
@@ -749,54 +774,57 @@ export function useBacktrackPersist() {
     if (notify) Message.success(`自动字段碰撞完成：命中标准字段 ${hit} 项，其余保留原始字段名并标记为非标准化`)
   }
 
-  /** 依据标准字段语义命中标准库字段 */
-  const autoMatchStdField = (sourceField: string): string => {
-    const dict: Record<string, string> = {
-      phone_md5: 'phone_md5',
-      inst_cnt_1m: 'std_apply_inst_cnt_1m',
-      loan_cnt_1m: 'std_loan_cnt_1m',
-      loan_cnt_3m: 'std_loan_cnt_3m',
-      loan_cnt_12m: 'std_loan_cnt_12m',
-      max_overdue_amt: 'std_overdue_amt_max',
-      overdue_cnt_24m: 'std_overdue_cnt_24m',
-      overdue_days_max: 'std_overdue_days_max',
-      credit_score: 'std_credit_score',
-      risk_band: 'std_risk_level_code',
-      credit_query_cnt_6m: 'std_credit_query_cnt_6m',
-      card_cnt: 'std_card_cnt',
-      account_open_months: 'std_account_open_months',
-      limit_amt_total: 'std_limit_amt_total',
+  /**
+   * 继承档案默认映射（取代原来的「上传映射表批量匹配」）
+   * 映射表 CSV 的上传与解析已在档案「落库字段映射」页签完成，向导不再凭空造一份文件字典；
+   * 这里真读产品级默认映射给待匹配行补结论，无档案 / 档案未保存映射时给明确提示。
+   */
+  const applyArchiveBaseline = () => {
+    const code = currentProduct.value?.productCode || ''
+    if (!code) {
+      Message.warning('该产品尚未建档，档案侧没有可继承的默认映射，请执行自动碰撞或人工选择')
+      return
     }
-    return dict[sourceField] ?? ''
-  }
-
-  /** 上传映射表批量匹配（R42：映射关系通过界面配置） */
-  const applyMappingFile = () => {
-    const fileDict: Record<string, string> = {
-      q_id: 'std_credit_query_cnt_6m',
-      enterprise_risk_score: 'std_risk_score_v3',
-      legal_case_cnt: 'std_overdue_cnt_24m',
-      tax_arrear_flag: 'std_risk_level_code',
+    const baseline = productMappingBaseline(code)
+    if (!baseline.length) {
+      Message.info('档案「落库字段映射」页签还未保存该产品的映射，可先去档案维护或继续人工匹配')
+      return
     }
+    const dict = new Map(baseline.map((r) => [r.apiField, r.stdField]))
     let filled = 0
     fieldMappings.value.forEach((m) => {
-      if (m.matchedBy !== 'default') return
-      const target = fileDict[m.sourceField]
-      if (target) {
-        m.targetField = target
-        m.matchedBy = 'file'
-        m.matchedLabel = '映射表批量匹配'
-        filled++
+      if (m.matchedBy !== 'default') {
+        return
       }
+      if (!dict.has(m.sourceField)) {
+        return
+      }
+      m.targetField = dict.get(m.sourceField) || NON_STD_FIELD
+      m.matchedBy = 'inherit'
+      m.matchedLabel = '继承档案默认映射'
+      filled++
     })
+    sortMappingsPendingFirst()
+    mappingPagination.current = 1
     if (filled) {
-      sortMappingsPendingFirst()
-      mappingPagination.current = 1
-      Message.success(`已按映射表批量匹配 ${filled} 个字段`)
+      Message.success(`已按档案默认映射补齐 ${filled} 个待匹配字段（产品级映射共 ${baseline.length} 行）`)
     } else {
-      Message.info('映射表未命中新的待匹配字段')
+      Message.info('待匹配字段在档案默认映射里都没有对应行，请人工选择或先补档案出参')
     }
   }
+
+  /** 本次批次的完整映射结论（必选区 + 列表区），用于差量比对与回写档案 */
+  const batchMappingRows = computed<InterfaceFieldMappingRow[]>(() => [
+    ...activeRequiredFieldMatch.value
+      .map((r) => ({ apiField: requiredSourceSelection[r.std], stdField: r.std }))
+      .filter((x) => !!x.apiField),
+    ...fieldMappings.value
+      .filter((m) => !!m.sourceField && !!m.targetField)
+      .map((m) => ({ apiField: m.sourceField, stdField: m.targetField })),
+  ])
+
+  /** 继承行数量（UI 上不单独展示，供回写提示与落库记录用） */
+  const inheritedCount = computed(() => fieldMappings.value.filter((m) => m.matchedBy === 'inherit').length)
 
   /** 人工修正映射（R34/R36） */
   const setMappingTarget = (record: FieldMapping, value: string) => {
@@ -804,7 +832,7 @@ export function useBacktrackPersist() {
     if (!record.targetField) {
       record.matchedBy = 'default'
       record.matchedLabel = '待匹配'
-    } else if (record.matchedBy !== 'auto' && record.matchedBy !== 'file') {
+    } else if (record.matchedBy !== 'auto') {
       record.matchedBy = 'manual'
       record.matchedLabel = '人工调整'
     }
@@ -852,12 +880,14 @@ export function useBacktrackPersist() {
   /** 映射规则版本（R43：落库记录关联使用的映射版本） */
   const mappingVersion = ref('v1.0')
 
-  /** 生成映射规则版本号 */
+  /** 生成映射规则版本号（R43：落库记录关联使用的映射版本） */
   const buildMappingVersion = () => {
     const now = new Date()
     const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
-    const random = String(Math.floor(Math.random() * 900) + 100)
-    mappingVersion.value = `v${stamp}-${random}`
+    // 尾段按（产品名 + 接口号 + 日期）稳定散列派生，不再用 Math.random：
+    // 同一批次重进不会变号，不同产品不会拿到同一个号
+    const seed = `${mappingProduct.value}|${currentProduct.value?.productCode || currentProduct.value?.interfaceId || ''}|${stamp}`
+    mappingVersion.value = `v${stamp}-${hashInt(seed, 100, 999)}`
   }
 
   /* ---------- 前置外发任务匹配（R24/R25） ---------- */
@@ -1226,7 +1256,6 @@ export function useBacktrackPersist() {
       agencyId: selectedAgency.value?.id ?? '',
       agencyCode: selectedAgency.value?.agencyCode ?? '',
       agencyName: selectedAgency.value?.agencyName ?? '',
-      agencyType: selectedAgency.value?.agencyType ?? '',
       fileName: file?.name ?? '',
       fileFingerprint: file ? `${file.name}@${file.size}` : '',
       backid,
@@ -1382,7 +1411,6 @@ export function useBacktrackPersist() {
         agencyId: selectedAgency.value?.id ?? '',
         agencyCode: selectedAgency.value?.agencyCode ?? '',
         agencyName: selectedAgency.value?.agencyName ?? '',
-        agencyType: selectedAgency.value?.agencyType ?? '',
         licenseNo: selectedAgency.value?.licenseNo ?? '',
       },
       fileInfo: {
@@ -1398,10 +1426,12 @@ export function useBacktrackPersist() {
       mappingInfo: {
         product: mappingProduct.value,
         interfaceId: currentProduct.value?.interfaceId ?? '',
+        productCode: currentProduct.value?.productCode ?? '',
         mappingVersion: mappingVersion.value,
         stdFieldCount: mappedCount.value - nonStdCount.value + requiredPassedCount.value,
         nonStdFieldCount: nonStdCount.value,
         nonStdFields: nonStdFieldNames.value,
+        inheritedFieldCount: inheritedCount.value,
       },
       storageInfo: {
         tempTable: persistBatches.value[0]?.tempTable ?? 'tmp_ext_retro_raw',
@@ -1424,6 +1454,16 @@ export function useBacktrackPersist() {
       },
     }
     persistRecord.value = await savePersistRecord(record)
+    // 分层继承的闭环：批次落库成功后把本次结论回写为产品级默认映射，下一批直接继承最新口径。
+    // 未建档产品（productCode 为空）不回写，避免凭空给档案造一份映射
+    const code = currentProduct.value?.productCode || ''
+    if (code && backid) {
+      const delta = diffMappingFromProduct(code, batchMappingRows.value)
+      await commitPersistBatchMapping(code, batchMappingRows.value, backid)
+      Message.success(delta.length
+        ? `本批次相对档案默认映射改了 ${delta.length} 项，已回写产品 ${code} 的默认映射`
+        : '本批次与档案默认映射一致，未产生差异')
+    }
     return record
   }
 
@@ -1530,11 +1570,12 @@ export function useBacktrackPersist() {
     onMappingProductChange,
     onRequiredSourceChange,
     applyAutoCollision,
-    applyMappingFile,
+    applyArchiveBaseline,
     setMappingTarget,
     mappedCount,
     nonStdCount,
     nonStdFieldNames,
+    inheritedCount,
     mappingPagination,
     pagedFieldMappings,
     onMappingPageChange,

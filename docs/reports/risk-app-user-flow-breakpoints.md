@@ -185,13 +185,13 @@
 
 > 建议后续：给 risk-app 补一个 `vue-tsc --noEmit` 的 `typecheck` 脚本，比人工记忆“改动后跑一下”可靠；本轮未加，因为会带出一批存量类型错误。
 
-**验证**：`npx vite build` 通过（11.16s）。跨 mock 一致性脚本核对四项全部为真——台账 29 条（`VAR-0003` + 25 条 `MIDLOAN-FEAT-*` + 新增 3 条）无重复；评估 `targets` ⊆ 台账 id；全景工作台引用的 `VAR-*` ⊆ 台账 id；台账 `sourceRefs.externalEvaluationId` 与任务外链报告号 ⊆ 外数库可用 id。三锚点亦逐条回查外数档案：`BH_ID_VALIDATION`↔`IF-0006`↔`9001`、`BH_PHONE_RISK`↔`IF-0007`↔`9002`、`BH_CREDIT_QUERY`↔`IF-0013`↔`9003`（档案 `productCode`/`interfaceNo` 与报告 `productName` 三者同源）。
+**验证**：`npx vite build` 通过（11.16s）。跨 mock 一致性脚本核对四项全部为真——台账列表 28 条（27 个唯一 code；另 `VAR-0003` 系 11 状态机「需求提出」阶段衍生需求，详情可达但不列表展示）；评估 `targets` ⊆ 台账 id；全景工作台引用的 `VAR-*` ⊆ 台账 id；台账 `sourceRefs.externalEvaluationId` 与任务外链报告号 ⊆ 外数库可用 id。三锚点亦逐条回查外数档案：`BH_ID_VALIDATION`↔`IF-0006`↔`9001`、`BH_PHONE_RISK`↔`IF-0007`↔`9002`、`BH_CREDIT_QUERY`↔`IF-0013`↔`9003`（档案 `productCode`/`interfaceNo` 与报告 `productName` 三者同源）。
 
 **为什么新资产放数组尾部**：`effect-evaluation/generator.ts` 取 `variableAssets.slice(0, 26)` 作效果域种子，放头部会整体位移、412 条效果样本全部重排。追加在 27–29 位可保持既有数值不动。
 
 **代价**：3 条新台账资产不进效果域样本，其详情页 EffectCard 走 `a-empty` 兜底（`effectStore.variableEffect` 返回 null）——这是明知且可接受的，比让效果指标与台账 `effectMetrics` 两处数字打架好。另：台账侧命名沿用既有种子（如「外数-三要素核验一致性」），与档案产品名（「身份有效性核验」）不完全一致，跨域关系靠 `sourceRefs` 锚点而非名称匹配维系。
 
-**副作用（正向）**：`VariableSelector.vue` 候选直接铺 `variableAssets`，台账补到 29 条后，新建评估页的特征选择器也自然能选到这 3 条外数/征信资产（含 `sourceType: 'credit'`）。
+**副作用（正向）**：`VariableSelector.vue` 候选直接铺 `variableAssets`，台账列表补到 28 条后（另 `VAR-0003` 需求提出阶段，详情可达但不列表展示），新建评估页的特征选择器也自然能选到这 3 条外数/征信资产（含 `sourceType: 'credit'`）。
 
 ---
 

@@ -728,7 +728,9 @@ export function upsertArchiveProduct(
   reason = '人工编辑档案'
 ): ArchiveProduct {
   const input: Partial<ArchiveProduct> & { id: string } = { ...payload }
-  delete input.mappingConfigured
+  // mappingConfigured 是 readonly 派生位，delete 作用于 { ...payload } 副本（runtime 无碍），
+  // 这里仅在编译期把该键放宽为可写，避免 TS2704。
+  delete (input as { mappingConfigured?: boolean }).mappingConfigured
   const all = loadArchiveProducts()
   const idx = all.findIndex((p) => String(p.id) === String(input.id))
   const stamp = new Date().toISOString()

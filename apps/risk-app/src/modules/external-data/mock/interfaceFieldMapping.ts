@@ -577,7 +577,7 @@ export function diffMappingFromProduct(productCode: string, rows: InterfaceField
  * 批次落库成功后把结论回写为产品级默认映射
  * 同名字段以批次结论为准，批次没带的历史字段保留；产品名/供应商/目标表一律取档案主数据
  */
-export function commitBatchMappingToProduct(productCode: string, rows: InterfaceFieldMappingRow[], batchId: string): ProductFieldMapping {
+export async function commitBatchMappingToProduct(productCode: string, rows: InterfaceFieldMappingRow[], batchId: string): Promise<ProductFieldMapping> {
   const merged = new Map(productMappingBaseline(productCode).map((r) => [r.apiField, r.stdField]))
   rows.filter((r) => !!r.apiField).forEach((r) => merged.set(r.apiField, r.stdField))
   const meta = archiveMappingMeta(productCode)

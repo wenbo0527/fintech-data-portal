@@ -648,4 +648,6 @@ export function deleteEvaluationReport(id: string | number) {
   return REPORT_DB.length < before
 }
 
-export { TYPE_LABEL, STATUS_CN }
+// 导出面只留状态字典：类型字典已在上方以 `export const EVALUATION_TYPE_LABEL` 导出，
+// 此处再写一次会触发 TS2323 重复导出。旧的 TYPE_LABEL 已在改名后无任何消费方。
+export { STATUS_CN }

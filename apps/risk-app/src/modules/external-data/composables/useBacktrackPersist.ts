@@ -41,15 +41,14 @@ import type { PersistRecord, PersistStatus, AsyncTask, AsyncTaskType, TaskResume
 import { PERSIST_STATUS_FLOW, resolveStatusFromTasks } from '../mock/backtrackPersist'
 // 加密方式字典与密文长度口径沿用样本校验那一份（R02：主流 SM3 / SHA256，MD5 仅存量兼容），向导不再自带算法列表
 import { ENCRYPTION_ALGORITHMS, getEncryptionAlgorithm, type EncryptionAlgorithm } from '../mock/encryptionAlgorithm'
-// 映射的分层继承与碰撞字典统一取自映射模块，向导不再自带一份字典或一份占位符
+// 映射的分层继承与回写统一取自映射模块，向导不再自带碰撞字典、占位符或“先继承后碰撞”的两套写法
 import {
-  autoMatchStdField,
   inheritMappingForBatch,
-  productMappingBaseline,
   diffMappingFromProduct,
   commitPersistBatchMapping,
   NON_STD_FIELD,
   type InterfaceFieldMappingRow,
+  type InheritedMappingRow,
 } from '../api/interfaceFieldMapping'
 import { hashInt } from '../mock/stableHash'
 
@@ -778,40 +777,22 @@ export function useBacktrackPersist() {
 
   /**
    * 加载产品的出参字段并生成映射列表
-   * 分层继承：已建档的产品先沿用档案「落库字段映射」页签保存的产品级默认结论（matchedBy=inherit），
-   * 档案没覆盖的字段再走字段名自动碰撞；未建档与未收录产品没有默认可继承。
+   * 列表建成「待匹配」裸行后直接走 rematchFields：与页面上「按档案映射匹配字段」完全同一条链路，
+   * 避免装载与手动重算两份逻辑漂移（档案默认映射优先 → 字段名碰撞 → 非标准化透传）。
    */
   const loadProductFields = async () => {
     ensureRequiredSelection()
     stdFieldOptions.value = await fetchStdFieldNames()
-    const code = currentProduct.value?.productCode || ''
     const pendingFields = productFields.value.filter((f) => !occupiedSourceFields.value.includes(f.name))
-    const inherited = code ? inheritMappingForBatch(code, pendingFields.map((f) => f.name)) : []
-    const inheritMap = new Map(inherited.filter((r) => r.inheritSource !== 'pending').map((r) => [r.apiField, r]))
-    const base = pendingFields.map((f) => {
-      const hit = inheritMap.get(f.name)
-      if (hit) {
-        return {
-          sourceField: f.name,
-          comment: f.comment,
-          targetField: hit.stdField,
-          matchedBy: hit.inheritSource === 'inherit' ? 'inherit' as const : 'auto' as const,
-          matchedLabel: hit.inheritSource === 'inherit' ? '继承档案默认映射' : '自动匹配',
-        }
-      }
-      return {
-        sourceField: f.name,
-        comment: f.comment,
-        targetField: '',
-        matchedBy: 'default' as const,
-        matchedLabel: '待匹配',
-      }
-    })
-    fieldMappings.value = base
-    applyAutoCollision(false)
-    sortMappingsPendingFirst()
-    mappingPagination.current = 1
-    mappingPagination.total = base.length
+    fieldMappings.value = pendingFields.map((f) => ({
+      sourceField: f.name,
+      comment: f.comment,
+      targetField: '',
+      matchedBy: 'default' as const,
+      matchedLabel: '待匹配',
+    }))
+    rematchFields(false)
+    mappingPagination.total = fieldMappings.value.length
   }
 
   /** 切换产品 */
@@ -829,10 +810,17 @@ export function useBacktrackPersist() {
     fieldMappings.value.sort((a, b) => Number(!!a.targetField) - Number(!!a.targetField))
   }
 
-  /** 自动字段碰撞（R33：按字段名自动匹配标准字段库） */
-  const applyAutoCollision = (notify = true) => {
-    let hit = 0
-    // R30/R31：未收录外数产品的标准库字段为输入框，由用户手工填写，不做自动碰撞
+  /**
+   * 字段匹配（档案默认映射优先，字段名碰撞兜底）
+   * 原「执行自动字段碰撞」与「继承档案默认映射」两个入口本质是同一件事：给尚无落库结论的行补标准列，
+   * 差别只在取数层级，因此合为一个动作：
+   *   1. 档案「落库字段映射」保存的产品级默认映射（inherit）；
+   *   2. 档案没覆盖的行再按字段名语义碰撞（R33，auto）；
+   *   3. 两档都给不出结论的行按 R34 保留原始字段名并标记非标准化透传。
+   * R65：人工调整过的行（matchedBy=manual）不参与重算，其余行可反复点击以跟随档案最新口径。
+   */
+  const rematchFields = (notify = true) => {
+    // R30/R31：未收录外数产品的标准库字段为输入框，由用户手工填写，不参与匹配
     if (isCustomProduct.value) {
       fieldMappings.value.forEach((m) => {
         m.targetField = m.sourceField
@@ -841,69 +829,42 @@ export function useBacktrackPersist() {
       })
       sortMappingsPendingFirst()
       mappingPagination.current = 1
-      if (notify) Message.info('未收录外数产品不参与自动碰撞，落库字段名默认取 CSV 原始字段名，可手工修改')
+      if (notify) {Message.info('未收录外数产品不参与字段匹配，落库字段名默认取 CSV 原始字段名，可手工修改')}
       return
     }
-    // R65：重新自动匹配只处理尚无结论的行，已继承档案或已人工选定的行不被覆掉
-    fieldMappings.value.forEach((m) => {
-      if (m.matchedBy !== 'default') {
-        return
-      }
-      const target = stdFieldOptions.value.find((s) => s === m.sourceField) || autoMatchStdField(m.sourceField)
-      if (target) {
-        m.targetField = target
-        m.matchedBy = 'auto'
-        m.matchedLabel = '自动匹配'
-        hit++
-      } else {
-        // R34：撞不上的保留 CSV 原始字段名，默认标记为「非标准化」
-        m.targetField = NON_STD_FIELD
-        m.matchedBy = 'default'
-        m.matchedLabel = '默认非标准化'
-      }
-    })
-    sortMappingsPendingFirst()
-    mappingPagination.current = 1
-    if (notify) Message.success(`自动字段碰撞完成：命中标准字段 ${hit} 项，其余保留原始字段名并标记为非标准化`)
-  }
-
-  /**
-   * 继承档案默认映射（取代原来的「上传映射表批量匹配」）
-   * 映射表 CSV 的上传与解析已在档案「落库字段映射」页签完成，向导不再凭空造一份文件字典；
-   * 这里真读产品级默认映射给待匹配行补结论，无档案 / 档案未保存映射时给明确提示。
-   */
-  const applyArchiveBaseline = () => {
     const code = currentProduct.value?.productCode || ''
-    if (!code) {
-      Message.warning('该产品尚未建档，档案侧没有可继承的默认映射，请执行自动碰撞或人工选择')
-      return
-    }
-    const baseline = productMappingBaseline(code)
-    if (!baseline.length) {
-      Message.info('档案「落库字段映射」页签还未保存该产品的映射，可先去档案维护或继续人工匹配')
-      return
-    }
-    const dict = new Map(baseline.map((r) => [r.apiField, r.stdField]))
-    let filled = 0
-    fieldMappings.value.forEach((m) => {
-      if (m.matchedBy !== 'default') {
+    const targets = fieldMappings.value.filter((m) => m.matchedBy !== 'manual')
+    // 档案行与碰撞行一次算完：inheritMappingForBatch 内部就是「产品级默认映射 → 字段名碰撞」两级
+    const decided = new Map<string, InheritedMappingRow>(
+      inheritMappingForBatch(code, targets.map((m) => m.sourceField))
+        .filter((r) => r.inheritSource !== 'pending')
+        .map((r): [string, InheritedMappingRow] => [r.apiField, r])
+    )
+    let fromArchive = 0
+    let fromCollision = 0
+    let nonStd = 0
+    targets.forEach((m) => {
+      const hit = decided.get(m.sourceField)
+      if (hit) {
+        m.targetField = hit.stdField || NON_STD_FIELD
+        m.matchedBy = hit.inheritSource === 'inherit' ? 'inherit' : 'auto'
+        m.matchedLabel = hit.inheritSource === 'inherit' ? '继承档案默认映射' : '自动匹配'
+        if (hit.inheritSource === 'inherit') {fromArchive++} else {fromCollision++}
         return
       }
-      if (!dict.has(m.sourceField)) {
-        return
-      }
-      m.targetField = dict.get(m.sourceField) || NON_STD_FIELD
-      m.matchedBy = 'inherit'
-      m.matchedLabel = '继承档案默认映射'
-      filled++
+      // R34：档案与碰撞都没有结论，保留原始字段名并标记非标准化
+      m.targetField = NON_STD_FIELD
+      m.matchedBy = 'default'
+      m.matchedLabel = '默认非标准化'
+      nonStd++
     })
     sortMappingsPendingFirst()
     mappingPagination.current = 1
-    if (filled) {
-      Message.success(`已按档案默认映射补齐 ${filled} 个待匹配字段（产品级映射共 ${baseline.length} 行）`)
-    } else {
-      Message.info('待匹配字段在档案默认映射里都没有对应行，请人工选择或先补档案出参')
-    }
+    if (!notify) {return}
+    const kept = fieldMappings.value.length - targets.length
+    const parts = [`继承档案默认映射 ${fromArchive} 项`, `字段名碰撞 ${fromCollision} 项`, `非标准化透传 ${nonStd} 项`]
+    if (kept) {parts.push(`人工调整 ${kept} 项保留`)}
+    Message.success(`字段匹配完成：${parts.join('、')}${code ? '' : '（该产品未建档，档案侧无默认可继承）'}`)
   }
 
   /** 本次批次的完整映射结论（必选区 + 列表区），用于差量比对与回写档案 */
@@ -1666,8 +1627,7 @@ export function useBacktrackPersist() {
     loadProductFields,
     onMappingProductChange,
     onRequiredSourceChange,
-    applyAutoCollision,
-    applyArchiveBaseline,
+    rematchFields,
     setMappingTarget,
     mappedCount,
     nonStdCount,

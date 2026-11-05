@@ -424,14 +424,12 @@
               <a-col :span="16">
                 <a-form-item label=" ">
                   <a-space style="margin-top: 30px">
-                    <a-button :disabled="!fieldMappings.length" @click="applyAutoCollision(true)">
-                      <template #icon><icon-find-replace /></template>
-                      执行自动字段碰撞
-                    </a-button>
-                    <a-button :disabled="!fieldMappings.length" @click="applyArchiveBaseline">
-                      <template #icon><icon-archive /></template>
-                      继承档案默认映射
-                    </a-button>
+                    <a-tooltip content="一个动作两层取数：优先沿用档案「落库字段映射」的产品级默认结论，档案没覆盖的字段再按字段名语义碰撞；人工调整过的行保持不变">
+                      <a-button :disabled="!fieldMappings.length" @click="rematchFields()">
+                        <template #icon><icon-find-replace /></template>
+                        按档案映射匹配字段
+                      </a-button>
+                    </a-tooltip>
                     <a-tag color="gray">
                       {{ isCustomProduct ? '未收录产品：标准库字段为输入框，字段说明显示「—」' : '外数出参字段 → 标准库字段（字段顺序无关）' }}
                     </a-tag>
@@ -1007,7 +1005,7 @@ const {
   requiredMappingStatus, requiredAllPassed, requiredPassedCount,
   cipherAlgorithmOptions, setRequiredCipher, requiredCipherSummary,
   loadProducts, onMappingProductChange, onRequiredSourceChange,
-  applyAutoCollision, applyArchiveBaseline, setMappingTarget,
+  rematchFields, setMappingTarget,
   mappedCount, nonStdCount, nonStdFieldNames, inheritedCount,
   mappingPagination, pagedFieldMappings, onMappingPageChange, onMappingPageSizeChange,
   mappingVersion, buildMappingVersion, NON_STD_FIELD,

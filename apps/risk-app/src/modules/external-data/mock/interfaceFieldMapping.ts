@@ -13,6 +13,8 @@
  *      回溯落库向导按批次继承这一份默认值，只对未命中的字段做自动碰撞，向导内的就地调整作为
  *      批次差异（inheritMappingForBatch / diffMappingFromProduct）；批次落库成功后再把结论回写产品级
  *      默认映射（commitBatchMappingToProduct），下一批就能继承到最新口径（需求文档 R58/R64）；
+ *      向导侧只有一个动作「按档案映射匹配字段」（档案默认优先 → 字段名碰撞 → 非标透传），不再拆成
+ *      「执行自动碰撞」和「继承档案默认映射」两个入口；
  *   5. 字段名→标准字段的碰撞字典全模块只有 AUTO_MATCH_DICT 一份，回溯向导不再自带一份；
  *   6. 项目无后端，保存仅落在模块内存 store，页面刷新后回到种子数据。
  */
@@ -550,9 +552,13 @@ export function productMappingBaseline(productCode: string): InterfaceFieldMappi
 /**
  * 批次字段清单继承产品级默认映射
  * 同名字段直接沿用档案结论（标记 inherit），档案没覆盖的字段走自动碰撞，仍不中的留待人工
+ * 口径：档案行右列留空（尚未给结论）不算“有默认值”，视同没覆盖而继续走碰撞，
+ *      避免把空结论当默认值继承后把可碰撞的字段误标成非标准化
  */
 export function inheritMappingForBatch(productCode: string, apiFields: string[]): InheritedMappingRow[] {
-  const baseline = new Map(productMappingBaseline(productCode).map((r) => [r.apiField, r.stdField]))
+  const baseline = new Map(
+    productMappingBaseline(productCode).filter((r) => !!r.stdField).map((r) => [r.apiField, r.stdField])
+  )
   return apiFields.filter(Boolean).map((apiField) => {
     if (baseline.has(apiField)) {
       return { apiField, stdField: baseline.get(apiField) || '', inheritSource: 'inherit' as MappingInheritSource }

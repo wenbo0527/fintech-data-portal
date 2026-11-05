@@ -2,6 +2,7 @@ import { TaskStorage } from './taskStorage.js'
 import {
   buildFlowDataset,
   aggregateNodeDaily,
+  aggregateNodePersons,
   aggregateNodeByEnterTime,
   buildEnterTimeBuckets,
   aggregateCanvasDaily,
@@ -116,17 +117,34 @@ function resolveBranchDefs(dataset, nodeId) {
 
 export const RuntimeStatsMock = {
   /**
-   * 节点每日进入/离开统计
+   * 节点每日进入/执行统计
    * 入参：taskId(any)、nodeId(any)、options(object) —— { days, from, to }
-   * 返回：[{ date, enter, exit }]
+   * 返回：[{ date, enter, exit, enterPersons, exitPersons }]
+   *      - enter / exit：流水条数（人次）
+   *      - enterPersons / exitPersons：当日按客户去重的人数（跳日不可相加）
    */
   getNodeDailyStats(taskId, nodeId, options = {}) {
     try {
       const { days, dateList, now, from, to } = resolveRange(options)
       const dataset = getFlowDataset(taskId, { days, from, to, now })
       const map = aggregateNodeDaily(dataset, dateList)
-      return map.get(String(nodeId)) || dateList.map(date => ({ date, enter: 0, exit: 0 }))
+      return map.get(String(nodeId)) || dateList.map(date => ({ date, enter: 0, exit: 0, enterPersons: 0, exitPersons: 0 }))
     } catch { return [] }
+  },
+
+  /**
+   * 节点在整个统计区间内的去重人数（人数口径，非人次）
+   * 口径：进入人数 = 区间内进入过该节点的去重客户数；执行人数 = 区间内在该节点完成动作离开的去重客户数；
+   *      必须区间级去重，不能把每日人数求和。
+   * 入参：taskId(any)、nodeId(any)、options(object) —— { days, from, to }
+   * 返回：{ enterPersons:number, exitPersons:number }
+   */
+  getNodePersons(taskId, nodeId, options = {}) {
+    try {
+      const { days, dateList, now, from, to } = resolveRange(options)
+      const dataset = getFlowDataset(taskId, { days, from, to, now })
+      return aggregateNodePersons(dataset, nodeId, dateList)
+    } catch { return { enterPersons: 0, exitPersons: 0 } }
   },
 
   /**
@@ -134,10 +152,11 @@ export const RuntimeStatsMock = {
    * 入参：taskId(any)、nodeId(any)、options(object) —— { days, from, to, granularity, anchorDate }
    *      - granularity：'day'（默认，按区间内每天）| 'hour'（按 anchorDate 当天逐小时）
    *      - anchorDate：按小时时的锚定日期（YYYY-MM-DD），缺省取区间最后一天
-   * 返回：[{ key, label, start, end, enter, exit, customers }]
-   *      - enter：该时间桶内进入该节点的流水数
-   *      - exit：该时间桶内离开该节点的流水数（按离开时刻归桶）
+   * 返回：[{ key, label, start, end, enter, exit, customers, exitPersons }]
+   *      - enter：该时间桶内进入该节点的流水数（人次）
+   *      - exit：该时间桶内离开该节点的流水数（按离开时刻归桶，人次）
    *      - customers：该时间桶内进入该节点的去重客户数
+   *      - exitPersons：该时间桶内完成执行离开该节点的去重客户数（执行人数）
    */
   getNodeEnterTimeStats(taskId, nodeId, options = {}) {
     try {
@@ -198,7 +217,7 @@ export const RuntimeStatsMock = {
   },
 
   /**
-   * 按分支拆分的每日出人数（用于分流/AB节点）
+   * 按分支拆分的每日执行人数（用于分流/AB节点）
    * 入参：taskId(any)、nodeId(any)、branches(array)、options(object) —— { days, from, to }
    * 返回：[{ date, branchExits }]
    */
@@ -228,9 +247,11 @@ export const RuntimeStatsMock = {
   },
 
   /**
-   * 分支汇总（流入/流出/占比），供 A3 分支表使用
+   * 分支汇总（流入/执行人数/占比），供 A3 分支表使用
    * 入参：taskId(any)、nodeId(any)、options(object) —— { days, from, to }
-   * 返回：[{ key, label, port, inflow, outflow, ratio }]
+   * 返回：[{ key, label, port, inflow, outflow, inflowPersons, outflowPersons, ratio }]
+   *      - inflow / outflow：流水条数（人次）
+   *      - inflowPersons / outflowPersons：按客户去重的人数；ratio 按去重人数归一化
    */
   getBranchSummary(taskId, nodeId, options = {}) {
     try {
@@ -244,7 +265,7 @@ export const RuntimeStatsMock = {
   },
 
   /**
-   * 画布级每日统计（进入画布/流出画布/进入结束）
+   * 画布级每日统计（进入画布/执行人数/进入结束）
    * 入参：taskId(any)、options(object) —— { days, from, to }
    * 返回：[{ date, canvasEnter, canvasExit, canvasEndEnter }]
    */

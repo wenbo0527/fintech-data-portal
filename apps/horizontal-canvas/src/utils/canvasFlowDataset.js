@@ -3,12 +3,15 @@ import { getNodeLabel } from './nodeTypes.js'
 /**
  * 画布运行态流水数据集（mock 唯一事实来源）
  * 说明：以「客户进入事件」为最小单位生成客户/批次/流水三层数据，
- *      节点每日进出、画布每日进出、分支拆分与客户明细全部由流水反算，保证各视图口径自洽。
+ *      节点每日进入与执行、画布每日进入与执行、分支拆分与客户明细全部由流水反算，保证各视图口径自洽。
  * 边界：纯前端伪数据，不调用网络、不持久化；同一 (taskId, 天数, 日期) 结果稳定可复现。
  */
 
 /** 允许统计的最大回溯天数（对齐需求 D 模块的近 90 天预设） */
 const MAX_DAYS = 90
+
+/** 复合 Map key 的分隔符：用于「节点 ID + 时间桶下标」拼键，避开 ID 自身含分隔符的歧义 */
+const SEP = '\u0000'
 
 /** 每日进入事件数量区间 */
 const DAILY_ENTER_MIN = 24
@@ -576,29 +579,107 @@ export function buildFlowDataset(options = {}) {
 }
 
 /**
- * 按日期聚合节点每日进出
+ * 按日期聚合节点每日进入与执行
+ * 口径：enter / exit 为流水条数（人次）；enterPersons / exitPersons 为按客户去重的人数；
+ *      同一客户跨批次多次进入同一节点时，人次会大于人数。
  * 入参：dataset(object)、dateList(array<string>)
- * 返回：Map<nodeId, Array<{ date, enter, exit }>>
+ * 返回：Map<nodeId, Array<{ date, enter, exit, enterPersons, exitPersons }>>
  */
 export function aggregateNodeDaily(dataset, dateList) {
   const result = new Map()
   ;(dataset.nodes || []).forEach(n => {
-    result.set(String(n.id), (dateList || []).map(d => ({ date: d, enter: 0, exit: 0 })))
+    result.set(String(n.id), (dateList || []).map(d => ({ date: d, enter: 0, exit: 0, enterPersons: 0, exitPersons: 0 })))
   })
   const indexMap = new Map()
   ;(dateList || []).forEach((d, i) => indexMap.set(d, i))
+  // 去重人数需按「节点 + 日」收集客户集合，不能用人次累加得出
+  const enterSets = new Map()
+  const exitSets = new Map()
+  const addTo = (store, nodeId, idx, customerNo) => {
+    const key = `${nodeId}${SEP}${idx}`
+    if (!store.has(key)) store.set(key, new Set())
+    store.get(key).add(customerNo)
+  }
 
   ;(dataset.records || []).forEach(r => {
     const list = result.get(String(r.nodeId))
     if (!list) return
     const enterIdx = indexMap.get(toDateStr(new Date(r.enterTime)))
-    if (enterIdx != null) list[enterIdx].enter += 1
+    if (enterIdx != null) {
+      list[enterIdx].enter += 1
+      if (r.customerNo) {
+        addTo(enterSets, r.nodeId, enterIdx, r.customerNo)
+      }
+    }
     if (r.exitTime) {
       const exitIdx = indexMap.get(toDateStr(new Date(r.exitTime)))
-      if (exitIdx != null) list[exitIdx].exit += 1
+      if (exitIdx != null) {
+        list[exitIdx].exit += 1
+        if (r.customerNo) {
+          addTo(exitSets, r.nodeId, exitIdx, r.customerNo)
+        }
+      }
     }
   })
+
+  const writeSize = (store, field) => {
+    store.forEach((set, key) => {
+      const at = key.lastIndexOf(SEP)
+      const row = result.get(key.slice(0, at))?.[Number(key.slice(at + 1))]
+      if (row) {
+        row[field] = set.size
+      }
+    })
+  }
+  writeSize(enterSets, 'enterPersons')
+  writeSize(exitSets, 'exitPersons')
   return result
+}
+
+/**
+ * 构建闭区间日期过滤器
+ * 入参：dateList(array<string>) —— 取首尾为起止日
+ * 返回：(ts:number) => boolean
+ */
+function buildRangeChecker(dateList) {
+  const from = (dateList || [])[0] || ''
+  const to = (dateList || [])[(dateList || []).length - 1] || ''
+  return (ts) => {
+    const d = toDateStr(new Date(ts))
+    if (from && d < from) {
+      return false
+    }
+    if (to && d > to) {
+      return false
+    }
+    return true
+  }
+}
+
+/**
+ * 聚合节点在整个统计区间内的去重人数
+ * 口径：进入人数 = 区间内进入过该节点的去重客户数；执行人数 = 区间内在该节点完成动作离开（有 exitTime）的去重客户数；
+ *      跳日不可相加，所以区间级去重必须单独算，不能把每日人数求和。
+ * 入参：dataset(object)、nodeId(any)、dateList(array<string>)
+ * 返回：{ enterPersons:number, exitPersons:number }
+ */
+export function aggregateNodePersons(dataset, nodeId, dateList) {
+  const enterSet = new Set()
+  const exitSet = new Set()
+  const inRange = buildRangeChecker(dateList)
+  ;(dataset.records || []).forEach(r => {
+    if (String(r.nodeId) !== String(nodeId)) {
+      return
+    }
+    if (!r.customerNo || !inRange(r.enterTime)) {
+      return
+    }
+    enterSet.add(r.customerNo)
+    if (r.exitTime) {
+      exitSet.add(r.customerNo)
+    }
+  })
+  return { enterPersons: enterSet.size, exitPersons: exitSet.size }
 }
 
 /**
@@ -621,31 +702,43 @@ function findBucketIndex(buckets, ts) {
 
 /**
  * 按进入时刻分桶聚合节点流量
- * 口径：进入按流水进入该节点的时刻（enterTime）归桶；流出按同一条流水离开该节点的时刻（exitTime）归桶；
- *      客户数为该桶进入流水的去重客户数。同一批次在同一节点至多一条流水，故去重后即为人数。
+ * 口径：进入按流水进入该节点的时刻（enterTime）归桶；执行按同一条流水离开该节点的时刻（exitTime）归桶；
+ *      customers = 该桶进入的去重客户数；exitPersons = 该桶完成执行离开该节点的去重客户数。
+ *      同一批次在同一节点至多一条流水，但同一客户可跳批次重复出现，故人次 ≥ 人数。
  * 入参：dataset(object)、nodeId(any)、buckets(Array<{ key, label, start, end }>)
  *      - start / end 为毫秒时间戳，桶区间左闭右开
- * 返回：Array<{ key, label, start, end, enter, exit, customers }>
+ * 返回：Array<{ key, label, start, end, enter, exit, customers, exitPersons }>
  */
 export function aggregateNodeByEnterTime(dataset, nodeId, buckets = []) {
-  const list = (buckets || []).map(b => ({ ...b, enter: 0, exit: 0, customers: 0 }))
+  const list = (buckets || []).map(b => ({ ...b, enter: 0, exit: 0, customers: 0, exitPersons: 0 }))
   if (!list.length) return list
   const customerSets = list.map(() => new Set())
+  const exitSets = list.map(() => new Set())
 
   ;(dataset.records || []).forEach(r => {
     if (String(r.nodeId) !== String(nodeId)) return
     const enterIdx = findBucketIndex(list, r.enterTime)
     if (enterIdx >= 0) {
       list[enterIdx].enter += 1
-      if (r.customerNo) customerSets[enterIdx].add(r.customerNo)
+      if (r.customerNo) {
+        customerSets[enterIdx].add(r.customerNo)
+      }
     }
     if (r.exitTime) {
       const exitIdx = findBucketIndex(list, r.exitTime)
-      if (exitIdx >= 0) list[exitIdx].exit += 1
+      if (exitIdx >= 0) {
+        list[exitIdx].exit += 1
+        if (r.customerNo) {
+          exitSets[exitIdx].add(r.customerNo)
+        }
+      }
     }
   })
 
-  list.forEach((b, i) => { b.customers = customerSets[i].size })
+  list.forEach((b, i) => {
+    b.customers = customerSets[i].size
+    b.exitPersons = exitSets[i].size
+  })
   return list
 }
 
@@ -679,17 +772,19 @@ export function buildEnterTimeBuckets(dateList = [], granularity = 'day', anchor
 }
 
 /**
- * 聚合画布每日进出
- * 口径：canvasEnter = 当日进入画布的流水数；canvasExit = 当日流出画布（已结束/超时掉队）的流水数；
+ * 聚合画布每日进入与执行
+ * 口径：canvasEnter = 当日进入画布的流水数；canvasExit = 当日执行完毕离开画布（已结束/超时掉队）的批次数（人次）；
+ *      canvasExitPersons = 当日离开画布的批次按客户去重后的人数，即看板「执行人数」；
  *      canvasEndEnter = 当日抵达结束节点的流水数；avgDurationMs = 当日结束批次的平均流转时长。
  * 入参：dataset(object)、dateList(array<string>)
- * 返回：Array<{ date, canvasEnter, canvasExit, canvasEndEnter, avgDurationMs }>
+ * 返回：Array<{ date, canvasEnter, canvasExit, canvasExitPersons, canvasEndEnter, avgDurationMs }>
  */
 export function aggregateCanvasDaily(dataset, dateList) {
   const indexMap = new Map()
   ;(dateList || []).forEach((d, i) => indexMap.set(d, i))
-  const res = (dateList || []).map(d => ({ date: d, canvasEnter: 0, canvasExit: 0, canvasEndEnter: 0, avgDurationMs: 0 }))
+  const res = (dateList || []).map(d => ({ date: d, canvasEnter: 0, canvasExit: 0, canvasExitPersons: 0, canvasEndEnter: 0, avgDurationMs: 0 }))
   const durationAcc = new Map()
+  const exitPersonSets = new Map()
 
   // 进入画布与抵达结束节点：以流水条数计
   ;(dataset.records || []).forEach(r => {
@@ -699,13 +794,19 @@ export function aggregateCanvasDaily(dataset, dateList) {
     if (r.nodeType === 'end') res[enterIdx].canvasEndEnter += 1
   })
 
-  // 流出画布：以批次结束时间计（等待中与进行中的批次不算流出）
+  // 执行完毕离开画布：以批次结束时间计（等待中与进行中的批次不计入执行人数）
   ;(dataset.batches || []).forEach(b => {
     if (b.endTime == null) return
     if (b.status !== 'finished' && b.status !== 'timeout') return
     const exitIdx = indexMap.get(toDateStr(new Date(b.endTime)))
     if (exitIdx == null) return
     res[exitIdx].canvasExit += 1
+    if (b.customerNo) {
+      if (!exitPersonSets.has(exitIdx)) {
+        exitPersonSets.set(exitIdx, new Set())
+      }
+      exitPersonSets.get(exitIdx).add(b.customerNo)
+    }
     const acc = durationAcc.get(exitIdx) || { total: 0, count: 0 }
     acc.total += Math.max(0, b.endTime - b.enterTime)
     acc.count += 1
@@ -713,7 +814,14 @@ export function aggregateCanvasDaily(dataset, dateList) {
   })
 
   durationAcc.forEach((acc, idx) => {
-    if (res[idx] && acc.count) res[idx].avgDurationMs = Math.round(acc.total / acc.count)
+    if (res[idx] && acc.count) {
+      res[idx].avgDurationMs = Math.round(acc.total / acc.count)
+    }
+  })
+  exitPersonSets.forEach((set, idx) => {
+    if (res[idx]) {
+      res[idx].canvasExitPersons = set.size
+    }
   })
   return res
 }
@@ -736,7 +844,7 @@ export function resolveBranchPorts(dataset, nodeId, branchDefs) {
 }
 
 /**
- * 聚合分支每日流入/流出
+ * 聚合分支每日流入/执行（均为流水条数，人次口径）
  * 入参：dataset(object)、nodeId(string)、branchDefs(array)、dateList(array<string>)
  * 返回：Map<branchKey, Array<{ date, inflow, outflow }>>
  */
@@ -753,7 +861,7 @@ export function aggregateBranchDaily(dataset, nodeId, branchDefs, dateList) {
   const byPort = new Map()
   ;(branchDefs || []).forEach((b, i) => byPort.set(String(resolvedPorts[i]), String(b.key)))
 
-  // 流出：源节点沿该端口离开的流水条数
+  // 流水条数（人次）：源节点沿该端口走出的条数；本函数不提供去重人数
   ;(dataset.records || []).forEach(r => {
     if (String(r.nodeId) !== String(nodeId)) return
     if (!r.branchPort) return
@@ -778,9 +886,11 @@ export function aggregateBranchDaily(dataset, nodeId, branchDefs, dateList) {
 }
 
 /**
- * 聚合节点分支拆分（流入/流出/占比）
+ * 聚合节点分支拆分（流入/执行人数/占比）
+ * 口径：inflow / outflow 为流水条数（人次）；inflowPersons / outflowPersons 为按客户去重的人数；
+ *      ratio 按各分支去重人数归一化，因此各分支占比之和仍为 100%。
  * 入参：dataset(object)、nodeId(string)、branchDefs(array)、dateList(array<string>)
- * 返回：Map<branchKey, { key, label, port, inflow, outflow, ratio }>
+ * 返回：Map<branchKey, { key, label, port, inflow, outflow, inflowPersons, outflowPersons, ratio }>
  */
 export function aggregateBranchFlow(dataset, nodeId, branchDefs, dateList) {
   const map = new Map()
@@ -792,44 +902,60 @@ export function aggregateBranchFlow(dataset, nodeId, branchDefs, dateList) {
       port: String(resolvedPorts[i]),
       inflow: 0,
       outflow: 0,
+      inflowPersons: 0,
+      outflowPersons: 0,
       ratio: 0
     })
   })
   if (!map.size) return map
 
-  const from = (dateList || [])[0] || ''
-  const to = (dateList || [])[(dateList || []).length - 1] || ''
-  const inRange = (ts) => {
-    const d = toDateStr(new Date(ts))
-    if (from && d < from) return false
-    if (to && d > to) return false
-    return true
-  }
+  const inRange = buildRangeChecker(dateList)
 
   const byPort = new Map()
   map.forEach(v => byPort.set(v.port, v))
+  const outSets = new Map()
+  const inSets = new Map()
+  map.forEach((v, k) => { outSets.set(k, new Set()); inSets.set(k, new Set()) })
 
-  // 流出：源节点沿该端口离开的流水条数
+  // 执行人数：源节点沿该端口走出的流水条数（人次）与去重客户（人数）
   ;(dataset.records || []).forEach(r => {
     if (String(r.nodeId) !== String(nodeId)) return
     if (!r.branchPort || !inRange(r.enterTime)) return
     const item = byPort.get(String(r.branchPort))
-    if (item) item.outflow += 1
+    if (!item) {
+      return
+    }
+    item.outflow += 1
+    if (r.customerNo) {
+      outSets.get(item.key).add(r.customerNo)
+    }
   })
 
-  // 流入：目标节点上标注了该来源端口的进入流水条数
+  // 流入：目标节点上标注了该来源端口的进入流水
   ;(dataset.records || []).forEach(r => {
     if (!r.prevPort || !r.prevNodeId) return
     if (String(r.prevNodeId) !== String(nodeId)) return
     if (!inRange(r.enterTime)) return
     const item = byPort.get(String(r.prevPort))
-    if (item) item.inflow += 1
+    if (!item) {
+      return
+    }
+    item.inflow += 1
+    if (r.customerNo) {
+      inSets.get(item.key).add(r.customerNo)
+    }
   })
 
+  map.forEach((v, k) => {
+    v.outflowPersons = outSets.get(k).size
+    v.inflowPersons = inSets.get(k).size
+  })
+
+  // 占比按去重人数归一化；同一客户可在不同批次落入不同分支，故分支人数之和可能大于节点去重人数
   let totalOut = 0
-  map.forEach(v => { totalOut += v.outflow })
+  map.forEach(v => { totalOut += v.outflowPersons })
   map.forEach(v => {
-    v.ratio = totalOut > 0 ? Number((v.outflow / totalOut).toFixed(4)) : 0
+    v.ratio = totalOut > 0 ? Number((v.outflowPersons / totalOut).toFixed(4)) : 0
   })
   return map
 }

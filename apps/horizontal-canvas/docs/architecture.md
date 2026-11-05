@@ -85,9 +85,9 @@ graph LR
   - 编辑模式：打开抽屉（`openConfigDrawer`）。
   - 查看模式统计：设置统计面板焦点并保持抽屉可打开（已取消互斥）。
 - 统计数据：`RuntimeStatsMock` 提供：
-  - `getNodeDailyStats(taskId, nodeId)`：节点每日进入/出。
+  - `getNodeDailyStats(taskId, nodeId)`：节点每日进入/执行人数。
   - `getCanvasDailyStats(taskId)`：画布每日聚合进入/结束。
-  - `getNodeDailyBranchStats(taskId, nodeId, branches)`：分支每日出人数。
+  - `getNodeDailyBranchStats(taskId, nodeId, branches)`：分支每日执行人数。
 
 ## 部署架构与依赖
 - 本地开发：

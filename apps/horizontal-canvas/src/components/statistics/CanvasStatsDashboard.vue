@@ -33,7 +33,7 @@
         <span class="dash-section__title">整体流量趋势</span>
         <div class="chart-legend">
           <span class="legend-item"><span class="legend-line legend-line--enter"></span>每日进入总量</span>
-          <span class="legend-item"><span class="legend-line legend-line--exit"></span>每日流出总量</span>
+          <span class="legend-item"><span class="legend-line legend-line--exit"></span>每日执行人数</span>
           <span v-if="hasRunningBucket" class="legend-running">当日进行中</span>
         </div>
       </div>
@@ -62,7 +62,7 @@
           </g>
           <!-- 进入总量（浅色） -->
           <polyline class="series series--enter" :points="enterPolyline" />
-          <!-- 流出总量（深色） -->
+          <!-- 执行人数（深色） -->
           <polyline class="series series--exit" :points="exitPolyline" />
           <!-- 当日进行中：末段虚线延伸 -->
           <line
@@ -123,7 +123,7 @@
         <template v-if="selectedRow.canvasEnter || selectedRow.canvasExit">
           <div class="day-detail__metrics">
             <div class="day-metric"><span class="label">进入总量</span><span class="value">{{ selectedRow.canvasEnter }}</span></div>
-            <div class="day-metric"><span class="label">流出总量</span><span class="value">{{ selectedRow.canvasExit }}</span></div>
+            <div class="day-metric"><span class="label">执行人数</span><span class="value">{{ selectedRow.canvasExitPersons }}</span></div>
             <div class="day-metric"><span class="label">结束人次</span><span class="value">{{ selectedRow.canvasEndEnter }}</span></div>
             <div class="day-metric"><span class="label">日均流转时长</span><span class="value">{{ formatDuration(selectedRow.avgDurationMs) }}</span></div>
           </div>
@@ -248,9 +248,9 @@ function trendBarHeight(trend, v) {
   return Math.max(3, Math.round(((Number(v) || 0) / max) * 100))
 }
 
-/** 图表 Y 轴最大值 */
+/** 图表 Y 轴最大值（执行序列取去重人数，与图例「每日执行人数」同口径） */
 const yMax = computed(() => {
-  const max = Math.max(...dailyRows.value.map(r => Math.max(r.canvasEnter || 0, r.canvasExit || 0)), 0)
+  const max = Math.max(...dailyRows.value.map(r => Math.max(r.canvasEnter || 0, r.canvasExitPersons || 0)), 0)
   if (max <= 0) return 10
   const mag = Math.pow(10, Math.floor(Math.log10(max)))
   return Math.ceil(max / (mag / 2)) * (mag / 2)
@@ -287,7 +287,7 @@ function buildPoints(key) {
 }
 
 const enterPoints = computed(() => buildPoints('canvasEnter'))
-const exitPoints = computed(() => buildPoints('canvasExit'))
+const exitPoints = computed(() => buildPoints('canvasExitPersons'))
 
 /** 每日列热区：整列可点击，用于 R12-2 单日明细下钻 */
 const dayColumns = computed(() => {

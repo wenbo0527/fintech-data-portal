@@ -37,8 +37,10 @@ import type { BacktrackProduct } from '../mock/backtrackProducts'
 import type { HiveTableItem } from '../mock/hiveTables'
 import type { ValidationDetail, ConsistencySummary, TripleRowCheck } from '../mock/validation'
 import type { NotifyConfig, NotifyContent } from '../mock/notify'
-import type { PersistRecord, PersistStatus, AsyncTask, AsyncTaskType, TaskResumeContext, BatchStage } from '../mock/backtrackPersist'
+import type { PersistRecord, PersistStatus, AsyncTask, AsyncTaskType, TaskResumeContext, BatchStage, RequiredCipherEntry } from '../mock/backtrackPersist'
 import { PERSIST_STATUS_FLOW, resolveStatusFromTasks } from '../mock/backtrackPersist'
+// 加密方式字典与密文长度口径沿用样本校验那一份（R02：主流 SM3 / SHA256，MD5 仅存量兼容），向导不再自带算法列表
+import { ENCRYPTION_ALGORITHMS, getEncryptionAlgorithm, type EncryptionAlgorithm } from '../mock/encryptionAlgorithm'
 // 映射的分层继承与碰撞字典统一取自映射模块，向导不再自带一份字典或一份占位符
 import {
   autoMatchStdField,
@@ -86,6 +88,12 @@ interface RequiredFieldRule {
   rule: string
   /** 等同判定：出参字段名是否与该标准字段等同 */
   matcher: (f: string) => boolean
+  /**
+   * 是否为密文字段
+   * 为 true 时除绑定等同字段外还必须声明该字段的实际加密方式（SM3 / SHA256 / MD5），
+   * 否则加密口径不明会导致与线上存量数据（R68 按密文身份证号关联）对不上
+   */
+  cipher: boolean
 }
 
 /**
@@ -602,37 +610,90 @@ export function useBacktrackPersist() {
   /** 字段映射列表 */
   const fieldMappings = ref<FieldMapping[]>([])
 
-  /** 必填映射（R32：IDMD5、review date、phone_md5 强制绑定） */
+  /** 必填映射（R32：cert_no、create_time、mobile 强制绑定；密文字段还需声明厂商回传的实际加密方式） */
   const REQUIRED_FIELD_MATCH: RequiredFieldRule[] = [
     {
-      std: 'id_md5',
-      stdLabel: '加密MD5字段',
+      std: 'cert_no',
+      stdLabel: 'SM4 加密身份证号',
       defaultSource: 'id_md5',
       rule: '主体标识密文字段（字段名含 md5 / hash，且不含手机号）',
       matcher: (f: string) => /md5|hash/i.test(f) && !/phone|mobile|tel/i.test(f),
+      cipher: true,
     },
     {
-      std: 'review_date',
-      stdLabel: '回溯日期',
+      std: 'create_time',
+      stdLabel: '样本回溯时间',
       defaultSource: 'review_data',
-      rule: '回溯基准日期字段（字段名含 date / time / review_data）',
+      rule: '回溯基准时间字段（字段名含 date / time / review_data）',
       matcher: (f: string) => /date|time/i.test(f) || f === 'review_data',
+      cipher: false,
     },
     {
-      std: 'phone_md5',
-      stdLabel: '加密手机号字段',
+      std: 'mobile',
+      stdLabel: 'SM4 加密手机号',
       defaultSource: 'phone_md5',
       rule: '手机号密文字段（字段名含 phone / mobile / tel 且带 md5 / hash）',
       matcher: (f: string) => /phone|mobile|tel/i.test(f) && /md5|hash/i.test(f),
+      cipher: true,
     },
   ]
 
-  /** 必填区已选的文件出参字段 */
+  /** 必填区已选的文件出参字段（键为标准列名，值为厂商出参字段名） */
   const requiredSourceSelection = reactive<Record<string, string>>({
-    id_md5: 'id_md5',
-    review_date: 'review_data',
-    phone_md5: 'phone_md5',
+    cert_no: 'id_md5',
+    create_time: 'review_data',
+    mobile: 'phone_md5',
   })
+
+  /**
+   * 密文类必填字段的实际加密方式（标准字段 → 算法标识）
+   * 空串 = 尚未确认，此时该行判定不通过并拦截「下一步」
+   */
+  const requiredCipherAlgo = reactive<Record<string, string>>(
+    Object.fromEntries(REQUIRED_FIELD_MATCH.filter((r) => r.cipher).map((r) => [r.std, '']))
+  )
+
+  /** 已人工确认过加密方式的标准字段（换等同字段时不再自动覆盖用户的选择） */
+  const requiredCipherTouched = reactive<Record<string, boolean>>({})
+
+  /**
+   * 按出参字段名与字段说明推断实际加密方式
+   * 口径：只认字段名 / 说明里显式写出的算法（如 id_md5、「主体标识（MD5加密）」→ MD5），
+   * 没写就留空让用户自己选，不拿“推荐值”冒充厂商实际口径
+   * @param field 文件出参字段名
+   * @param comment 字段说明
+   */
+  const inferCipherAlgo = (field: string, comment: string): string => {
+    const text = `${field} ${comment}`.toLowerCase()
+    if (/sm3/.test(text)) {return 'SM3'}
+    if (/sha/.test(text)) {return 'SHA256'}
+    if (/md5/.test(text)) {return 'MD5'}
+    return ''
+  }
+
+  /**
+   * 按当前绑定的等同字段同步加密方式（仅处理未被人工确认过的字段）
+   * @param rule 必填映射规则
+   */
+  const syncRequiredCipher = (rule: RequiredFieldRule) => {
+    if (!rule.cipher || requiredCipherTouched[rule.std]) {return}
+    const sel = requiredSourceSelection[rule.std]
+    requiredCipherAlgo[rule.std] = sel ? inferCipherAlgo(sel, sourceFieldComment(sel)) : ''
+  }
+
+  /**
+   * 人工选定密文字段的实际加密方式
+   * @param std 标准字段名
+   * @param algo 算法标识，空串表示清空重选
+   */
+  const setRequiredCipher = (std: string, algo: string) => {
+    requiredCipherAlgo[std] = algo
+    requiredCipherTouched[std] = !!algo
+    const rule = REQUIRED_FIELD_MATCH.find((r) => r.std === std)
+    if (rule) {
+      syncRequiredCipher(rule)
+    }
+  }
 
   /** 当前产品的出参字段清单 */
   const productFields = computed(() => currentProduct.value?.fields ?? [])
@@ -662,8 +723,38 @@ export function useBacktrackPersist() {
   const requiredMappingStatus = computed(() =>
     activeRequiredFieldMatch.value.map((r) => {
       const sel = requiredSourceSelection[r.std]
-      return { ...r, sel, ok: !!sel && catalogSourceFields.value.includes(sel) && r.matcher(sel) }
+      const algo = r.cipher ? (requiredCipherAlgo[r.std] || '') : ''
+      const opt = algo ? getEncryptionAlgorithm(algo as EncryptionAlgorithm) : null
+      // 等同字段判定与加密方式判定分开返回，页面才能区分「选错字段」和「漏选加密方式」两类问题
+      const fieldOk = !!sel && catalogSourceFields.value.includes(sel) && r.matcher(sel)
+      const algoOk = !r.cipher || !!algo
+      return {
+        ...r,
+        sel,
+        fieldOk,
+        algo,
+        algoOk,
+        algoLabel: opt ? opt.label : '',
+        algoRecommended: opt?.recommended ?? true,
+        digestLength: opt?.digestLength ?? 0,
+        ok: fieldOk && algoOk,
+      }
     })
+  )
+
+  /** 可选加密方式清单（与样本校验共用一份算法字典） */
+  const cipherAlgorithmOptions = ENCRYPTION_ALGORITHMS
+
+  /** 密文字段已确认的加密方式结论（写入落库记录，供事后复核与关联取数口径对齐） */
+  const requiredCipherSummary = computed<RequiredCipherEntry[]>(() =>
+    requiredMappingStatus.value
+      .filter((r) => r.cipher && r.algoOk)
+      .map((r) => ({
+        std: r.std,
+        sourceField: r.sel,
+        algorithm: r.algo as EncryptionAlgorithm,
+        digestLength: r.digestLength,
+      }))
   )
 
   /** 必填映射是否全部通过 */
@@ -680,6 +771,8 @@ export function useBacktrackPersist() {
       if (!opts.includes(cur)) {
         requiredSourceSelection[r.std] = opts.find((f) => r.matcher(f)) || r.defaultSource
       }
+      // 等同字段可能已随产品换掉，加密方式跟着重推（人工确认过的不动）
+      syncRequiredCipher(r)
     })
   }
 
@@ -884,9 +977,10 @@ export function useBacktrackPersist() {
   const buildMappingVersion = () => {
     const now = new Date()
     const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
-    // 尾段按（产品名 + 接口号 + 日期）稳定散列派生，不再用 Math.random：
-    // 同一批次重进不会变号，不同产品不会拿到同一个号
-    const seed = `${mappingProduct.value}|${currentProduct.value?.productCode || currentProduct.value?.interfaceId || ''}|${stamp}`
+    // 尾段按（产品名 + 接口号 + 密文加密口径 + 日期）稳定散列派生，不再用 Math.random：
+    // 同一批次重进不会变号，不同产品或改了加密方式不会拿到同一个号
+    const cipherSeed = requiredCipherSummary.value.map((c) => `${c.std}=${c.algorithm}`).join(',')
+    const seed = `${mappingProduct.value}|${currentProduct.value?.productCode || currentProduct.value?.interfaceId || ''}|${cipherSeed}|${stamp}`
     mappingVersion.value = `v${stamp}-${hashInt(seed, 100, 999)}`
   }
 
@@ -1018,8 +1112,8 @@ export function useBacktrackPersist() {
       stdCols.forEach((col, idx) => {
         row[col] = `VAL_${i + 1}_${idx + 1}`
       })
-      row.id_md5 = previewRows.value[i % Math.max(previewRows.value.length, 1)]?.id_md5 ?? '—'
-      row.review_date = reviewDate.value || '—'
+      row.cert_no = previewRows.value[i % Math.max(previewRows.value.length, 1)]?.id_md5 ?? '—'
+      row.create_time = reviewDate.value || '—'
       return row
     })
   })
@@ -1027,7 +1121,7 @@ export function useBacktrackPersist() {
   /** 临时库预览列 */
   const tempPreviewColumns = computed(() => {
     const stdCols = fieldMappings.value.filter((m) => m.targetField && m.targetField !== NON_STD_FIELD).map((m) => m.targetField)
-    return ['id_md5', 'review_date', ...stdCols.filter((c) => c !== 'id_md5' && c !== 'review_date')]
+    return ['cert_no', 'create_time', ...stdCols.filter((c) => c !== 'cert_no' && c !== 'create_time')]
   })
 
   /* ---------- B4 三重行数验证与一致性校验 ---------- */
@@ -1432,6 +1526,8 @@ export function useBacktrackPersist() {
         nonStdFieldCount: nonStdCount.value,
         nonStdFields: nonStdFieldNames.value,
         inheritedFieldCount: inheritedCount.value,
+        // 密文类必选字段的实际加密口径随批次留档，事后排查关联不上时有据可查
+        requiredCiphers: requiredCipherSummary.value,
       },
       storageInfo: {
         tempTable: persistBatches.value[0]?.tempTable ?? 'tmp_ext_retro_raw',
@@ -1439,7 +1535,7 @@ export function useBacktrackPersist() {
         partitionField: 'datax',
         partitionValue: partitionValue.value,
         loadedRows: persistBatches.value.reduce((s, b) => s + b.rows, 0),
-        writeStrategy: '主键（身份证号+review_date）直接覆盖',
+        writeStrategy: '主键（cert_no + create_time）直接覆盖',
         tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理',
         uploadFileCleanup: '落库完成后 24 小时清理',
       },
@@ -1565,6 +1661,7 @@ export function useBacktrackPersist() {
     fieldMappings,
     REQUIRED_FIELD_MATCH, activeRequiredFieldMatch, requiredSourceSelection, catalogSourceFields, sourceFieldComment,
     requiredMappingStatus, requiredAllPassed, requiredPassedCount,
+    requiredCipherAlgo, cipherAlgorithmOptions, setRequiredCipher, requiredCipherSummary,
     loadProducts,
     loadProductFields,
     onMappingProductChange,

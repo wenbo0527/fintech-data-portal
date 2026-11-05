@@ -32,9 +32,9 @@ export const EXTRA_PARAM_COLUMN = 'extraParam'
 
 /** 落库标准底表全部列 */
 export const stdTableColumnsMock: StdTableColumn[] = [
-  { column: 'id_md5', comment: '加密MD5字段（主体唯一标识，SM4 加密）', type: 'STRING', group: '主键标识', required: true },
-  { column: 'review_date', comment: '回溯日期（按天分区写入 datax）', type: 'STRING', group: '主键标识', required: true },
-  { column: 'phone_md5', comment: '加密手机号字段（手机号 MD5 密文）', type: 'STRING', group: '主键标识', required: true },
+  { column: 'cert_no', comment: '身份证号（SM4 加密）', type: 'STRING', group: '主键标识', required: true },
+  { column: 'create_time', comment: '样本回溯时间（按天分区写入 datax）', type: 'STRING', group: '主键标识', required: true },
+  { column: 'mobile', comment: '手机号（SM4 加密）', type: 'STRING', group: '主键标识', required: true },
   { column: 'std_loan_cnt_1m', comment: '近1月贷款审批次数', type: 'INT', group: '借贷行为', required: false },
   { column: 'std_loan_cnt_3m', comment: '近3月贷款审批次数', type: 'INT', group: '借贷行为', required: false },
   { column: 'std_loan_cnt_12m', comment: '近12月贷款审批次数', type: 'INT', group: '借贷行为', required: false },

@@ -9,6 +9,13 @@ import { hashUnit } from './stableHash'
 /** 加密算法标识 */
 export type EncryptionAlgorithm = 'SM3' | 'SHA256' | 'MD5'
 
+/**
+ * 落库标准列（cert_no / mobile）的存储加密算法
+ * 口径：厂商回传的是摘要密文（上表三选一，用于撞库匹配与密文长度校验），
+ *      入库时统一重加密为 SM4 写入标准列，因此 SM4 不进入「实际加密方式」下拉选项
+ */
+export const STD_CIPHER_STORAGE = 'SM4'
+
 /** 加密算法配置项 */
 export interface EncryptionAlgorithmOption {
   /** 算法标识 */

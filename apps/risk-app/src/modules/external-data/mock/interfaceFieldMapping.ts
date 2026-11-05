@@ -56,7 +56,7 @@ export interface ProductFieldMapping {
 }
 
 /** 落库服务要求绑定的主键标识列 */
-export const KEY_STD_FIELD = 'id_md5'
+export const KEY_STD_FIELD = 'cert_no'
 
 /** 非标准化透传选项文案（下拉宽度有限，完整说明由「标准字段说明」列带出） */
 export const NON_STD_FIELD_LABEL = '非标准化字段（透传 extraParam）'
@@ -78,21 +78,19 @@ const PASSTHROUGH_ALIAS = [NON_STD_FIELD, 'extraParam', '非标准化', '非标�
 
 /** 接口字段名 → 标准字段的语义碰撞字典（全模块唯一一份，回溯向导与映射表解析都调 autoMatchStdField） */
 const AUTO_MATCH_DICT: Record<string, string> = {
-  id_no: 'id_md5',
-  id_card: 'id_md5',
-  idcard: 'id_md5',
-  cert_no: 'id_md5',
-  cert_id: 'id_md5',
-  id_md5: 'id_md5',
-  mobile: 'phone_md5',
-  phone: 'phone_md5',
-  mobile_md5: 'phone_md5',
-  phone_md5: 'phone_md5',
-  review_date: 'review_date',
-  review_data: 'review_date',
-  query_date: 'review_date',
-  verify_date: 'review_date',
-  apply_date: 'review_date',
+  id_no: 'cert_no',
+  id_card: 'cert_no',
+  idcard: 'cert_no',
+  cert_id: 'cert_no',
+  id_md5: 'cert_no',
+  phone: 'mobile',
+  mobile_md5: 'mobile',
+  phone_md5: 'mobile',
+  review_date: 'create_time',
+  review_data: 'create_time',
+  query_date: 'create_time',
+  verify_date: 'create_time',
+  apply_date: 'create_time',
   credit_score: 'std_credit_score',
   score: 'std_credit_score',
   risk_score: 'std_risk_score_v3',
@@ -122,9 +120,9 @@ export function autoMatchStdField(apiField: string): string {
   if (AUTO_MATCH_DICT[name]) {return AUTO_MATCH_DICT[name]}
   const isPhone = /phone|mobile|tel/.test(name)
   const isDigest = /md5|hash|sm4|enc/.test(name)
-  if (isPhone && isDigest) {return 'phone_md5'}
-  if (isDigest && !isPhone) {return 'id_md5'}
-  return /date|time/.test(name) ? 'review_date' : ''
+  if (isPhone && isDigest) {return 'mobile'}
+  if (isDigest && !isPhone) {return 'cert_no'}
+  return /date|time/.test(name) ? 'create_time' : ''
 }
 
 /** 归一映射表里的标准字段写法：命中底表列返回列名，透传写法返回占位符，其余返回空串 */
@@ -279,9 +277,9 @@ export function buildTemplateCsv(productCode: string): string {
   const body = fieldNames.length
     ? fieldNames.map((name) => [productCode, name, ''].join(','))
     : [
-        [productCode, 'id_no', 'id_md5'].join(','),
-        [productCode, 'mobile', 'phone_md5'].join(','),
-        [productCode, 'query_date', 'review_date'].join(','),
+        [productCode, 'id_no', 'cert_no'].join(','),
+        [productCode, 'mobile', ''].join(','),
+        [productCode, 'query_date', 'create_time'].join(','),
         [productCode, 'ext_score_v3', ''].join(','),
       ]
   return ['\uFEFF' + MAPPING_CSV_HEADER.join(','), ...body].join('\n')
@@ -374,7 +372,7 @@ const seeds: Array<Pick<ProductFieldMapping, 'productCode' | 'rows' | 'sourceFil
     sourceFileName: 'XUEXIN_BATCH_STATUS_接口字段映射_v1.csv',
     savedAt: '2026-08-12T10:24:31.000Z',
     rows: [
-      row('id_no', 'id_md5'),
+      row('id_no', 'cert_no'),
       row('request_id', NON_STD_FIELD),
       row('name', NON_STD_FIELD),
     ],
@@ -384,8 +382,8 @@ const seeds: Array<Pick<ProductFieldMapping, 'productCode' | 'rows' | 'sourceFil
     sourceFileName: 'BH_CREDIT_QUERY_落库映射.csv',
     savedAt: '2026-07-28T06:12:04.000Z',
     rows: [
-      row('id_no', 'id_md5'),
-      row('mobile', 'phone_md5'),
+      row('id_no', 'cert_no'),
+      row('mobile', 'mobile'),
       row('name', NON_STD_FIELD),
       row('request_id', NON_STD_FIELD),
     ],
@@ -395,8 +393,8 @@ const seeds: Array<Pick<ProductFieldMapping, 'productCode' | 'rows' | 'sourceFil
     sourceFileName: 'BH_MULTI_QUERY_落库映射.csv',
     savedAt: '2026-09-06T03:40:12.000Z',
     rows: [
-      row('id_no', 'id_md5'),
-      row('mobile', 'phone_md5'),
+      row('id_no', 'cert_no'),
+      row('mobile', 'mobile'),
       row('name', NON_STD_FIELD),
       row('request_id', NON_STD_FIELD),
     ],
@@ -406,7 +404,7 @@ const seeds: Array<Pick<ProductFieldMapping, 'productCode' | 'rows' | 'sourceFil
     sourceFileName: '',
     savedAt: '2026-09-18T08:05:00.000Z',
     rows: [
-      row('id_no', 'id_md5'),
+      row('id_no', 'cert_no'),
       row('name', NON_STD_FIELD),
       row('request_id', NON_STD_FIELD),
     ],
@@ -416,7 +414,7 @@ const seeds: Array<Pick<ProductFieldMapping, 'productCode' | 'rows' | 'sourceFil
     sourceFileName: 'PD_LOCATION_RISK_落库映射.csv',
     savedAt: '2026-09-22T02:15:40.000Z',
     rows: [
-      row('id_no', 'id_md5'),
+      row('id_no', 'cert_no'),
       row('longitude', NON_STD_FIELD),
       row('latitude', NON_STD_FIELD),
       row('request_id', NON_STD_FIELD),
@@ -427,7 +425,7 @@ const seeds: Array<Pick<ProductFieldMapping, 'productCode' | 'rows' | 'sourceFil
     sourceFileName: 'PD_DEVICE_CLUSTER_落库映射.csv',
     savedAt: '2026-05-11T07:30:00.000Z',
     rows: [
-      row('id_no', 'id_md5'),
+      row('id_no', 'cert_no'),
       row('device_id', NON_STD_FIELD),
       row('request_id', NON_STD_FIELD),
     ],
@@ -441,8 +439,8 @@ const seeds: Array<Pick<ProductFieldMapping, 'productCode' | 'rows' | 'sourceFil
     sourceFileName: 'SHGJ_ENTERPRISE_JUDICIAL_回溯落库映射.csv',
     savedAt: '2026-10-18T09:20:00.000Z',
     rows: [
-      row('id_md5', 'id_md5'),
-      row('review_data', 'review_date'),
+      row('id_md5', 'cert_no'),
+      row('review_data', 'create_time'),
       row('enterprise_risk_score', 'std_risk_score_v3'),
       row('tax_arrear_flag', 'std_risk_level_code'),
       row('legal_case_cnt', NON_STD_FIELD),

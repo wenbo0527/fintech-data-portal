@@ -26,14 +26,118 @@ export const LANDING_CHANNELS = [
   { value: 'douyin', label: '抖音' }
 ]
 
-// 必填字段定义：required=true 缺失阻断提交，required=false 缺失仅弱提示
-export const REQUIRED_FIELD_DEFS = [
-  { field: 'product_id', label: '产品ID', required: true },
-  { field: 'flow_id', label: '流水号', required: true },
-  { field: 'data_dt', label: '数据日期', required: true },
-  { field: 'business_code', label: '业务编码', required: false },
-  { field: 'session_number', label: '会话编号', required: false }
+// 来源表类型：外数底表的字段需要额外填写「缓存天数」来定位取数分区
+export const SOURCE_TABLE_TYPES = {
+  external: '外数底表',
+  model: '模型底表',
+  sample: '样本表'
+}
+
+// 候选来源表字典：来源表列的下拉数据源，columns 用于联动该行的「日期字段」
+export const BACKTRACK_SOURCE_TABLES = [
+  {
+    table: 'ext.credit_report',
+    tableType: 'external',
+    description: '征信报告外数底表（回溯落库后）',
+    columns: [
+      { name: 'id_md5', type: 'varchar(64)', comment: '身份证MD5' },
+      { name: 'product_id', type: 'varchar(20)', comment: '产品ID' },
+      { name: 'flow_id', type: 'varchar(32)', comment: '流水号' },
+      { name: 'query_dt', type: 'date', comment: '查询日期' },
+      { name: 'data_dt', type: 'date', comment: '数据日期' },
+      { name: 'cache_dt', type: 'date', comment: '缓存快照日期' },
+      { name: 'snapshot_dt', type: 'datetime', comment: '快照生成时间' }
+    ]
+  },
+  {
+    table: 'ext.phone_verify',
+    tableType: 'external',
+    description: '运营商三要素外数底表',
+    columns: [
+      { name: 'phone_md5', type: 'varchar(64)', comment: '手机号MD5' },
+      { name: 'flow_id', type: 'varchar(32)', comment: '流水号' },
+      { name: 'session_number', type: 'varchar(32)', comment: '会话编号' },
+      { name: 'verify_dt', type: 'date', comment: '验证日期' },
+      { name: 'cache_dt', type: 'date', comment: '缓存快照日期' },
+      { name: 'batch_dt', type: 'datetime', comment: '落库批次时间' }
+    ]
+  },
+  {
+    table: 'dw.model_call_log',
+    tableType: 'model',
+    description: '模型调用流水（模型底表）',
+    columns: [
+      { name: 'flow_id', type: 'varchar(32)', comment: '流水号' },
+      { name: 'product_id', type: 'varchar(20)', comment: '产品ID' },
+      { name: 'business_code', type: 'varchar(20)', comment: '业务编码' },
+      { name: 'call_dt', type: 'datetime', comment: '调用时间' },
+      { name: 'data_dt', type: 'date', comment: '数据日期' }
+    ]
+  },
+  {
+    table: 'dw.risk_sample',
+    tableType: 'sample',
+    description: '回溯样本表',
+    columns: [
+      { name: 'flow_id', type: 'varchar(32)', comment: '流水号' },
+      { name: 'product_id', type: 'varchar(20)', comment: '产品ID' },
+      { name: 'business_code', type: 'varchar(20)', comment: '业务编码' },
+      { name: 'session_number', type: 'varchar(32)', comment: '会话编号' },
+      { name: 'data_dt', type: 'date', comment: '数据日期' }
+    ]
+  }
 ]
+
+// 日期关联锚点：回溯时以样本观测日 watch_dt 为基准往前推 X 天与来源表日期字段对齐
+export const WATCH_DATE_FIELD = 'watch_dt'
+
+const DATE_COLUMN_NAME_RE = /(^|_)(dt|date|time|_dt)$|dt$|date$|time$/i
+
+// 日期类字段判定：类型是日期/时间，或字段名带 dt / date / time
+export function isDateLikeColumn(col) {
+  if (!col) return false
+  return /date|datetime|timestamp/i.test(col.type || '') || DATE_COLUMN_NAME_RE.test(col.name || '')
+}
+
+export function getSourceTableMeta(tableName) {
+  return BACKTRACK_SOURCE_TABLES.find((t) => t.table === tableName) || null
+}
+
+// 是否外数底表：决定「缓存天数」这一列在该行是否必填
+export function isExternalSourceTable(tableName) {
+  return getSourceTableMeta(tableName)?.tableType === 'external'
+}
+
+export function getDateFieldsOf(tableName) {
+  const meta = getSourceTableMeta(tableName)
+  return meta ? meta.columns.filter(isDateLikeColumn) : []
+}
+
+// 必填字段定义：required=true 缺失阻断提交，required=false 缺失仅弱提示
+// sourceTable/dateField 为默认映射口径；dateOffsetDays = watch_dt - X 天的 X；
+// cacheDays = 外数底表的缓存天数（仅外数底表适用，其他表类型为 null）
+export const REQUIRED_FIELD_DEFS = [
+  { field: 'product_id', label: '产品ID', required: true, sourceTable: 'ext.credit_report', dateField: 'query_dt', dateOffsetDays: 0, cacheDays: 30 },
+  { field: 'flow_id', label: '流水号', required: true, sourceTable: 'ext.credit_report', dateField: 'query_dt', dateOffsetDays: 0, cacheDays: 30 },
+  { field: 'data_dt', label: '数据日期', required: true, sourceTable: 'ext.credit_report', dateField: 'data_dt', dateOffsetDays: 0, cacheDays: 30 },
+  { field: 'business_code', label: '业务编码', required: false, sourceTable: 'dw.model_call_log', dateField: 'call_dt', dateOffsetDays: 0, cacheDays: null },
+  { field: 'session_number', label: '会话编号', required: false, sourceTable: 'ext.phone_verify', dateField: 'verify_dt', dateOffsetDays: 1, cacheDays: 7 }
+]
+
+// 预置映射行：按字段定义给出默认口径，targets 覆盖「样本字段」命中情况
+function seedRequiredMappings(targets = {}) {
+  return REQUIRED_FIELD_DEFS.map((d) => ({
+    field: d.field,
+    label: d.label,
+    required: d.required,
+    target: d.field in targets ? targets[d.field] : d.field,
+    sourceTable: d.sourceTable,
+    dateField: d.dateField,
+    dateOffsetDays: d.dateOffsetDays,
+    cacheDays: d.cacheDays,
+    isEncrypted: false
+  }))
+}
 
 // 关联方式枚举
 export const ASSOCIATION_METHODS = [
@@ -183,13 +287,7 @@ function buildSingleModelLog(now) {
         { input: 'credit_history', target: 'credit_history', from: '当前模型' }
       ],
       outputs: seedOutputs,
-      requiredFieldMappings: [
-        { field: 'product_id', target: 'product_id', isEncrypted: false, required: true },
-        { field: 'flow_id', target: 'flow_id', isEncrypted: false, required: true },
-        { field: 'data_dt', target: 'data_dt', isEncrypted: false, required: true },
-        { field: 'business_code', target: '', isEncrypted: false, required: false },
-        { field: 'session_number', target: '', isEncrypted: false, required: false }
-      ],
+      requiredFieldMappings: seedRequiredMappings({ business_code: '', session_number: '' }),
       // 落表目标（单模型独立表-实时）
       landingForm: { summary: false, summaryType: '', channelCode: '', singleModel: true, singleTableType: 'realtime' },
       // 场景标签
@@ -238,13 +336,7 @@ function buildSingleModelLog(now) {
         { input: 'income', target: 'user_income', from: '当前模型' }
       ],
       outputs: seedOutputs,
-      requiredFieldMappings: [
-        { field: 'product_id', target: 'product_id', isEncrypted: false, required: true },
-        { field: 'flow_id', target: 'flow_id', isEncrypted: false, required: true },
-        { field: 'data_dt', target: 'data_dt', isEncrypted: false, required: true },
-        { field: 'business_code', target: 'risk_biz', isEncrypted: false, required: false },
-        { field: 'session_number', target: '', isEncrypted: false, required: false }
-      ],
+      requiredFieldMappings: seedRequiredMappings({ business_code: 'risk_biz', session_number: '' }),
       // 落表目标（多模型通用汇总表 + 单模型离线，并行写入）
       landingForm: { summary: true, summaryType: 'general', channelCode: '', singleModel: true, singleTableType: 'offline' },
       // 场景标签（周期任务首次配置沿用）
@@ -329,13 +421,7 @@ function buildSingleModelLog(now) {
         { input: 'credit_history', target: 'credit_history', from: '当前模型' }
       ],
       outputs: seedOutputs,
-      requiredFieldMappings: [
-        { field: 'product_id', target: 'product_id', isEncrypted: false, required: true },
-        { field: 'flow_id', target: 'flow_id', isEncrypted: false, required: true },
-        { field: 'data_dt', target: 'data_dt', isEncrypted: false, required: true },
-        { field: 'business_code', target: '', isEncrypted: false, required: false },
-        { field: 'session_number', target: '', isEncrypted: false, required: false }
-      ],
+      requiredFieldMappings: seedRequiredMappings({ business_code: '', session_number: '' }),
       // 落表目标（多模型渠道专属汇总表-支付宝）
       landingForm: { summary: true, summaryType: 'channel', channelCode: 'alipay', singleModel: false, singleTableType: '' },
       // 场景标签
@@ -397,13 +483,7 @@ function buildSingleModelLog(now) {
         { input: 'income', target: 'user_income', from: '当前模型' }
       ],
       outputs: seedOutputs,
-      requiredFieldMappings: [
-        { field: 'product_id', target: 'product_id', isEncrypted: false, required: true },
-        { field: 'flow_id', target: 'flow_id', isEncrypted: false, required: true },
-        { field: 'data_dt', target: 'data_dt', isEncrypted: false, required: true },
-        { field: 'business_code', target: '', isEncrypted: false, required: false },
-        { field: 'session_number', target: '', isEncrypted: false, required: false }
-      ],
+      requiredFieldMappings: seedRequiredMappings({ business_code: '', session_number: '' }),
       // 落表目标（单模型独立表-离线）
       landingForm: { summary: false, summaryType: '', channelCode: '', singleModel: true, singleTableType: 'offline' },
       // 场景标签（周期任务首次配置沿用）
@@ -571,5 +651,11 @@ export default {
   SCENE_TAGS,
   LANDING_CHANNELS,
   REQUIRED_FIELD_DEFS,
-  ASSOCIATION_METHODS
+  ASSOCIATION_METHODS,
+  SOURCE_TABLE_TYPES,
+  BACKTRACK_SOURCE_TABLES,
+  WATCH_DATE_FIELD,
+  getSourceTableMeta,
+  isExternalSourceTable,
+  getDateFieldsOf
 }

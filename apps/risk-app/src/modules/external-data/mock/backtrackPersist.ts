@@ -9,6 +9,7 @@
  *   4. 验证报告按 R64 组织（比对结果 / 异常行号 / 差异摘要 / backid）。
  */
 import type { NotifyRecord } from './notify'
+import type { EncryptionAlgorithm } from './encryptionAlgorithm'
 
 /**
  * 落库状态机（3.1）
@@ -127,6 +128,23 @@ export interface BillingElement {
   billingStatus: '未计费' | '已计费'
 }
 
+/**
+ * 密文类必选字段的实际加密方式结论（R32 补充口径）
+ * cert_no / mobile 这类主体密文列，除绑定等同出参字段外还要声明厂商实际用的摘要算法，
+ * 算法字典与密文长度口径统一取自 mock/encryptionAlgorithm.ts，向导不再自带一份；
+ * 标准列本身固定以 STD_CIPHER_STORAGE（SM4）存储，入库时由厂商摘要重加密，不属于本字段口径
+ */
+export interface RequiredCipherEntry {
+  /** 标准库字段名 */
+  std: string
+  /** 本批次绑定的文件出参字段 */
+  sourceField: string
+  /** 厂商回传密文的实际摘要算法（算法标识） */
+  algorithm: EncryptionAlgorithm
+  /** 该算法的密文长度（十六进制字符数），由算法派生，便于事后复核 */
+  digestLength: number
+}
+
 /** 落库记录（R54） */
 export interface PersistRecord {
   /** backid 批次标识（R51 落临时库阶段生成） */
@@ -186,6 +204,8 @@ export interface PersistRecord {
     nonStdFields: string[]
     /** 本次批次从档案默认映射继承下来的行数 */
     inheritedFieldCount?: number
+    /** 密文类必选字段声明的实际加密方式（未声明的字段不入列） */
+    requiredCiphers?: RequiredCipherEntry[]
   }
   /** 存储信息 */
   storageInfo: {
@@ -379,8 +399,8 @@ export const persistRecordsMock: PersistRecord[] = [
     agencyInfo: { agencyId: 'AG-001', agencyCode: 'BH', agencyName: '百行征信有限公司', licenseNo: 'JC证-JXKP-2023-0001' },
     fileInfo: { fileName: 'BH_RETRO_20260922_01.csv', acquireMode: 'SFTP拉取', fileSize: 64159744, fileRows: 96210, encoding: 'UTF-8', delimiter: '逗号', encrypted: false, outboundTaskIds: ['OUT20260905'] },
     // 百行「多头借贷汇总」未建档（档案 21 条里没有该产品），因此没有可继承的产品级默认映射
-    mappingInfo: { product: '百行-多头借贷汇总 V4', interfaceId: 'BH1023', productCode: '', mappingVersion: 'v1.3', stdFieldCount: 8, nonStdFieldCount: 2, nonStdFields: ['ext_score_v2', 'ext_tag_list'], inheritedFieldCount: 0 },
-    storageInfo: { tempTable: 'tmp_ext_retro_raw', hiveTable: 'dw_ods.ods_ext_bh_retro_std', partitionField: 'datax', partitionValue: '2026-09-22', loadedRows: 96210, writeStrategy: '主键（身份证号+review_date）直接覆盖', tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理', uploadFileCleanup: '落库完成后 24 小时清理' },
+    mappingInfo: { product: '百行-多头借贷汇总 V4', interfaceId: 'BH1023', productCode: '', mappingVersion: 'v1.3', stdFieldCount: 8, nonStdFieldCount: 2, nonStdFields: ['ext_score_v2', 'ext_tag_list'], inheritedFieldCount: 0, requiredCiphers: [{ std: 'cert_no', sourceField: 'id_md5', algorithm: 'MD5', digestLength: 32 }, { std: 'mobile', sourceField: 'phone_md5', algorithm: 'MD5', digestLength: 32 }] },
+    storageInfo: { tempTable: 'tmp_ext_retro_raw', hiveTable: 'dw_ods.ods_ext_bh_retro_std', partitionField: 'datax', partitionValue: '2026-09-22', loadedRows: 96210, writeStrategy: '主键（cert_no + create_time）直接覆盖', tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理', uploadFileCleanup: '落库完成后 24 小时清理' },
     billing: { billingSubject: '风控策略组', billingType: '按条数', billingRows: 96210, billingFieldCount: 10, unitPrice: 0.35, estimatedAmount: 33673.5, billingStatus: '未计费' },
   },
   {
@@ -390,8 +410,8 @@ export const persistRecordsMock: PersistRecord[] = [
     agencyInfo: { agencyId: 'AG-002', agencyCode: 'PD', agencyName: '朴道征信有限公司', licenseNo: 'JC证-JXKP-2022-0037' },
     fileInfo: { fileName: 'PD_BACK_0929_2.csv', acquireMode: 'SFTP拉取', fileSize: 47915008, fileRows: 45320, encoding: 'UTF-8', delimiter: '逗号', encrypted: false, outboundTaskIds: ['OUT20260912'] },
     // 朴道「历史逾期明细」同样未建档，本批次字段结论全部来自自动碰撞与人工选择
-    mappingInfo: { product: '朴道-历史逾期明细', interfaceId: 'PD2048', productCode: '', mappingVersion: 'v1.1', stdFieldCount: 6, nonStdFieldCount: 1, nonStdFields: ['ext_ovd_level'], inheritedFieldCount: 0 },
-    storageInfo: { tempTable: 'tmp_ext_retro_raw', hiveTable: 'dw_ods.ods_ext_pd_retro_std', partitionField: 'datax', partitionValue: '2026-09-29', loadedRows: 45320, writeStrategy: '主键（身份证号+review_date）直接覆盖', tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理', uploadFileCleanup: '落库完成后 24 小时清理' },
+    mappingInfo: { product: '朴道-历史逾期明细', interfaceId: 'PD2048', productCode: '', mappingVersion: 'v1.1', stdFieldCount: 6, nonStdFieldCount: 1, nonStdFields: ['ext_ovd_level'], inheritedFieldCount: 0, requiredCiphers: [{ std: 'cert_no', sourceField: 'id_md5', algorithm: 'SHA256', digestLength: 64 }, { std: 'mobile', sourceField: 'phone_md5', algorithm: 'SHA256', digestLength: 64 }] },
+    storageInfo: { tempTable: 'tmp_ext_retro_raw', hiveTable: 'dw_ods.ods_ext_pd_retro_std', partitionField: 'datax', partitionValue: '2026-09-29', loadedRows: 45320, writeStrategy: '主键（cert_no + create_time）直接覆盖', tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理', uploadFileCleanup: '落库完成后 24 小时清理' },
     billing: { billingSubject: '贷中管理团队', billingType: '按条数', billingRows: 45320, billingFieldCount: 7, unitPrice: 0.4, estimatedAmount: 18128, billingStatus: '未计费' },
   },
   {
@@ -402,8 +422,8 @@ export const persistRecordsMock: PersistRecord[] = [
     fileInfo: { fileName: 'SHGJ_CREDIT_20261020.csv', acquireMode: 'SFTP拉取', fileSize: 39845888, fileRows: 38000, encoding: 'UTF-8', delimiter: '逗号', encrypted: false, outboundTaskIds: ['OUT20260925'] },
     // 上海数据集团批次：映射的 5 行结论直接继承档案 SHGJ_ENTERPRISE_JUDICIAL 的产品级默认映射，
     // 其中 legal_case_cnt 按 R61 原样透传（底表无语义对应的涉诉列），q_id 是本批次新增的非标列
-    mappingInfo: { product: '上海数据集团-工商司法信息回溯', interfaceId: 'SHGJ2006', productCode: 'SHGJ_ENTERPRISE_JUDICIAL', mappingVersion: 'v1.0', stdFieldCount: 4, nonStdFieldCount: 2, nonStdFields: ['legal_case_cnt', 'q_id'], inheritedFieldCount: 5 },
-    storageInfo: { tempTable: 'tmp_ext_retro_raw', hiveTable: 'dw_ods.ods_ext_shgj_retro_std', partitionField: 'datax', partitionValue: '2026-10-20', loadedRows: 38000, writeStrategy: '主键（身份证号+review_date）直接覆盖', tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理', uploadFileCleanup: '落库完成后 24 小时清理' },
+    mappingInfo: { product: '上海数据集团-工商司法信息回溯', interfaceId: 'SHGJ2006', productCode: 'SHGJ_ENTERPRISE_JUDICIAL', mappingVersion: 'v1.0', stdFieldCount: 4, nonStdFieldCount: 2, nonStdFields: ['legal_case_cnt', 'q_id'], inheritedFieldCount: 5, requiredCiphers: [{ std: 'cert_no', sourceField: 'id_md5', algorithm: 'SM3', digestLength: 64 }] },
+    storageInfo: { tempTable: 'tmp_ext_retro_raw', hiveTable: 'dw_ods.ods_ext_shgj_retro_std', partitionField: 'datax', partitionValue: '2026-10-20', loadedRows: 38000, writeStrategy: '主键（cert_no + create_time）直接覆盖', tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理', uploadFileCleanup: '落库完成后 24 小时清理' },
     billing: { billingSubject: '贷中管理团队', billingType: '按条数', billingRows: 38000, billingFieldCount: 6, unitPrice: 0.5, estimatedAmount: 19000, billingStatus: '未计费' },
   },
 ]

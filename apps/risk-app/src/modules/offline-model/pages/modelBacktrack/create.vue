@@ -316,7 +316,10 @@
           <a-alert v-if="!sampleReady" type="info" :show-icon="true" style="margin-bottom: 12px;">
             请先完成步骤三：拉取样本表数据
           </a-alert>
-          <div class="section-tip">根据样本表字段，完成以下必填字段的映射匹配</div>
+          <div class="section-tip">
+            根据样本表字段，完成以下必填字段的映射匹配；日期关联逻辑固定以样本观测日 <code>watch_dt</code> 为锚点往前推 X 天（只填 X），
+            来源表为「外数底表」时还需填写缓存天数
+          </div>
           <div class="table-search-row">
             <a-input-search
               v-model="requiredSearch"
@@ -325,34 +328,119 @@
               style="width: 240px; margin-bottom: 8px;"
             />
           </div>
-          <a-table :data="filteredRequiredMappings" :columns="requiredDefs" row-key="name" size="small" :pagination="false">
+          <a-table
+            class="required-map-table"
+            :data="filteredRequiredMappings"
+            :columns="requiredColumns"
+            row-key="name"
+            size="small"
+            :pagination="false"
+            :scroll="{ x: requiredTableWidth }"
+          >
+            <template #nameCell="{ record }">
+              <span class="field-name">{{ record.name }}</span>
+              <a-tooltip v-if="record.required" content="必填字段，缺失将阻断提交">
+                <span class="required-star">*</span>
+              </a-tooltip>
+            </template>
+            <template #sourceCell="{ record }">
+              <a-select
+                :model-value="record.sourceTable"
+                placeholder="选择来源表"
+                size="small"
+                allow-search
+                allow-clear
+                :trigger-props="dropdownFitContent"
+                style="width: 100%;"
+                @change="(v) => onSourceTableChange(record, v)"
+              >
+                <a-option v-for="t in sourceTables" :key="t.table" :value="t.table" :label="t.table">
+                  {{ t.table }} <span class="col-type">{{ sourceTableTypeLabel(t.tableType) }}</span>
+                </a-option>
+              </a-select>
+            </template>
+            <template #dateFieldCell="{ record }">
+              <a-select
+                v-model="record.dateField"
+                placeholder="选择日期字段"
+                size="small"
+                allow-search
+                allow-clear
+                :disabled="!record.sourceTable"
+                :trigger-props="dropdownFitContent"
+                :not-found-content="record.sourceTable ? '该表无日期字段' : '请先选来源表'"
+                style="width: 100%;"
+                @change="updateRequiredStatus(record)"
+              >
+                <a-option v-for="f in dateFieldsOf(record.sourceTable)" :key="f.name" :value="f.name" :label="f.name">
+                  {{ f.name }} <span class="col-type">{{ f.comment }}</span>
+                </a-option>
+              </a-select>
+            </template>
             <template #targetCell="{ record }">
               <a-select
                 v-model="record.target"
                 placeholder="选择样本字段"
                 allow-search
+                allow-clear
+                size="small"
+                :trigger-props="dropdownFitContent"
                 style="width: 100%;"
                 @change="updateRequiredStatus(record)"
               >
-                <a-option v-for="c in tableColumns" :key="c.name" :value="c.name">
+                <a-option v-for="c in tableColumns" :key="c.name" :value="c.name" :label="c.name">
                   {{ c.name }} <span class="col-type">{{ c.type }}</span>
                 </a-option>
               </a-select>
             </template>
             <template #encryptedCell="{ record }">
-              <a-tooltip content="关联时是否对字段加密">
+              <a-tooltip content="关联时是否对该字段加密">
                 <a-switch v-model="record.isEncrypted" size="small" />
               </a-tooltip>
             </template>
-            <template #requiredCell="{ record }">
-              <a-tag :color="record.required ? 'red' : 'gray'" size="small">
-                {{ record.required ? '必填' : '选填' }}
-              </a-tag>
+            <template #joinLogicCell="{ record }">
+              <div class="date-expr">
+                <a-tooltip content="固定锚点：样本观测日，不可改，只填往前推的天数">
+                  <span class="expr-anchor">{{ watchDateField }} -</span>
+                </a-tooltip>
+                <a-input-number
+                  v-model="record.dateOffsetDays"
+                  size="small"
+                  :min="0"
+                  :max="365"
+                  :step="1"
+                  :precision="0"
+                  hide-button
+                  class="expr-input"
+                  @change="updateRequiredStatus(record)"
+                >
+                  <template #suffix>天</template>
+                </a-input-number>
+              </div>
+            </template>
+            <template #cacheDaysCell="{ record }">
+              <span v-if="!isExternalSource(record.sourceTable)" class="cell-na">—</span>
+              <a-input-number
+                v-else
+                v-model="record.cacheDays"
+                size="small"
+                :min="0"
+                :max="365"
+                :step="1"
+                :precision="0"
+                hide-button
+                placeholder="天数"
+                @change="updateRequiredStatus(record)"
+              >
+                <template #suffix>天</template>
+              </a-input-number>
             </template>
             <template #statusCell="{ record }">
-              <a-tag :color="record.status === 'matched' ? 'green' : (record.required ? 'red' : 'orange')" class="status-tag">
-                {{ record.status === 'matched' ? '已匹配' : (record.required ? '未匹配' : '可空') }}
-              </a-tag>
+              <a-tooltip :content="requiredRowMissing(record).length ? '待补：' + requiredRowMissing(record).join('、') : '映射完整'">
+                <a-tag :color="record.status === 'matched' ? 'green' : (record.required ? 'red' : 'orange')" class="status-tag">
+                  {{ record.status === 'matched' ? '已匹配' : (record.required ? '未匹配' : '可空') }}
+                </a-tag>
+              </a-tooltip>
             </template>
           </a-table>
         </a-collapse-item>
@@ -487,7 +575,7 @@ const stepStatus = computed(() => {
   const s1 = modelForm.value.serviceName ? 'done' : 'pending'
   const s2 = (landingForm.value.summary || landingForm.value.singleModel) ? 'done' : 'pending'
   const s3 = tableInputStatus.value === 'success' ? 'done' : 'pending'
-  const reqMatched = requiredMappings.value.filter(r => r.target).length
+  const reqMatched = requiredMappings.value.filter(r => isRequiredRowComplete(r)).length
   const reqTotal = requiredMappings.value.length
   const s4 = reqTotal === 0 ? 'pending' : (reqMatched === reqTotal ? 'done' : 'partial')
   const mapMatched = inputMappings.value.filter(r => r.target).length
@@ -538,14 +626,59 @@ const tableColumnDefs = [
 const tableLoading = ref(false)
 const tableInputStatus = ref('')
 const requiredMappings = ref([])
-const requiredDefs = [
-  { title: '字段', dataIndex: 'name', width: 160 },
-  { title: '说明', dataIndex: 'label', width: 160 },
-  { title: '映射到样本字段', dataIndex: 'target', slotName: 'targetCell', width: 260 },
-  { title: '关联加密', dataIndex: 'isEncrypted', slotName: 'encryptedCell', width: 100, align: 'center' },
-  { title: '必填', dataIndex: 'required', slotName: 'requiredCell', width: 80, align: 'center' },
-  { title: '状态', dataIndex: 'status', slotName: 'statusCell', width: 100, align: 'center' }
-]
+// 来源表字典 / 表类型 / 日期关联锚点（步骤四：必填字段映射）
+const sourceTables = ref([])
+const sourceTableTypes = ref({})
+const watchDateField = ref('watch_dt')
+const sourceTableTypeLabel = (t) => sourceTableTypes.value[t] || t
+const isExternalSource = (table) => !!table && backtrackAPI.isExternalSourceTable(table)
+const dateFieldsOf = (table) => backtrackAPI.getDateFieldsOf(table) || []
+const isNil = (v) => v === null || v === undefined || v === ''
+// 下拉面板默认被锁成与选择框同宽，密排列里选项文案会被省略号截断，改为「不小于选择框宽度且随内容自适应」
+const dropdownFitContent = { autoFitPopupWidth: false, autoFitPopupMinWidth: true }
+
+// 列序：字段 / 来源表 / 日期字段 / 说明 / 样本字段 / 是否关联时加密 / 日期关联逻辑 /（外数底表）缓存天数 / 状态
+// 缓存天数列仅在当前映射里存在外数底表行时出现
+const requiredColumns = computed(() => {
+  const cols = [
+    { title: '字段', dataIndex: 'name', slotName: 'nameCell', width: 118 },
+    { title: '来源表', dataIndex: 'sourceTable', slotName: 'sourceCell', width: 190 },
+    { title: '日期字段', dataIndex: 'dateField', slotName: 'dateFieldCell', width: 142 },
+    { title: '说明', dataIndex: 'label', width: 92, ellipsis: true, tooltip: true },
+    { title: '样本字段', dataIndex: 'target', slotName: 'targetCell', width: 162 },
+    { title: '是否关联时加密', dataIndex: 'isEncrypted', slotName: 'encryptedCell', width: 96, align: 'center' },
+    { title: '日期关联逻辑', dataIndex: 'dateOffsetDays', slotName: 'joinLogicCell', width: 176 }
+  ]
+  if (requiredMappings.value.some(r => isExternalSource(r.sourceTable))) {
+    cols.push({ title: '缓存天数', dataIndex: 'cacheDays', slotName: 'cacheDaysCell', width: 104 })
+  }
+  cols.push({ title: '状态', dataIndex: 'status', slotName: 'statusCell', width: 84, align: 'center' })
+  return cols
+})
+const requiredTableWidth = computed(() => requiredColumns.value.reduce((sum, c) => sum + (c.width || 0), 0))
+
+// 行完整性：来源表 + 样本字段 + 日期关联天数必齐（X 可以为 0）；来源表是外数底表时，日期字段与缓存天数也必齐
+const requiredRowMissing = (record) => {
+  const missing = []
+  if (!record.sourceTable) missing.push('来源表')
+  if (!record.target) missing.push('样本字段')
+  if (isNil(record.dateOffsetDays)) missing.push('日期关联天数')
+  if (isExternalSource(record.sourceTable)) {
+    if (!record.dateField) missing.push('日期字段')
+    if (isNil(record.cacheDays)) missing.push('缓存天数')
+  }
+  return missing
+}
+const isRequiredRowComplete = (record) => requiredRowMissing(record).length === 0
+
+// 换来源表：已选的日期字段按新表字段清单校验，不适用则清空；切离外数底表后缓存天数不再适用
+const onSourceTableChange = (record, val) => {
+  record.sourceTable = val || ''
+  const dates = dateFieldsOf(record.sourceTable)
+  if (record.dateField && !dates.some(f => f.name === record.dateField)) record.dateField = ''
+  if (!isExternalSource(record.sourceTable)) record.cacheDays = null
+  updateRequiredStatus(record)
+}
 
 // ============ 回溯任务配置：新增字段 ============
 // 落表目标（默认同时勾选 多模型汇总表 + 单模型独立表）
@@ -796,7 +929,9 @@ const handleTableValidate = async () => {
       requiredMappings.value = requiredMappings.value.map(r => {
         const same = tableColumns.value.find(c => c.name === r.name)
         const target = r.target || (same ? same.name : '')
-        return { ...r, target, status: target ? 'matched' : 'unmatched', isEncrypted: r.isEncrypted || false }
+        const row = { ...r, target, isEncrypted: r.isEncrypted || false }
+        row.status = isRequiredRowComplete(row) ? 'matched' : 'unmatched'
+        return row
       })
     } else {
       tableInputStatus.value = 'error'
@@ -847,12 +982,15 @@ const loadServices = async () => {
 }
 loadServices()
 
-// 加载回溯配置枚举（场景标签 / 渠道 / 必填字段定义 / 关联方式）
+// 加载回溯配置枚举（场景标签 / 渠道 / 必填字段定义 / 关联方式 / 来源表字典 / 日期关联锚点）
 const loadEnumOptions = () => {
   sceneTagOptions.value = backtrackAPI.getSceneTags() || []
   landingChannelOptions.value = backtrackAPI.getLandingChannels() || []
   associationMethods.value = backtrackAPI.getAssociationMethods() || []
   requiredFieldDefs.value = backtrackAPI.getRequiredFieldDefs() || []
+  sourceTables.value = backtrackAPI.getSourceTables() || []
+  sourceTableTypes.value = backtrackAPI.getSourceTableTypes() || {}
+  watchDateField.value = backtrackAPI.getWatchDateField() || 'watch_dt'
 }
 loadEnumOptions()
 
@@ -893,7 +1031,17 @@ const prefillFromCopy = async (copyFromId) => {
       requiredMappings.value = (requiredMappings.value || []).map(r => {
         const found = cfg.requiredFieldMappings.find(x => x.field === r.name)
         const target = found?.target || ''
-        return { ...r, target, status: target ? 'matched' : 'unmatched', isEncrypted: !!found?.isEncrypted }
+        const row = {
+          ...r,
+          target,
+          isEncrypted: !!found?.isEncrypted,
+          sourceTable: found?.sourceTable || r.sourceTable,
+          dateField: found?.dateField ?? r.dateField,
+          dateOffsetDays: found?.dateOffsetDays ?? r.dateOffsetDays,
+          cacheDays: found?.cacheDays ?? r.cacheDays
+        }
+        row.status = isRequiredRowComplete(row) ? 'matched' : 'unmatched'
+        return row
       })
     }
 
@@ -994,14 +1142,20 @@ const onServiceChange = async (serviceName) => {
       requiredMappings.value = defs.map(d => {
         const same = tableColumns.value.find(c => c.name === d.field)
         const target = same ? same.name : ''
-        return {
+        const row = {
           name: d.field,
           label: d.label,
           required: d.required,
           target,
-          status: target ? 'matched' : 'unmatched',
-          isEncrypted: false
+          isEncrypted: false,
+          // 默认口径来自字段定义（枚举回退时为空，由人工填写）
+          sourceTable: d.sourceTable || '',
+          dateField: d.dateField || '',
+          dateOffsetDays: isNil(d.dateOffsetDays) ? null : d.dateOffsetDays,
+          cacheDays: isNil(d.cacheDays) ? null : d.cacheDays
         }
+        row.status = isRequiredRowComplete(row) ? 'matched' : 'unmatched'
+        return row
       })
       // 主模型分初始化：默认取第一个分类型输出
       if (modelOutputs.value.length > 1) {
@@ -1017,7 +1171,7 @@ const onServiceChange = async (serviceName) => {
 }
 
 const updateRequiredStatus = (record) => {
-  record.status = record.target ? 'matched' : 'unmatched'
+  record.status = isRequiredRowComplete(record) ? 'matched' : 'unmatched'
 }
 const updateInputStatus = (record) => {
   record.status = record.target ? 'matched' : 'unmatched'
@@ -1039,15 +1193,15 @@ const handleSubmit = async () => {
     if (!sampleForm.value.tableNameInput) errors.push('请输入样本表名')
     if (!modelForm.value.serviceName) errors.push('请选择回溯模型')
     if (routeParams.copyFrom && !modelForm.value.taskName) errors.push('请输入任务名称')
-    // 必填字段校验：仅强制项缺失阻断提交（红色报错）
-    const missingRequired = (requiredMappings.value || []).filter(r => r.required && !r.target)
+    // 必填字段校验：仅强制项映射不完整时阻断提交（红色报错）
+    const missingRequired = (requiredMappings.value || []).filter(r => r.required && !isRequiredRowComplete(r))
     if (missingRequired.length) {
-      errors.push(`必填字段未映射: ${missingRequired.map(r => r.name).join('、')}`)
+      errors.push(`必填字段映射未完成: ${missingRequired.map(r => `${r.name}（待补${requiredRowMissing(r).join('、')}）`).join('；')}`)
     }
     // 选填字段缺失仅弱提示，不阻断
-    const missingOptional = (requiredMappings.value || []).filter(r => !r.required && !r.target)
+    const missingOptional = (requiredMappings.value || []).filter(r => !r.required && !isRequiredRowComplete(r))
     if (missingOptional.length) {
-      Message.info(`选填字段未映射（可忽略）: ${missingOptional.map(r => r.name).join('、')}`)
+      Message.info(`选填字段映射未完成（可忽略）: ${missingOptional.map(r => r.name).join('、')}`)
     }
     if (createMode.value === CREATE_MODES.PERIODIC) {
       if (!sampleForm.value.taskStartDate) errors.push('请选择任务执行开始时间')
@@ -1075,9 +1229,15 @@ const handleSubmit = async () => {
       outputs: modelOutputs.value,
       requiredFieldMappings: requiredMappings.value.map(r => ({
         field: r.name,
+        label: r.label,
         target: r.target,
         isEncrypted: !!r.isEncrypted,
-        required: !!r.required
+        required: !!r.required,
+        sourceTable: r.sourceTable || '',
+        dateField: r.dateField || '',
+        // 日期关联逻辑：固定 watch_dt - dateOffsetDays 天
+        dateOffsetDays: isNil(r.dateOffsetDays) ? null : r.dateOffsetDays,
+        cacheDays: isNil(r.cacheDays) ? null : r.cacheDays
       })),
       // 落表目标
       landingForm: { ...landingForm.value },
@@ -1236,6 +1396,20 @@ const handleCancel = () => {
 
 /* 状态标签 */
 .status-tag { font-size: 12px; }
+
+/* 必填字段映射表：9 列密排，收紧单元格内边距避免文本裁切 */
+.required-map-table :deep(.arco-table-cell) { padding-left: 8px; padding-right: 8px; }
+.required-map-table .field-name { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+.required-map-table .cell-na { color: var(--color-text-4); }
+/* 日期关联逻辑：watch_dt - X 天，锚点只读，只有 X 可输入 */
+.date-expr { display: flex; align-items: center; gap: 6px; }
+.expr-anchor {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: var(--color-text-2);
+  white-space: nowrap;
+}
+.date-expr .expr-input { flex: 1; min-width: 0; }
 
 /* select option 类型 */
 .col-type { color: var(--color-text-3); font-size: 12px; margin-left: 6px; }

@@ -119,19 +119,52 @@
           <!-- 步骤四：必填字段映射 -->
           <a-collapse-item key="required" header="步骤四：必填字段映射">
             <a-table
+              class="required-map-table"
               :data="detail.config?.requiredFieldMappings || []"
               :columns="requiredCols"
               row-key="field"
               size="small"
               :pagination="false"
+              :scroll="{ x: requiredTableWidth }"
             >
-              <template #requiredCell="{ record }">
-                <a-tag :color="record.required ? 'red' : 'gray'" size="small">
-                  {{ record.required ? '必填' : '选填' }}
-                </a-tag>
+              <template #nameCell="{ record }">
+                <span class="cell-mono">{{ record.field }}</span>
+                <a-tooltip v-if="record.required" content="必填字段">
+                  <span class="required-star">*</span>
+                </a-tooltip>
+              </template>
+              <template #sourceCell="{ record }">
+                <template v-if="record.sourceTable">
+                  <span class="cell-mono">{{ record.sourceTable }}</span>
+                  <a-tag :color="sourceTableTypeColor(typeOfSourceTable(record.sourceTable))" size="small">
+                    {{ sourceTableTypeLabel(typeOfSourceTable(record.sourceTable)) }}
+                  </a-tag>
+                </template>
+                <span v-else class="cell-na">—</span>
+              </template>
+              <template #plainCell="{ record, column }">
+                <span :class="record[column.dataIndex] ? 'cell-mono' : 'cell-na'">{{ record[column.dataIndex] || '—' }}</span>
+              </template>
+              <template #joinLogicCell="{ record }">
+                <span v-if="record.dateOffsetDays === null || record.dateOffsetDays === undefined" class="cell-na">—</span>
+                <span v-else class="date-expr">
+                  <span class="expr-anchor">{{ watchDateField }} -</span>
+                  <span class="expr-days">{{ record.dateOffsetDays }} 天</span>
+                </span>
+              </template>
+              <template #cacheDaysCell="{ record }">
+                <span v-if="!isExternalSourceTable(record.sourceTable)" class="cell-na">—</span>
+                <span v-else :class="record.cacheDays === null || record.cacheDays === undefined ? 'cell-na' : ''">
+                  {{ record.cacheDays === null || record.cacheDays === undefined ? '未填写' : record.cacheDays + ' 天' }}
+                </span>
               </template>
               <template #encryptedCell="{ record }">
                 <a-tag :color="record.isEncrypted ? 'blue' : 'gray'">{{ record.isEncrypted ? '是' : '否' }}</a-tag>
+              </template>
+              <template #statusCell="{ record }">
+                <a-tag :color="record.target ? 'green' : (record.required ? 'red' : 'orange')" size="small">
+                  {{ record.target ? '已匹配' : (record.required ? '未匹配' : '可空') }}
+                </a-tag>
               </template>
             </a-table>
           </a-collapse-item>
@@ -253,13 +286,33 @@ const collapseKeys = ref(['model', 'landing', 'sample', 'required', 'match', 'ou
 const isFromRisk = computed(() => isFromRiskModule(route))
 const isFromOffline = computed(() => isFromOfflineModule(route))
 
-// 只读列配置
-const requiredCols = [
-  { title: '字段', dataIndex: 'field', width: 160 },
-  { title: '映射到样本字段', dataIndex: 'target', width: 200 },
-  { title: '必填/选填', slotName: 'requiredCell', width: 100, align: 'center' },
-  { title: '关联加密', dataIndex: 'isEncrypted', slotName: 'encryptedCell', width: 120, align: 'center' }
-]
+// 只读列配置：与创建页步骤四保持同一列序，缓存天数仅在有外数底表行时出现
+const sourceTableTypes = backtrackAPI.getSourceTableTypes() || {}
+const watchDateField = backtrackAPI.getWatchDateField() || 'watch_dt'
+const typeOfSourceTable = (table) => table ? (backtrackAPI.getSourceTableMeta(table)?.tableType || '') : ''
+const isExternalSourceTable = (table) => !!table && backtrackAPI.isExternalSourceTable(table)
+const sourceTableTypeLabel = (t) => sourceTableTypes[t] || t || '—'
+const sourceTableTypeColor = (t) => ({ external: 'orange', model: 'arcoblue', sample: 'gray' }[t] || 'gray')
+
+const requiredCols = computed(() => {
+  const rows = detail.value.config?.requiredFieldMappings || []
+  const cols = [
+    { title: '字段', dataIndex: 'field', slotName: 'nameCell', width: 100 },
+    { title: '来源表', dataIndex: 'sourceTable', slotName: 'sourceCell', width: 190 },
+    { title: '日期字段', dataIndex: 'dateField', slotName: 'plainCell', width: 110 },
+    { title: '说明', dataIndex: 'label', width: 84, ellipsis: true, tooltip: true },
+    { title: '样本字段', dataIndex: 'target', slotName: 'plainCell', width: 120 },
+    { title: '是否关联时加密', dataIndex: 'isEncrypted', slotName: 'encryptedCell', width: 92, align: 'center' },
+    { title: '日期关联逻辑', dataIndex: 'dateOffsetDays', slotName: 'joinLogicCell', width: 150 }
+  ]
+  if (rows.some((r) => isExternalSourceTable(r.sourceTable))) {
+    cols.push({ title: '缓存天数', dataIndex: 'cacheDays', slotName: 'cacheDaysCell', width: 100 })
+  }
+  cols.push({ title: '状态', dataIndex: 'status', slotName: 'statusCell', width: 84, align: 'center' })
+  return cols
+})
+const requiredTableWidth = computed(() => requiredCols.value.reduce((sum, c) => sum + (c.width || 0), 0))
+
 const inputCols = [
   { title: '入参', dataIndex: 'input', width: 180 },
   { title: '映射到特征中心', dataIndex: 'target', width: 240 },
@@ -374,6 +427,22 @@ onMounted(loadDetail)
   min-height: 300px;
 }
 .log-type-tag { margin-bottom: 12px; display: flex; gap: 8px; align-items: center; }
+/* 必填字段映射表：密排列宽下统一单元格内边距与文本样式 */
+.required-map-table :deep(.arco-table-cell) { padding-left: 8px; padding-right: 8px; }
+.cell-mono {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 12px;
+  margin-right: 4px;
+}
+.cell-na { color: var(--color-text-4); }
+.required-star { color: rgb(var(--red-6)); margin-left: 2px; }
+/* 日期关联逻辑：watch_dt - X 天 */
+.date-expr { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.expr-anchor {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 12px;
+}
+.expr-days { font-size: 12px; color: var(--color-text-2); }
 .readonly-sql {
   font-family: 'SFMono-Regular', Consolas, monospace;
   font-size: 12px;

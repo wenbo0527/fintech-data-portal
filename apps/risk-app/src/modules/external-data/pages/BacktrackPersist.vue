@@ -441,33 +441,47 @@
             </a-row>
           </a-form>
 
-          <!-- R32：强制绑定 IDMD5 + review date + phone_md5 -->
+          <!-- R32：强制绑定 cert_no + create_time + mobile；密文列还要声明厂商实际加密方式 -->
           <a-alert v-if="!isCustomProduct" :type="requiredAllPassed ? 'success' : 'warning'" style="margin-bottom: 12px">
-            <template #title>必选字段映射（{{ activeRequiredFieldMatch.length }} 项）：标准字段固定，下拉选择文件中等同的出参字段</template>
-            <a-space :size="24" wrap align="start" style="margin-bottom: 4px">
+            <template #title>必选字段映射（{{ activeRequiredFieldMatch.length }} 项）</template>
+            <div class="required-mapping-list">
               <div v-for="r in requiredMappingStatus" :key="r.std" class="required-mapping-item">
                 <div class="required-mapping-label">
-                  标准字段 <b>{{ r.std }}</b>（{{ r.stdLabel }}）
-                  <a-tag :color="r.ok ? 'green' : 'red'" size="small">
-                    {{ r.ok ? `等同字段：${r.sel}` : r.sel ? `「${r.sel}」非等同字段` : '未选择等同字段' }}
-                  </a-tag>
+                  <b>{{ r.std }}</b>
+                  <span class="required-mapping-stddesc">{{ r.stdLabel }}</span>
                 </div>
-                <a-select
-                  v-model="requiredSourceSelection[r.std]"
-                  size="small"
-                  allow-search
-                  placeholder="选择文件中等同的出参字段"
-                  style="width: 240px"
-                  @change="onRequiredSourceChange"
-                >
-                  <a-option v-for="f in catalogSourceFields" :key="f" :value="f">{{ f }}（{{ sourceFieldComment(f) }}）</a-option>
-                </a-select>
-                <div class="table-tip" style="margin-top: 2px">等同判定：{{ r.rule }}</div>
+                <div class="required-mapping-fields">
+                  <a-select
+                    v-model="requiredSourceSelection[r.std]"
+                    size="small"
+                    allow-search
+                    placeholder="等同出参字段"
+                    style="width: 200px"
+                    @change="onRequiredSourceChange"
+                  >
+                    <a-option v-for="f in catalogSourceFields" :key="f" :value="f">{{ f }}（{{ sourceFieldComment(f) }}）</a-option>
+                  </a-select>
+                  <a-select
+                    v-if="r.cipher"
+                    :model-value="r.algo"
+                    size="small"
+                    placeholder="加密方式"
+                    style="width: 120px"
+                    @change="(v: string) => setRequiredCipher(r.std, v)"
+                  >
+                    <a-option v-for="a in cipherAlgorithmOptions" :key="a.value" :value="a.value">
+                      {{ a.label }}<template v-if="!a.recommended">（不推荐）</template>
+                    </a-option>
+                  </a-select>
+                </div>
+                <div v-if="!r.fieldOk" class="required-mapping-error">
+                  {{ r.sel ? `${r.sel} 与 ${r.std} 非等同字段（${r.rule}）` : `请选择与 ${r.std} 等同的出参字段` }}
+                </div>
+                <div v-else-if="r.cipher && !r.algoOk" class="required-mapping-error">请选择 {{ r.std }} 的实际加密方式</div>
               </div>
-            </a-space>
+            </div>
             <div class="table-tip">
-              {{ activeRequiredFieldMatch.map((r) => r.std).join('、') }}
-              {{ activeRequiredFieldMatch.length }} 项标准字段必须绑定，否则无法进入下一步。
+              标准字段固定，下拉选文件中等同的出参字段；密文列需声明厂商实际加密方式，入库统一转为 {{ STD_CIPHER_STORAGE }} 写入标准列，未完成无法进入下一步。
             </div>
           </a-alert>
 
@@ -569,7 +583,7 @@
           <a-divider id="sec-3-2" :class="{ 'section-active': batchContext?.sectionKey === 'sec-3-2' }" orientation="left">3.2 一致性抽样校验</a-divider>
           <a-space align="end" wrap style="margin-bottom: 12px">
             <div class="inline-field">
-              <span class="inline-field-label">回溯日期（review date，R68 关联条件之一）</span>
+              <span class="inline-field-label">样本回溯时间（create_time，R68 关联条件之一）</span>
               <a-tag color="arcoblue" size="medium">{{ reviewDate || '—' }}</a-tag>
               <div class="table-tip">由回溯文件名自动解析，页面无需输入</div>
             </div>
@@ -604,8 +618,8 @@
             <a-tag v-else-if="consistencySkipped" color="orange" size="medium">已跳过校验，可推进 Hive</a-tag>
           </a-space>
           <div class="table-tip" style="margin-bottom: 12px">
-            回溯值取自临时库 <span class="mono">tmp_ext_retro_raw</span>，线上值取自所选样本表；关联条件为 SM4 加密身份证号 + review date 双条件，
-            其中 review date 由回溯文件名自动解析；抽样规模 50~100 条；结果存临时表后分页展示，不匹配项排在最前；页面不提供导出。
+            回溯值取自临时库 <span class="mono">tmp_ext_retro_raw</span>，线上值取自所选样本表；关联条件为 cert_no（SM4 加密身份证号）+ create_time（样本回溯时间）双条件，
+            其中 create_time 由回溯文件名自动解析；抽样规模 50~100 条；结果存临时表后分页展示，不匹配项排在最前；页面不提供导出。
             <strong>未上线产品无线上数据可对比时可跳过校验</strong>，跳过后仍可推进 Hive 标准库，验证报告中标注「未执行」。
           </div>
 
@@ -636,7 +650,7 @@
               <a-table-column title="抽样ID（SM4身份证号）" data-index="sampleId" :width="200">
                 <template #cell="{ record }"><span class="mono">{{ record.sampleId }}</span></template>
               </a-table-column>
-              <a-table-column title="review date" data-index="reviewDate" :width="120" />
+              <a-table-column title="create_time" data-index="reviewDate" :width="140" />
               <a-table-column title="对比字段" data-index="field" :width="200" />
               <a-table-column title="线上值" data-index="onlineValue" />
               <a-table-column title="回溯值（临时库）" data-index="retroValue" />
@@ -678,7 +692,7 @@
                 当前未做数据档案，标准表无统一维护入口，落库目标表由用户在固定外数库中手动搜索选择，不支持新建。
               </div>
             </a-descriptions-item>
-            <a-descriptions-item label="回溯日期（review date）">
+            <a-descriptions-item label="样本回溯时间（create_time）">
               <a-tag color="arcoblue" size="medium">{{ reviewDate || '—' }}</a-tag>
               <div class="table-tip">
                 由回溯文件名自动解析（与 3.2 关联条件同源），写入分区字段 datax，格式转换为 yyyy-MM-dd。
@@ -688,7 +702,7 @@
               <span class="std-write-count">{{ totalWriteRows.toLocaleString() }}</span> 条
               <div class="table-tip">
                 来源文件 {{ activeFile?.name || '—' }} · 回溯返回 {{ (activeFile?.rows || 0).toLocaleString() }} 行
-                · 写入策略：主键（身份证号+review_date）直接覆盖
+                · 写入策略：主键（cert_no + create_time）直接覆盖
               </div>
             </a-descriptions-item>
             <a-descriptions-item label="字段匹配情况">
@@ -699,6 +713,9 @@
                   映射总数 {{ mappedCount + requiredPassedCount }} / {{ fieldMappings.length + activeRequiredFieldMatch.length }}
                 </a-tag>
                 <a-tag size="small" color="cyan">映射版本 {{ mappingVersion }}</a-tag>
+                <a-tag v-for="c in requiredCipherSummary" :key="c.std" size="small" color="purple">
+                  {{ c.std }} 厂商 {{ c.algorithm }} → 落库 {{ STD_CIPHER_STORAGE }}
+                </a-tag>
               </a-space>
               <div class="table-tip">
                 非标准化字段统一序列化写入 extraParam 列（key 为外数出参字段名）；
@@ -879,6 +896,14 @@
           {{ persistRecord.mappingInfo.stdFieldCount }} / {{ persistRecord.mappingInfo.nonStdFieldCount }}
         </a-descriptions-item>
         <a-descriptions-item label="继承档案映射">{{ persistRecord.mappingInfo.inheritedFieldCount || 0 }} 行</a-descriptions-item>
+        <a-descriptions-item label="密文字段加密方式" :span="2">
+          <a-space v-if="persistRecord.mappingInfo.requiredCiphers?.length" wrap :size="4">
+            <a-tag v-for="c in persistRecord.mappingInfo.requiredCiphers" :key="c.std" size="small" color="purple">
+              {{ c.std }} ← {{ c.sourceField }}（厂商 {{ c.algorithm }}，密文 {{ c.digestLength }} 位 → 落库 {{ STD_CIPHER_STORAGE }}）
+            </a-tag>
+          </a-space>
+          <span v-else class="table-tip" style="margin-top: 0">本批次未登记密文类必选字段的加密方式</span>
+        </a-descriptions-item>
         <a-descriptions-item label="Hive 目标表" :span="2">
           <span class="mono">{{ persistRecord.storageInfo.hiveTable }}</span>
         </a-descriptions-item>
@@ -930,6 +955,7 @@ import {
 import { useBacktrackPersist } from '../composables/useBacktrackPersist'
 import { fetchAsyncTask } from '../api/backtrack'
 import { formatFileSize } from '../mock/retroFiles'
+import { STD_CIPHER_STORAGE } from '../mock/encryptionAlgorithm'
 import type { RetroNodeType } from '../mock/retroFiles'
 import type { AsyncTask } from '../mock/backtrackPersist'
 
@@ -979,6 +1005,7 @@ const {
   productOptions, mappingProduct, currentProduct, isCustomProduct, stdFieldOptions, fieldMappings,
   REQUIRED_FIELD_MATCH, activeRequiredFieldMatch, requiredSourceSelection, catalogSourceFields, sourceFieldComment,
   requiredMappingStatus, requiredAllPassed, requiredPassedCount,
+  cipherAlgorithmOptions, setRequiredCipher, requiredCipherSummary,
   loadProducts, onMappingProductChange, onRequiredSourceChange,
   applyAutoCollision, applyArchiveBaseline, setMappingTarget,
   mappedCount, nonStdCount, nonStdFieldNames, inheritedCount,
@@ -1178,10 +1205,16 @@ const nextStep = async () => {
       return
     }
     if (!isCustomProduct.value && !requiredAllPassed.value) {
-      const miss = requiredMappingStatus.value.filter((r) => !r.ok)
-      Message.warning(
-        `必须绑定 ${activeRequiredFieldMatch.value.map((m) => m.std).join('、')} ${activeRequiredFieldMatch.value.length} 个必填字段：${miss.map((m) => `${m.std}（${m.stdLabel}）`).join('、')}`
-      )
+      const missField = requiredMappingStatus.value.filter((r) => !r.fieldOk)
+      const missCipher = requiredMappingStatus.value.filter((r) => r.fieldOk && !r.algoOk)
+      const parts: string[] = []
+      if (missField.length) {
+        parts.push(`未绑定出参字段：${missField.map((m) => m.std).join('、')}`)
+      }
+      if (missCipher.length) {
+        parts.push(`未选定实际加密方式：${missCipher.map((m) => m.std).join('、')}`)
+      }
+      Message.warning(`必选字段映射未完成（共 ${activeRequiredFieldMatch.value.length} 项）：${parts.join('；')}`)
       return
     }
     // R36：每个字段都必须完成选择
@@ -1512,14 +1545,39 @@ const applyBatchFromRoute = async (backid: string) => {
   color: var(--color-text-3);
 }
 
+.required-mapping-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 28px;
+}
+
 .required-mapping-item {
-  min-width: 240px;
+  min-width: 220px;
 }
 
 .required-mapping-label {
   margin-bottom: 4px;
   font-size: 13px;
   color: var(--color-text-1);
+}
+
+.required-mapping-stddesc {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
+/* 等同出参字段与加密方式并列，密文列只有一个下拉时不拆行 */
+.required-mapping-fields {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.required-mapping-error {
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgb(var(--red-6));
 }
 
 .selected-tip {

@@ -21,7 +21,7 @@ export interface StdField {
   comment: string
   /** 字段分组，仅用于列表分组展示 */
   group: string
-  /** 是否为强制绑定字段（R32：IDMD5、review date） */
+  /** 是否为强制绑定字段（R32：主体标识与回溯时间） */
   required: boolean
 }
 
@@ -33,8 +33,8 @@ export const stdFieldLibraryMock: StdField[] = getStdTableColumns().map((c) => (
   required: c.required,
 }))
 
-/** 强制绑定字段（R32）：IDMD5、review date、phone_md5，均需从 CSV 表头中选择 */
-export const REQUIRED_STD_FIELDS = ['id_md5', 'review_date', 'phone_md5']
+/** 强制绑定字段（R32）：cert_no、create_time、mobile，均需从 CSV 表头中选择 */
+export const REQUIRED_STD_FIELDS = ['cert_no', 'create_time', 'mobile']
 
 /** 非标准化字段占位值（R34/R38）：选中后原样透传，序列化写入 extraParam 列 */
 export const NON_STD_FIELD = '__non_standard__'

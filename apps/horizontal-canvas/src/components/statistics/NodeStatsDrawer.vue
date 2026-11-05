@@ -49,6 +49,14 @@
             size="small"
             row-key="key"
           >
+            <template #execTitle>
+              <span class="col-title">
+                执行人数
+                <a-tooltip content="执行实际节点动作的人数">
+                  <span class="col-title__tip" role="img" aria-label="口径说明"><IconInfoCircle /></span>
+                </a-tooltip>
+              </span>
+            </template>
             <template #ratio="{ record }">
               <div class="ratio-cell">
                 <span class="ratio-text">{{ formatRatio(record.ratio) }}</span>
@@ -60,28 +68,44 @@
             </template>
           </a-table>
           <div class="branch-total">
-            合计：流出 {{ branchOutflowTotal }} 人次 · 流入 {{ branchInflowTotal }} 人次
-            <span class="branch-total__note">分支为流出量的拆分，各分支之和等于该节点当期流出总量</span>
+            合计：执行 {{ branchExecTotal }} 人 · 流入 {{ branchInflowTotal }} 人
+            <span class="branch-total__note">各分支按客户去重计数；同一客户在不同批次落入不同分支时会分别计入，因此各分支之和可能大于该节点的去重人数</span>
           </div>
         </template>
 
         <!-- 普通节点：流量指标 + 趋势小图（R13-3） -->
         <template v-else>
           <div class="metrics-bar">
-            <div class="metric"><span class="label">进入人次</span><span class="value">{{ totalEnter }}</span></div>
-            <div class="metric"><span class="label">流出人次</span><span class="value">{{ totalExit }}</span></div>
-            <div class="metric"><span class="label">流出率</span><span class="value">{{ formatRatio(exitRate) }}</span></div>
+            <div class="metric"><span class="label">进入人数</span><span class="value">{{ totalEnter }}</span></div>
+            <div class="metric">
+              <span class="label">
+                执行人数
+                <a-tooltip content="执行实际节点动作的人数">
+                  <span class="col-title__tip" role="img" aria-label="口径说明"><IconInfoCircle /></span>
+                </a-tooltip>
+              </span>
+              <span class="value">{{ totalExit }}</span>
+            </div>
+            <div class="metric">
+              <span class="label">
+                执行率
+                <a-tooltip content="执行人数 ÷ 进入人数（均按客户去重）">
+                  <span class="col-title__tip" role="img" aria-label="口径说明"><IconInfoCircle /></span>
+                </a-tooltip>
+              </span>
+              <span class="value">{{ formatRatio(exitRate) }}</span>
+            </div>
           </div>
 
           <div class="block-title">节点趋势</div>
           <div class="chart-legend">
             <span class="legend-item"><span class="legend-dot" style="background:#94bffb"></span>进入</span>
-            <span class="legend-item"><span class="legend-dot" style="background:#165dff"></span>流出</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#165dff"></span>执行</span>
           </div>
-          <div class="sparkline" aria-label="节点每日进出趋势">
+          <div class="sparkline" aria-label="节点每日进入与执行人数趋势">
             <div v-for="(r, i) in dailyRows" :key="i" class="bar-group">
-              <div class="bar bar--enter" :style="{ height: barHeight(r.enter, yMax) }"></div>
-              <div class="bar bar--exit" :style="{ height: barHeight(r.exit, yMax) }"></div>
+              <div class="bar bar--enter" :style="{ height: barHeight(r.enterPersons, yMax) }"></div>
+              <div class="bar bar--exit" :style="{ height: barHeight(r.exitPersons, yMax) }"></div>
             </div>
           </div>
           <div class="sparkline-axis">
@@ -115,6 +139,14 @@
           size="small"
           row-key="key"
         >
+          <template #execTitle>
+            <span class="col-title">
+              执行人数
+              <a-tooltip content="执行实际节点动作的人数">
+                <span class="col-title__tip" role="img" aria-label="口径说明"><IconInfoCircle /></span>
+              </a-tooltip>
+            </span>
+          </template>
           <template #action="{ record }">
             <a-button type="link" size="mini" :disabled="!record.enter" @click="openEnterTimeCustomers(record)">查看客户</a-button>
           </template>
@@ -123,7 +155,8 @@
           </template>
         </a-table>
         <div class="enter-time-note">
-          按「进入本节点的时刻」分桶统计，可按日或按小时查看并下钻到对应客户
+          按「进入本节点的时刻」分桶统计，可按日或按小时查看并下钻到对应客户；
+          进入人次为流水条数，进入客户数与执行人数均按客户去重
         </div>
       </template>
 
@@ -170,7 +203,7 @@ const isSplitNode = computed(() => {
   return t === 'crowd-split' || t === 'audience-split' || t === 'ab-test' || t === 'event-split' || t === 'condition'
 })
 
-/** 节点每日进出 */
+/** 节点每日进入与执行（同时含人次 enter/exit 与去重人数 enterPersons/exitPersons） */
 const dailyRows = computed(() => {
   if (!props.node?.id) return []
   try {
@@ -182,11 +215,28 @@ const dailyRows = computed(() => {
   } catch { return [] }
 })
 
-const totalEnter = computed(() => dailyRows.value.reduce((s, r) => s + (r.enter || 0), 0))
-const totalExit = computed(() => dailyRows.value.reduce((s, r) => s + (r.exit || 0), 0))
-const exitRate = computed(() => (totalEnter.value > 0 ? totalExit.value / totalEnter.value : 0))
+/** 区间去重人数：必须取区间级去重结果，不可把每日人数求和 */
+const personStats = computed(() => {
+  if (!props.node?.id) {
+    return { enterPersons: 0, exitPersons: 0 }
+  }
+  try {
+    return RuntimeStatsMock.getNodePersons(String(props.canvasId), String(props.node.id), {
+      from: props.range?.from || '',
+      to: props.range?.to || '',
+      days: props.range?.days || 7
+    }) || { enterPersons: 0, exitPersons: 0 }
+  } catch { return { enterPersons: 0, exitPersons: 0 } }
+})
 
-/** 分支汇总（R13：分支名称 / 流入人数 / 流出人数 / 占比） */
+/** 进入人数：区间内进入过该节点的去重客户数 */
+const totalEnter = computed(() => personStats.value.enterPersons)
+/** 执行人数：区间内在该节点执行实际节点动作的去重客户数 */
+const totalExit = computed(() => personStats.value.exitPersons)
+/** 执行率：执行人数 / 进入人数（同口径去重） */
+const exitRate = computed(() => (personStats.value.enterPersons > 0 ? totalExit.value / personStats.value.enterPersons : 0))
+
+/** 分支汇总（R13：分支名称 / 流入人数 / 执行人数 / 占比） */
 const branchTable = computed(() => {
   if (!props.node?.id) return []
   try {
@@ -199,26 +249,27 @@ const branchTable = computed(() => {
       key: b.key,
       label: b.label,
       port: b.port,
-      inflow: Number(b.inflow) || 0,
-      outflow: Number(b.outflow) || 0,
+      inflow: Number(b.inflowPersons ?? b.inflow) || 0,
+      outflow: Number(b.outflowPersons ?? b.outflow) || 0,
       ratio: Number(b.ratio) || 0
     }))
   } catch { return [] }
 })
 
-const branchOutflowTotal = computed(() => branchTable.value.reduce((s, b) => s + b.outflow, 0))
+/** 分支执行量合计：各分支去重执行人数之和（与节点去重人数不同口径，可大于后者） */
+const branchExecTotal = computed(() => branchTable.value.reduce((s, b) => s + b.outflow, 0))
 const branchInflowTotal = computed(() => branchTable.value.reduce((s, b) => s + b.inflow, 0))
 
 const branchColumns = [
   { title: '分支名称', dataIndex: 'label' },
   { title: '流入人数', dataIndex: 'inflow', width: 88 },
-  { title: '流出人数', dataIndex: 'outflow', width: 88 },
+  { title: '执行人数', dataIndex: 'outflow', width: 88, titleSlotName: 'execTitle' },
   { title: '占比', dataIndex: 'ratio', slotName: 'ratio' },
   { title: '操作', dataIndex: 'action', width: 92, slotName: 'action' }
 ]
 
-/** 趋势小图 Y 轴上限 */
-const yMax = computed(() => Math.max(...dailyRows.value.map(r => Math.max(r.enter || 0, r.exit || 0)), 1))
+/** 趋势小图 Y 轴上限（按去重人数） */
+const yMax = computed(() => Math.max(...dailyRows.value.map(r => Math.max(r.enterPersons || 0, r.exitPersons || 0)), 1))
 
 /** 进入时间分桶粒度：day（按日）| hour（按小时） */
 const granularity = ref('day')
@@ -261,7 +312,7 @@ const enterTimeRows = computed(() => {
       start: b.start,
       end: b.end,
       enter: Number(b.enter) || 0,
-      exit: Number(b.exit) || 0,
+      exit: Number(b.exitPersons ?? b.exit) || 0,
       customers: Number(b.customers) || 0
     }))
   } catch { return [] }
@@ -270,8 +321,8 @@ const enterTimeRows = computed(() => {
 const enterTimeColumns = [
   { title: '进入时间', dataIndex: 'label', width: 96 },
   { title: '进入人次', dataIndex: 'enter', width: 82 },
-  { title: '流出人次', dataIndex: 'exit', width: 82 },
-  { title: '客户数', dataIndex: 'customers', width: 76 },
+  { title: '进入客户数', dataIndex: 'customers', width: 90 },
+  { title: '执行人数', dataIndex: 'exit', width: 82, titleSlotName: 'execTitle' },
   { title: '操作', dataIndex: 'action', width: 92, slotName: 'action' }
 ]
 
@@ -389,6 +440,8 @@ function openEnterTimeCustomers(record) {
 .drawer-tab.is-active { color: #165dff; font-weight: 600; border-bottom-color: #165dff }
 .node-drawer__body { flex: 1; overflow: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px }
 .tip-bar { background: #f7f8fa; border: 1px solid #e5e6eb; border-radius: 4px; padding: 8px 10px; font-size: 12px; color: #86909c }
+.col-title { display: inline-flex; align-items: center; gap: 4px }
+.col-title__tip { color: #86909c; cursor: help; display: inline-flex; font-size: 13px }
 .metrics-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px }
 .metric { display: flex; flex-direction: column; gap: 3px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px }
 .metric .label { font-size: 12px; color: #86909c }

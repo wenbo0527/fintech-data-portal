@@ -104,24 +104,30 @@ function runDev(name, cwd, script = 'dev', extraEnv = {}) {
 
 async function main() {
   const root = process.cwd()
-  // 已归档子应用（ARCHIVED 2026-09-09），能力已并入 data-community-app：
-  //   - admin-app（原 5182）
-  //   - asset-app（原 5179）
-  //   - dfd-app  （原 5181）
-  //   - dmt-app  （原 5184）
-  // 如需重新启用，对应端口请见各应用 ARCHIVED.md。
+  // 已归档子应用（ARCHIVED 2026-09-09），端口取自各自 vite.config.ts，仅供重新启用时参考：
+  //   - admin-app（5182）
+  //   - asset-app（5179）
+  //   - dfd-app  （5185，与 data-community-app 相同；dfd 仍被 dca 以 vite alias 直接引用，不可删）
+  //   - dmt-app  （5181，与 touch 相同）
   const apps = [
     { name: 'horizontal-canvas', cwd: `${root}/apps/horizontal-canvas`, url: 'http://127.0.0.1:5175/', port: 5175 },
     { name: 'risk-app', cwd: `${root}/apps/risk-app`, url: 'http://127.0.0.1:5176/', port: 5176 },
+    { name: 'mkt-app', cwd: `${root}/apps/mkt-app`, url: 'http://127.0.0.1:5177/', port: 5177 },
+    { name: 'dex-app', cwd: `${root}/apps/dex-app`, url: 'http://127.0.0.1:5180/', port: 5180 },
     { name: 'touch', cwd: `${root}/apps/touch`, url: 'http://127.0.0.1:5181/', port: 5181 },
     { name: 'data-community-app', cwd: `${root}/apps/data-community-app`, url: 'http://127.0.0.1:5185/', port: 5185 }
   ]
-  const mainApp = { name: 'main-app', cwd: root, url: 'http://127.0.0.1:5173/', port: 5173 }
-  
+  // 不在编排内的活跃 workspace 应用：需按需手工启动
+  //   - report-monitor（vite.config.ts 未设 port/base，落 Vite 默认 5173；未进生产部署）
+  //   - report-monitor-backend（Express，PORT||3001）
+  //   - semantic-app（8100）
+  // 原 mainApp(5173) 一步已移除：dev:main 是 echo + exit 0 的空操作，
+  // 且预释放 5173 会 SIGKILL 本地正在运行的 report-monitor 而脚本从不重启它。
+
   console.log('--- 启动子应用流程开始 ---')
   // 预释放端口，确保使用默认地址。设置环境变量 SKIP_KILL=1 可跳过该步骤
   if (process.env.SKIP_KILL !== '1') {
-    for (const a of [...apps, mainApp]) {
+    for (const a of apps) {
       await killByPort(a.name, a.port)
     }
   } else {
@@ -135,15 +141,15 @@ async function main() {
   }
 
   try {
-    // 即使子应用没启动，我们也尝试等待（会超时）或者直接启动主应用
-    await Promise.all(apps.map(a => waitForPort(a.name, a.url).catch(() => {
+    // 即使子应用没启动，我们也尝试等待（会超时）
+    const ready = await Promise.all(apps.map(a => waitForPort(a.name, a.url).then(() => true).catch(() => {
       console.warn(`[${a.name}] 端口等待失败，跳过...`)
       return false
     })))
-    
-    console.log('--- 流程继续，正在启动主应用 ---')
-    const mainP = runDev('main-app', root, 'dev:main')
-    if (mainP) children.push(mainP)
+    const failed = apps.filter((_, i) => !ready[i]).map(a => a.name)
+    console.log(failed.length
+      ? `--- 就绪 ${ready.filter(Boolean).length}/${apps.length}；未就绪: ${failed.join(', ')} ---`
+      : `--- 全部 ${apps.length} 个子应用就绪 ---`)
   } catch (err) {
     console.error('--- 启动流程异常 ---', err)
   }

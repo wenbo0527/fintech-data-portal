@@ -1,0 +1,98 @@
+// 依赖缺口与整改排序图 · data-community-platform
+// 方法: architecture-visualization:evolution-planner + graphviz
+// 生成: 2026-11-05 · 基线分支 feat/metrics-center-and-module-updates (merge-base 75353fd3)
+// 图例: 实线=当前已证实耦合(state=current) 虚线=目标态耦合或计划解除(state=target/proposed)
+//       style=filled 的红色节点=阻塞项；answer 的每个 cluster 回答一个问题：谁被真实维护
+digraph gapmap {
+  rankdir=TB
+  fontname="Helvetica"
+  node [fontname="Helvetica", fontsize=11]
+  edge [fontname="Helvetica", fontsize=9]
+
+  subgraph cluster_core {
+    label="核心维护 (近90天提交 / 本分支改动文件)"
+    style=rounded
+    risk     [label="risk-app\ncurrent · 43 / 142 · 0 测试", color=red, style=bold]
+    dca      [label="data-community-app\ncurrent · 30 / 149 · 0 测试", color=red, style=bold]
+    mkt      [label="mkt-app\ncurrent · 13 / 46", color=red, style=bold]
+    hc       [label="horizontal-canvas\ncurrent · 8 / 50 (HEAD)", color=red, style=bold]
+  }
+
+  subgraph cluster_low {
+    label="低频 / 停摆"
+    style=rounded
+    dex      [label="dex-app\ncurrent · 4 · exploration 30944行仅dev可达"]
+    touch    [label="touch\ncurrent · 3"]
+    semantic [label="semantic-app\ncurrent · 全生命周期1次提交 · 50文件未收口"]
+    rmon     [label="report-monitor\ncurrent · 无 base · 未部署 prod"]
+    rbe      [label="report-monitor-backend\ncurrent · Express:3001"]
+  }
+
+  subgraph cluster_archived {
+    label="标称归档 (pnpm-workspace 已排除, 仍占磁盘)"
+    style=rounded
+    dfd      [label="dfd-app\nBLOCKER\ncurrent · 141580行 · 不安装/不可删/不lint", shape=box, color=red, style=filled, fillcolor="#ffe3e3"]
+    dmt      [label="dmt-app\ncurrent · 27788行 · 16文件与dca字节相同", color=orange]
+    admin    [label="admin-app\ncurrent · 12957行 · 30vue 0个与dca相同", color=orange]
+    asset    [label="asset-app\ncurrent · 7139行 · 无router · 0入向引用", color=green]
+    legacy   [label="archive/legacy-src\ncurrent · ~850k行 · 冻结", shape=box, color=red, style=filled, fillcolor="#ffe3e3"]
+  }
+
+  subgraph cluster_target {
+    label="目标态 (proposed)"
+    style=dashed
+    reg      [label="packages/app-registry\nproposed · 唯一 app 契约\n{key,basePath,port,deployed}", shape=note, style=filled, fillcolor="#e7f5ff"]
+    shared   [label="packages/shared-utils\nproposed · 唯一解析路径(当前 dist 与 src alias 双副本)", shape=note]
+    typegate [label="tsconfig.typecheck + vitest\nproposed · 覆盖 4 个核心 app\n(当前仅覆盖 archive/legacy-src 与不存在的 src/**)", shape=note]
+  }
+
+  // ---- current 耦合: 构建期双向环 (最高风险边)
+  dca  -> dfd  [label="vite alias ~50 specifier\n+ 13 处 import('@/dfd-pages/*')\nvite.config.ts:6 / router/index.ts:59", color=red, penwidth=2]
+  dfd  -> dca  [label="反查 alias @dca-components/@composables\ndfd-app/vite.config.ts:43-45", color=red, penwidth=2, style=bold]
+
+  // ---- current 耦合: 冻结树反向依赖
+  dmt  -> legacy [label="@shared → legacy/mock/shared\ndmt-app/vite.config.ts:12", color=red]
+  rootentry [label="index.html + vite.config.js\ncurrent · 入口=legacy-src/main.js\nport 5177 撞 mkt", shape=box, color=red, style=filled, fillcolor="#ffe3e3"]
+  rootentry -> legacy [label="加载 / 别名 @", color=red]
+  rootentry -> mkt    [label="端口冲突 5177", color=red, style=dashed]
+
+  // ---- current 耦合: 运行时
+  mkt  -> hc   [label="iframe src + postMessage\ncanvas/index.vue:22,95-107\n(hc 侧无 message 监听 → 半死通道)", color=darkorange]
+  dca  -> mkt  [label="整页跳转 VITE_MKT_APP_URL||localhost:5177\nconfig-dca/apps.ts:15", color=darkorange]
+  risk -> shell [label="postMessage 给未知父窗口\nrisk-app/src/Root.vue:9"]
+  shell [label="portal-shell\nexternal · 库外仓库(非本仓节点)", shape=egg, style=dashed]
+  rmon -> rbe  [label="API_BASE=http://localhost:3001/api\nreport-monitor/src/services/api.ts:3"]
+
+  // ---- current 耦合: 幽灵依赖
+  mkt  -> pkgapi [label="import 但未声明\nsrc/api/request.ts", style=dashed, color=purple]
+  pkgapi [label="@app/shared-api\ncurrent", shape=component]
+  dca  -> semct [label="动态 import + try/catch 回落 []\nmetadata-context.ts:270 (静默降级)", style=dashed, color=purple]
+  semct [label="@data-community/semantic-contract\ncurrent", shape=component]
+
+  // ---- target 边 (虚线, 全部标 proposed)
+  risk     -> reg [label="将改为消费", style=dashed, color=gray30]
+  dca      -> reg [label="将改为消费", style=dashed, color=gray30]
+  mkt      -> reg [label="将改为消费", style=dashed, color=gray30]
+  hc       -> reg [label="将改为消费", style=dashed, color=gray30]
+  reg      -> rootentry [label="P0 取代库内假主入口", style=dashed, color=gray30]
+  dca      -> dfd  [label="P2 迁入后解除", style=dashed, color=blue, constraint=false]
+  dfd      -> dca  [label="P2 删除反向 alias", style=dashed, color=blue, constraint=false]
+  typegate -> risk [label="P3 纳入检查", style=dashed, color=gray30]
+  typegate -> dca  [label="P3 纳入检查", style=dashed, color=gray30]
+  legacy   -> dmt  [label="P4.3 随 dmt 退役解除", style=dashed, color=blue, constraint=false]
+
+  // ---- 排序链
+  subgraph cluster_order {
+    label="切片顺序 (依赖驱动)"
+    style=rounded
+    p0 [label="P0 事实校准\n0.5d · 低风险", shape=box]
+    p1 [label="P1 统一 registry\n1-2d · 低风险", shape=box]
+    p2 [label="P2 解 dca⇄dfd 环\n3-5d · 高风险 · 硬前置", shape=box, color=red, style=filled, fillcolor="#fff3bf"]
+    p3 [label="P3 质量门转向\n2d · 首轮必红", shape=box]
+    p4 [label="P4 归档与冗余处置\n3-5d · 约 -54k 行(mkt双树)", shape=box]
+    p5 [label="P5 冻结树退役\n依赖 P4.3", shape=box]
+    p0 -> p1 -> p2 -> p4 -> p5
+    p1 -> p3 [style=dashed]
+    p2 -> p3 [style=dashed, label="解环后才可类型检查 dca"]
+  }
+}

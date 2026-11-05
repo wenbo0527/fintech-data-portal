@@ -1,0 +1,115 @@
+// 启动与初始化链路 · data-community-platform
+// 方法: architecture-visualization:flow-visualizer + graphviz
+// 生成: 2026-11-05 · 触发: `pnpm dev` · 终点: 各核心 app 首个可达页面
+// 图例: 实线=代码已证实(current) 虚线=未起用/死分支/未知  红色=失败或静默降级路径
+digraph bootflow {
+  rankdir=TB
+  fontname="Helvetica"
+  node [fontname="Helvetica", fontsize=11]
+  edge [fontname="Helvetica", fontsize=9]
+
+  // ---------- 编排层 ----------
+  subgraph cluster_orchestration {
+    label="L1 编排层 scripts/dev-with-subapps.js (root pnpm dev)"
+    style=rounded
+    trig [label="Trigger: pnpm dev\npackage.json:7 → node scripts/dev-with-subapps.js", shape=doublecircle]
+    prekill [label="端口预释放 (可 SKIP_KILL=1 跳过)\nkill 5175/5176/5181/5185 + 5173\n行 123-126 · SIGKILL"]
+    spawn [label="runDev(name, cwd, 'dev')\nspawn npm run dev\n行 86 · 要求 apps/<app>/node_modules 存在(行80)"]
+    wait [label="waitForPort: http.get 127.0.0.1:PORT\n期望 200/301/302 · 60s 超时\n行 43-76 · 失败仅 console.warn 不中断(行139-142)"]
+    mainstub [label="main-app: npm run dev:main\n= echo + exit 0 (package.json:8)\n→ 链路末步为空操作", shape=box, color=red, style=filled, fillcolor="#ffe3e3"]
+    miss [label="未编排: mkt-app(5177) dex-app(5180)\nsemantic-app(8100) report-monitor(5173)\nreport-monitor-backend(3001)", shape=note, color=red]
+    trig -> prekill -> spawn -> wait -> mainstub
+    wait -> miss [style=dashed, label="编排集合 ≠ 活跃集合"]
+    prekill -> wait [style=dashed, color=red, label="5173 是 report-monitor 隐含默认端口\n→ 本地已起的 report-monitor 会被 SIGKILL 且永不重启"]
+  }
+
+  // ---------- 构建层 ----------
+  subgraph cluster_vite {
+    label="L2 各 app vite dev server"
+    style=rounded
+    vhc [label="horizontal-canvas 5175\nbase=/horizontal-canvas/"]
+    vrisk [label="risk-app 5176\nbase=/risk/\n+ 中间件 /index → 301 (vite.config.ts:16-19)"]
+    vdca [label="data-community-app 5185\nbase=/data-community/\n+ alias 进 apps/dfd-app/src\n+ viteMockServe 已禁用(vite.config.ts:13)"]
+    vmkt [label="mkt-app 5177\nbase=/mkt/\n+ viteMockServe enable:true(:33)"]
+  }
+  spawn -> vhc
+  spawn -> vrisk
+  spawn -> vdca
+  spawn -> vmkt [style=dashed, color=red, label="官方入口不启动，需手工起"]
+
+  // ---------- 应用层 ----------
+  subgraph cluster_app_init {
+    label="L3 main.ts → Root.vue → router"
+    style=rounded
+    a1 [label="risk / dca / mkt main.ts\ncreateApp(Root) → Pinia → ArcoVue → ArcoVueIcon → router\napp.mount('#app') 先于 router.isReady()\n(risk:15 / dca:17 / mkt:16)"]
+    a2 [label="horizontal-canvas main.ts\n无 Pinia\n全量 ArcoIcons 逐个 app.component\nrouter.isReady().then(mount)  (:17)\n导入 dist/arco.css 而非 es/index.css"]
+    r1 [label="risk Root.vue: <router-view/>\n+ onMounted postMessage risk-app-ready\n+ watch fullPath → risk-route\n(唯一向父窗口报告的 app, :9)"]
+    r2 [label="dca/mkt Root.vue: 仅 <router-view>\ndca 另带全局(非 scoped) font-family"]
+    h1 [label="history 模式\ndca: createWebHistory(import.meta.env.BASE_URL) (:860)\nhc: createWebHistory(import.meta.env.BASE_URL) (:12)\nrisk: createWebHistory + 硬编码 '/risk/' (:7)"]
+    h2 [label="hash 模式\nmkt: createWebHashHistory(routerBase) (:48)\nrouterBase 仍分支 qiankunWindow.__POWERED_BY_QIANKUN__ (:20)"]
+    deadq [label="qiankun 死分支\nrisk router.ts:7 / mkt router.ts:20\n无任一活跃 app 注册 qiankun 生命周期\n但依赖 vite-plugin-qiankun 被钉住", style=dashed, color=red]
+    a1 -> r1
+    a1 -> r2
+    a2 -> r2 [style=dashed]
+    a1 -> h1
+    a2 -> h1
+    a1 -> h2
+    h2 -> deadq [style=dashed]
+    h1 -> deadq [style=dashed]
+  }
+
+  // ---------- 守卫 / 首屏 ----------
+  subgraph cluster_guard {
+    label="L4 路由守卫与首个可达页面"
+    style=rounded
+    g_dca [label="dca beforeEach: P0 角色机制\nmeta.allowedRoles / requireAuth (:864+)\n无 meta 则直接放行"]
+    g_risk [label="risk beforeEach: 仅 document.title (:542-547)"]
+    g_mkt [label="mkt beforeEach: 历史 URL 容错\n'customer/customer/*' 去重 (:63-78)"]
+    g_hc [label="hc: 无守卫"]
+    p_dca [label="dca 首屏: '/' → {name:'workbench'} (:15)\n但 /management·/discovery 多数 component\n实际解析到 apps/dfd-app/src/pages\n(import('@/dfd-pages/...') :59,80,92…)"]
+    p_risk [label="risk 首屏: '/' → redirect '/variable-hub' (:48)\n+ 20 条旧路径 redirect 保活 (:179-210)"]
+    p_mkt [label="mkt 首屏: '#/mkt/#/' → MktIndex pages/index.vue\nregistry 声明入口 /mkt/tasks → pages/tasks/"]
+    p_hc [label="hc 首屏: '/' → '/marketing/tasks' (:14)\n被 mkt iframe 以 origin+'/horizontal-canvas/marketing/tasks' 载入"]
+    g_dca -> p_dca
+    g_risk -> p_risk
+    g_mkt -> p_mkt
+    g_hc -> p_hc
+  }
+  h1 -> g_dca
+  h1 -> g_risk
+  h2 -> g_mkt
+  h1 -> g_hc
+
+  // ---------- 请求/mock 层 ----------
+  subgraph cluster_request {
+    label="L5 页面取数：同一动作四套语义"
+    style=rounded
+    q_mkt [label="mkt: @/api → @/utils/mockRequest\n假 axios，按 URL 前缀 switch 返回\napi/request.ts 明文禁止 @app/shared-api/request\n+ vite-plugin-mock 拦截 /api/*"]
+    q_risk [label="risk: @/api/http → @app/shared-api/request\n= 真实 axios (baseURL VITE_API_BASE_URL||'/api')\n但每个 module api 先判\nVITE_USE_MOCK==='true' → 返回内联假数据"}
+    q_risk_dead [label="risk 未取用的真请求分支\nhttp.get('/external-data-task/list')…\n无 proxy(grep=0) → 翻旗即 404\n且 request 注入 Bearer token + Arco 错误 toast\n.env 写 VITE_API_BASE 而 shared-api 读 VITE_API_BASE_URL", shape=box, color=red, style=filled, fillcolor="#ffe3e3"]
+    q_dca [label="dca: 无 HTTP\nESM 静态 import @/mock-dca/*\n+ mockDelay(120ms) 伪装延迟\n+ localStorage store (TableCatalogStore)"]
+    q_dca_silent [label="dca 已证实的静默失效模式\nalias 遮蔽使 @/api/search 指向 dfd 空 stub\n→ 搜索恒为空，无报错\n(search-shim.ts 头部注释记录该修复)", shape=box, color=red, style=filled, fillcolor="#fff3bf"]
+    q_hc [label="hc: 零网络调用\nsrc 内 axios/fetch/request 命中数 0"]
+    q_risk -> q_risk_dead [style=dashed, label="仅当 VITE_USE_MOCK=false"]
+    q_dca -> q_dca_silent [style=dashed, label="alias 解析冲突"]
+  }
+  p_mkt -> q_mkt
+  p_risk -> q_risk
+  p_dca -> q_dca
+  p_hc -> q_hc
+
+  // ---------- 跨 app 运行期边界 ----------
+  subgraph cluster_cross {
+    label="跨应用边界（iframe / postMessage / 整页跳转）"
+    style=dashed
+    iframe [label="mkt → hc iframe\npages/canvas/index.vue:22-26,44-69\ndev 用 http://host:5175/horizontal-canvas/…\nprod 用 origin+'/horizontal-canvas'"]
+    pm_out [label="mkt → iframe postMessage init\n(:95-107)"]
+    pm_in [label="hc 侧 message 监听器\ngrep 未命中 → 通道半死", style=dashed, color=red]
+    jump [label="dca → mkt 整页跳转\nwindow.location.href\nconfig-dca/apps.ts:15 VITE_MKT_APP_URL||localhost:5177"]
+    toshell [label="risk → window.parent.postMessage\nRoot.vue:9-10（父窗口=库外 portal-shell）"]
+    iframe -> pm_out -> pm_in
+  }
+  p_mkt -> iframe
+  p_dca -> jump
+  r1 -> toshell
+}

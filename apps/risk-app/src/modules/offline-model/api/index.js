@@ -146,7 +146,14 @@ export const backtrackAPI = {
   getSceneTags: () => mockAPI.backtrack.SCENE_TAGS,
   getLandingChannels: () => mockAPI.backtrack.LANDING_CHANNELS,
   getRequiredFieldDefs: () => mockAPI.backtrack.REQUIRED_FIELD_DEFS,
-  getAssociationMethods: () => mockAPI.backtrack.ASSOCIATION_METHODS
+  getAssociationMethods: () => mockAPI.backtrack.ASSOCIATION_METHODS,
+  // 步骤四必填字段映射：来源表字典、表类型、日期关联锚点及派生 helper
+  getSourceTableTypes: () => mockAPI.backtrack.SOURCE_TABLE_TYPES,
+  getSourceTables: () => mockAPI.backtrack.BACKTRACK_SOURCE_TABLES,
+  getWatchDateField: () => mockAPI.backtrack.WATCH_DATE_FIELD,
+  getSourceTableMeta: (table) => mockAPI.backtrack.getSourceTableMeta(table),
+  isExternalSourceTable: (table) => mockAPI.backtrack.isExternalSourceTable(table),
+  getDateFieldsOf: (table) => mockAPI.backtrack.getDateFieldsOf(table)
 }
 
 // 任务管理相关API（待实现）

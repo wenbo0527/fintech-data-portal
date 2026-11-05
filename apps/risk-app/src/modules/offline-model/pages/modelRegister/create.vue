@@ -80,7 +80,23 @@
 
         <a-collapse-item key="io-validate" header="2. 入参/出参定义">
           <a-card :bordered="false" class="panel-card">
-            <a-form-item label="入参定义">
+            <div class="io-block">
+              <div class="io-block-header">
+                <strong>入参定义</strong>
+                <!-- 一键样本表匹配：只碰「绑定来源」为空的入参，N 为 0 时置灰 -->
+                <a-tooltip :disabled="!!unboundInputCount" content="所有字段均已绑定来源">
+                  <span>
+                    <a-button
+                      type="outline"
+                      size="small"
+                      :disabled="!unboundInputCount"
+                      @click="bindUnboundToSample"
+                    >
+                      一键样本表匹配（{{ unboundInputCount }}）
+                    </a-button>
+                  </span>
+                </a-tooltip>
+              </div>
               <a-table :data="form.inputParams" :columns="inputColumns" row-key="__key" :pagination="false">
                 <template #paramKind="{ record }">
                   <a-select v-model="record.paramKind" placeholder="参数类型">
@@ -97,14 +113,17 @@
                   </a-select>
                 </template>
                 <template #featureId="{ record }">
-                  <a-select v-model="record.featureId" placeholder="绑定来源" allow-search @change="val => onFeatureBindChange(record, val)">
+                  <a-select :model-value="bindSourceOf(record)" placeholder="绑定来源" allow-search @change="val => onFeatureBindChange(record, val)">
                     <a-option value="__SAMPLE__">样本表提供</a-option>
                     <a-option v-for="f in featureOptions" :key="f.id" :value="f.id">{{ f.name }} ({{ f.code }})</a-option>
                   </a-select>
                 </template>
               </a-table>
-            </a-form-item>
-            <a-form-item label="出参定义">
+            </div>
+            <div class="io-block">
+              <div class="io-block-header">
+                <strong>出参定义</strong>
+              </div>
               <a-table :data="form.outputParams" :columns="outputColumns" row-key="__key" :pagination="false">
                 <template #type="{ record }">
                   <a-select v-model="record.type" placeholder="类型">
@@ -115,7 +134,7 @@
                   </a-select>
                 </template>
               </a-table>
-            </a-form-item>
+            </div>
             <a-space>
               <a-button type="outline" @click="runIOValidate">执行校验</a-button>
               <a-tag v-if="ioValidateMsg" color="green">{{ ioValidateMsg }}</a-tag>
@@ -205,7 +224,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 // import { goBack } from '@/router/utils' // 暂时注释掉，使用替代方法
 import { Message } from '@arco-design/web-vue'
@@ -468,6 +487,33 @@ const onFeatureBindChange = (record, value) => {
   }
 }
 
+// 绑定来源列回显：选「样本表提供」时口径落在 paramKind 上（featureId 置 null），否则列上看不出已绑定
+const bindSourceOf = (record) => (record.paramKind === 'sample' ? '__SAMPLE__' : record.featureId)
+// 是否已绑定来源：已选样本表提供，或已关联离线特征
+const isInputBound = (record) => record.paramKind === 'sample' || !!record.featureId
+// N = 绑定来源为空的入参数
+const unboundInputCount = computed(() => (form.value.inputParams || []).filter(p => !isInputBound(p)).length)
+
+/** 一键样本表匹配：只把未绑定来源的入参填成「样本表提供」，已绑定的不动，不弹预览直接生效 */
+const bindUnboundToSample = () => {
+  const list = form.value.inputParams || []
+  let bound = 0
+  list.forEach((p) => {
+    if (isInputBound(p)) {
+      return
+    }
+    p.paramKind = 'sample'
+    p.featureId = null
+    bound += 1
+  })
+  if (!bound) {
+    return
+  }
+  // 绑定关系已变，旧的校验结论不再成立，清掉待重新校验
+  ioValidateMsg.value = ''
+  Message.success(`已为 ${bound} 个入参绑定「样本表提供」`)
+}
+
 const runIOValidate = () => {
   const okInputs = Array.isArray(form.value.inputParams) && form.value.inputParams.every(i => {
     const baseOk = i && i.name && i.type && i.paramKind
@@ -508,6 +554,15 @@ const handleCancel = () => {
 .page-title { margin: 0; font-size: 18px; font-weight: 600; }
 .page-content { max-width: 1200px; margin: 0 auto; }
 .panel-card { margin-top: 12px; }
+/* 入参 / 出参定义块：标题居左、快捷按钮居右上，表格整宽在下（不用 a-form-item，其内容区是横排 flex 会把按钮和表格挤在一起） */
+.io-block { margin-bottom: 16px; }
+.io-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
 .code-block { background: #f7f8fa; border: 1px solid var(--subapp-border); border-radius: 6px; padding: 10px; white-space: pre-wrap; }
 .actions-bar { position: sticky; bottom: 0; background: rgba(255,255,255,0.95); border-top: 1px solid var(--subapp-border); padding: 10px 0; margin-top: 12px; }
 .actions-inner { display: flex; gap: 8px; justify-content: flex-end; max-width: 1200px; margin: 0 auto; padding: 0 8px; }

@@ -151,6 +151,7 @@ export const backtrackAPI = {
   getSourceTableTypes: () => mockAPI.backtrack.SOURCE_TABLE_TYPES,
   getSourceTables: () => mockAPI.backtrack.BACKTRACK_SOURCE_TABLES,
   getWatchDateField: () => mockAPI.backtrack.WATCH_DATE_FIELD,
+  getInputMatchSources: () => mockAPI.backtrack.INPUT_MATCH_SOURCES,
   getSourceTableMeta: (table) => mockAPI.backtrack.getSourceTableMeta(table),
   isExternalSourceTable: (table) => mockAPI.backtrack.isExternalSourceTable(table),
   getDateFieldsOf: (table) => mockAPI.backtrack.getDateFieldsOf(table)

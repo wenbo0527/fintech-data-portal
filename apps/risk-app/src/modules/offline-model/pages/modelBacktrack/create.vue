@@ -305,9 +305,9 @@
           </a-form>
         </a-collapse-item>
 
-        <!-- 步骤四：必填字段映射 -->
+        <!-- 步骤四：关联条件配置 -->
         <a-collapse-item key="required">
-          <template #header>步骤四：必填字段映射</template>
+          <template #header>步骤四：关联条件配置</template>
           <template #extra>
             <a-tag v-if="stepStatus.s4 === 'done'" color="green" size="small">已完成</a-tag>
             <a-tag v-else-if="stepStatus.s4 === 'partial'" color="orange" size="small">{{ stepStatus.reqMatched }}/{{ stepStatus.reqTotal }}</a-tag>
@@ -317,8 +317,8 @@
             请先完成步骤三：拉取样本表数据
           </a-alert>
           <div class="section-tip">
-            根据样本表字段，完成以下必填字段的映射匹配；日期关联逻辑固定以样本观测日 <code>watch_dt</code> 为锚点往前推 X 天（只填 X），
-            来源表为「外数底表」时还需填写缓存天数
+            为每个必填字段配置与来源表的关联条件：日期关联逻辑固定以样本观测日 <code>watch_dt</code> 为锚点往前推 X 天（只填 X），
+            来源表为「外数底表」时还需填写缓存天数；样本字段即关联时样本侧的 join key
           </div>
           <div class="table-search-row">
             <a-input-search
@@ -457,7 +457,8 @@
             请先完成步骤三：拉取样本表数据
           </a-alert>
           <div class="section-tip">
-            已匹配 {{ matchedCount }} / {{ inputMappings.length }}，未匹配 {{ inputMappings.length - matchedCount }}
+            为每个模型入参选择取值来源：「特征中心」映射已配置特征（支持搜索），「样本表」直接映射步骤三拉取的样本字段；
+            已匹配 {{ matchedCount }} / {{ inputMappings.length }}，未匹配 {{ inputMappings.length - matchedCount }}；未匹配行置顶，匹配完成后沉底
           </div>
           <div class="table-search-row">
             <a-input-search
@@ -466,26 +467,85 @@
               allow-clear
               style="width: 240px; margin-bottom: 8px;"
             />
+            <!-- 一键入参匹配：只碰未匹配行，N 为 0 或未拉取样本表时置灰 -->
+            <a-tooltip
+              :content="sampleReady ? (unmatchedInputCount ? '对未匹配入参按样本表同名字段批量匹配' : '所有入参均已匹配') : '请先完成步骤三：拉取样本表数据'"
+            >
+              <span>
+                <a-button
+                  type="outline"
+                  size="small"
+                  :disabled="!sampleReady || !unmatchedInputCount"
+                  style="margin-bottom: 8px;"
+                  @click="autoMatchFromSample"
+                >
+                  一键入参匹配（{{ unmatchedInputCount }}）
+                </a-button>
+              </span>
+            </a-tooltip>
           </div>
-          <a-table :data="filteredInputMappings" :columns="mappingDefs" row-key="rowKey" size="small" :pagination="false">
-            <template #targetCell="{ record }">
-              <!-- 模块B P1：后端模糊搜索（输入即触发、不区分大小写、50条分页） -->
+          <a-table
+            :data="filteredInputMappings"
+            :columns="mappingDefs"
+            row-key="rowKey"
+            size="small"
+            :pagination="{ defaultPageSize: 50, pageSizeOptions: [20, 50, 100, 200], showPageSize: true, showTotal: true, showJumper: true }"
+          >
+            <template #nameCell="{ record }">
+              <a-tooltip :content="`入参来自模型服务：${record.from || '当前模型'}`">
+                <span class="expr-anchor">{{ record.name }}</span>
+              </a-tooltip>
+            </template>
+            <template #sourceCell="{ record }">
               <a-select
+                :model-value="record.source === 'sample' ? 'sample' : 'feature'"
+                size="small"
+                :trigger-props="dropdownFitContent"
+                style="width: 100%;"
+                @change="(v) => onInputSourceChange(record, v)"
+              >
+                <a-option v-for="(label, key) in inputSources" :key="key" :value="key" :label="label">{{ label }}</a-option>
+              </a-select>
+            </template>
+            <template #targetCell="{ record }">
+              <!-- 来源=样本表：直接列步骤三拉取的样本字段 -->
+              <a-select
+                v-if="record.source === 'sample'"
                 :model-value="record.target"
-                placeholder="输入关键词搜索特征"
+                placeholder="选择样本表字段"
+                allow-search
+                allow-clear
+                size="small"
+                :disabled="!sampleReady"
+                :trigger-props="dropdownFitContent"
+                :not-found-content="sampleReady ? '样本表无字段' : '请先拉取样本表'"
+                style="width: 100%;"
+                @change="(v) => { record.target = v || ''; updateInputStatus(record); }"
+              >
+                <a-option v-for="c in tableColumns" :key="c.name" :value="c.name" :label="c.name">
+                  {{ c.name }} <span class="col-type">{{ c.type }}</span>
+                </a-option>
+              </a-select>
+              <!-- 来源=特征中心：打开下拉即列已配置特征，输入关键词后端模糊搜索（防抖 250ms） -->
+              <a-select
+                v-else
+                :model-value="record.target"
+                placeholder="选择/搜索特征"
                 style="width: 100%;"
                 allow-search
                 :filter-option="false"
+                :trigger-props="dropdownFitContent"
                 :loading="featureSearchLoading && featureSearchActiveRowKey === record.rowKey"
                 :not-found-content="featureSearchLoading && featureSearchActiveRowKey === record.rowKey ? '搜索中…' : '无匹配特征'"
+                @popup-visible-change="(v) => v && triggerFeatureSearch(record.rowKey, '')"
                 @search="(kw) => triggerFeatureSearch(record.rowKey, kw)"
                 @change="(v) => { record.target = v; updateInputStatus(record); }"
-                @dropdown-reach-bottom="() => {}"
               >
                 <a-option
                   v-for="f in (featureSearchActiveRowKey === record.rowKey ? featureSearchResults : (record.target ? [{ name: record.target, code: record.target, description: '当前已选' }] : []))"
                   :key="f.code || f.name"
                   :value="f.code || f.name"
+                  :label="f.code || f.name"
                 >
                   {{ f.name }} <span class="col-type">{{ f.type || '' }}</span>
                 </a-option>
@@ -495,9 +555,6 @@
               <a-tag :color="record.status === 'matched' ? 'green' : 'red'" class="status-tag">
                 {{ record.status === 'matched' ? '已匹配' : '未匹配' }}
               </a-tag>
-            </template>
-            <template #fromCell="{ record }">
-              <a-tag :color="record.from === '当前模型' ? 'arcoblue' : 'orange'">{{ record.from || '当前模型' }}</a-tag>
             </template>
           </a-table>
         </a-collapse-item>
@@ -626,7 +683,7 @@ const tableColumnDefs = [
 const tableLoading = ref(false)
 const tableInputStatus = ref('')
 const requiredMappings = ref([])
-// 来源表字典 / 表类型 / 日期关联锚点（步骤四：必填字段映射）
+// 来源表字典 / 表类型 / 日期关联锚点（步骤四：关联条件配置）
 const sourceTables = ref([])
 const sourceTableTypes = ref({})
 const watchDateField = ref('watch_dt')
@@ -678,6 +735,50 @@ const onSourceTableChange = (record, val) => {
   if (record.dateField && !dates.some(f => f.name === record.dateField)) record.dateField = ''
   if (!isExternalSource(record.sourceTable)) record.cacheDays = null
   updateRequiredStatus(record)
+}
+
+// ============ 步骤五：入参匹配（取值来源：特征中心 / 样本表） ============
+const inputSources = ref({})
+// N = 未匹配入参数（按全量行统计，与搜索过滤无关）
+const unmatchedInputCount = computed(() => inputMappings.value.filter(r => !r.target).length)
+
+// 切换取值来源：两个通道取值空间不同，清空已选映射避免脏数据
+const onInputSourceChange = (record, val) => {
+  record.source = val === 'sample' ? 'sample' : 'feature'
+  record.target = ''
+  updateInputStatus(record)
+}
+
+/**
+ * 一键入参匹配：只碰未匹配行——来源置为样本表，样本表（步骤三拉取）有同名字段的自动带入；
+ * 已匹配行不动，无同名字段的仅置来源，交人工在下拉里选
+ */
+const autoMatchFromSample = () => {
+  if (!sampleReady.value) {
+    Message.warning('请先完成步骤三：拉取样本表数据')
+    return
+  }
+  let hit = 0
+  let miss = 0
+  inputMappings.value.forEach((r) => {
+    if (r.target) {
+      return
+    }
+    r.source = 'sample'
+    const same = tableColumns.value.find(c => c.name === r.name)
+    if (same) {
+      r.target = same.name
+      hit += 1
+    } else {
+      miss += 1
+    }
+    updateInputStatus(r)
+  })
+  const tips = [`已按同名字段匹配 ${hit} 个入参`]
+  if (miss) {
+    tips.push(`${miss} 个入参样本表无同名字段，来源已置为样本表，请手动选择`)
+  }
+  Message.success(tips.join('，'))
 }
 
 // ============ 回溯任务配置：新增字段 ============
@@ -786,18 +887,18 @@ const modelOutputDefs = [
 // 入参匹配
 const inputMappings = ref([])
 const featureTargets = ref([])
-// 模块B P1：步骤四『映射到特征中心』模糊搜索
+// 模块B P1：步骤五『映射到特征/字段』特征中心通道的后端模糊搜索
 const featureSearchKeyword = ref('')        // 当前行输入框搜索关键词（行级隔离）
 const featureSearchResults = ref([])        // 当前激活行的搜索结果
 const featureSearchLoading = ref(false)
 const featureSearchActiveRowKey = ref('')   // 当前展开搜索的行 rowKey
 const featureSearchTimers = new Map()       // 防抖：每行一个 timer
 const mappingDefs = [
-  { title: '入参名', dataIndex: 'name', width: 160 },
-  { title: '类型', dataIndex: 'type', width: 120 },
-  { title: '来源', dataIndex: 'from', slotName: 'fromCell', width: 140 },
-  { title: '映射到特征中心', dataIndex: 'target', slotName: 'targetCell', width: 280 },
-  { title: '状态', dataIndex: 'status', slotName: 'statusCell', width: 100, align: 'center' }
+  { title: '入参名', dataIndex: 'name', slotName: 'nameCell', width: 150 },
+  { title: '类型', dataIndex: 'type', width: 100 },
+  { title: '来源', dataIndex: 'source', slotName: 'sourceCell', width: 120 },
+  { title: '映射到特征/字段', dataIndex: 'target', slotName: 'targetCell', width: 300 },
+  { title: '状态', dataIndex: 'status', slotName: 'statusCell', width: 90, align: 'center' }
 ]
 const matchedCount = computed(() => inputMappings.value.filter(i => i.status === 'matched').length)
 
@@ -810,10 +911,14 @@ const filteredRequiredMappings = computed(() => {
   if (!kw) return requiredMappings.value
   return requiredMappings.value.filter(r => (r.name || '').toLowerCase().includes(kw))
 })
+// 步骤五排序：待办队列式——未匹配行置顶、已匹配沉底（组内保持原顺序），配合分页可逐页处理大入参；
+// 行匹配完成的瞬间会离开当前视野，由后续未匹配行补位
 const filteredInputMappings = computed(() => {
   const kw = (mappingSearch.value || '').trim().toLowerCase()
-  if (!kw) return inputMappings.value
-  return inputMappings.value.filter(r => (r.name || '').toLowerCase().includes(kw))
+  const rows = kw
+    ? inputMappings.value.filter(r => (r.name || '').toLowerCase().includes(kw))
+    : inputMappings.value
+  return [...rows.filter(r => r.status !== 'matched'), ...rows.filter(r => r.status === 'matched')]
 })
 const filteredModelOutputs = computed(() => {
   const kw = (outputSearch.value || '').trim().toLowerCase()
@@ -982,7 +1087,7 @@ const loadServices = async () => {
 }
 loadServices()
 
-// 加载回溯配置枚举（场景标签 / 渠道 / 必填字段定义 / 关联方式 / 来源表字典 / 日期关联锚点）
+// 加载回溯配置枚举（场景标签 / 渠道 / 关联字段定义 / 关联方式 / 来源表字典 / 日期关联锚点 / 入参来源字典）
 const loadEnumOptions = () => {
   sceneTagOptions.value = backtrackAPI.getSceneTags() || []
   landingChannelOptions.value = backtrackAPI.getLandingChannels() || []
@@ -991,6 +1096,7 @@ const loadEnumOptions = () => {
   sourceTables.value = backtrackAPI.getSourceTables() || []
   sourceTableTypes.value = backtrackAPI.getSourceTableTypes() || {}
   watchDateField.value = backtrackAPI.getWatchDateField() || 'watch_dt'
+  inputSources.value = backtrackAPI.getInputMatchSources() || { feature: '特征中心', sample: '样本表' }
 }
 loadEnumOptions()
 
@@ -1024,7 +1130,8 @@ const prefillFromCopy = async (copyFromId) => {
         const fromSvc = m.from === '当前模型' ? modelForm.value.serviceName : m.from
         const found = cfg.inputMappings.find(x => x.input === m.name && (!x.serviceName || x.serviceName === fromSvc))
         const target = found?.target || ''
-        return { ...m, target, status: target ? 'matched' : 'unmatched' }
+        // 历史数据无 source 时按特征中心口径回填
+        return { ...m, target, source: found?.source === 'sample' ? 'sample' : 'feature', status: target ? 'matched' : 'unmatched' }
       })
     }
     if (Array.isArray(cfg.requiredFieldMappings) && cfg.requiredFieldMappings.length) {
@@ -1104,7 +1211,7 @@ const onServiceChange = async (serviceName) => {
       modelOutputs.value = (p.outputs || []).map(o => ({ name: o.name, type: o.type, description: o.description || '' }))
       const baseInputs = modelInputs.value.map(i => {
         const same = featureTargets.value.find(f => f.name === i.name)
-        return { rowKey: `${p.serviceName}|${i.name}`, name: i.name, type: i.type, from: '当前模型', target: same ? same.name : '', status: same ? 'matched' : 'unmatched' }
+        return { rowKey: `${p.serviceName}|${i.name}`, name: i.name, type: i.type, from: '当前模型', source: 'feature', target: same ? same.name : '', status: same ? 'matched' : 'unmatched' }
       })
       let childInputs = []
       const depends = Array.isArray(p.dependsOn) ? p.dependsOn : []
@@ -1115,7 +1222,7 @@ const onServiceChange = async (serviceName) => {
             const c = childRes.data
             const ci = (c.inputs || []).map(i => {
               const same = featureTargets.value.find(f => f.name === i.name)
-              return { rowKey: `${c.serviceName}|${i.name}`, name: i.name, type: i.type, from: c.serviceName, target: same ? same.name : '', status: same ? 'matched' : 'unmatched' }
+              return { rowKey: `${c.serviceName}|${i.name}`, name: i.name, type: i.type, from: c.serviceName, source: 'feature', target: same ? same.name : '', status: same ? 'matched' : 'unmatched' }
             })
             childInputs = childInputs.concat(ci)
           }
@@ -1129,7 +1236,7 @@ const onServiceChange = async (serviceName) => {
         seen.add(k)
         return true
       })
-      // 必填字段映射：改用固定枚举（product_id/flow_id/data_dt 强制 + business_code/session_number 选填）
+      // 关联条件配置（步骤四）：固定枚举（product_id/flow_id/data_dt 强制 + business_code/session_number 选填）
       const defs = (requiredFieldDefs.value && requiredFieldDefs.value.length)
         ? requiredFieldDefs.value
         : [
@@ -1165,7 +1272,7 @@ const onServiceChange = async (serviceName) => {
       } else {
         mainScoreField.value = modelOutputs.value[0]?.name || ''
       }
-      Message.info(`必填映射 ${requiredMappings.value.length} 项，入参 ${modelInputs.value.length} 项`)
+      Message.info(`关联条件 ${requiredMappings.value.length} 项，入参 ${modelInputs.value.length} 项`)
     }
   } catch (e) {}
 }
@@ -1193,15 +1300,15 @@ const handleSubmit = async () => {
     if (!sampleForm.value.tableNameInput) errors.push('请输入样本表名')
     if (!modelForm.value.serviceName) errors.push('请选择回溯模型')
     if (routeParams.copyFrom && !modelForm.value.taskName) errors.push('请输入任务名称')
-    // 必填字段校验：仅强制项映射不完整时阻断提交（红色报错）
+    // 关联条件校验（步骤四）：仅强制项关联不完整时阻断提交（红色报错）
     const missingRequired = (requiredMappings.value || []).filter(r => r.required && !isRequiredRowComplete(r))
     if (missingRequired.length) {
-      errors.push(`必填字段映射未完成: ${missingRequired.map(r => `${r.name}（待补${requiredRowMissing(r).join('、')}）`).join('；')}`)
+      errors.push(`关联条件未完成: ${missingRequired.map(r => `${r.name}（待补${requiredRowMissing(r).join('、')}）`).join('；')}`)
     }
     // 选填字段缺失仅弱提示，不阻断
     const missingOptional = (requiredMappings.value || []).filter(r => !r.required && !isRequiredRowComplete(r))
     if (missingOptional.length) {
-      Message.info(`选填字段映射未完成（可忽略）: ${missingOptional.map(r => r.name).join('、')}`)
+      Message.info(`选填字段关联条件未完成（可忽略）: ${missingOptional.map(r => r.name).join('、')}`)
     }
     if (createMode.value === CREATE_MODES.PERIODIC) {
       if (!sampleForm.value.taskStartDate) errors.push('请选择任务执行开始时间')
@@ -1211,7 +1318,13 @@ const handleSubmit = async () => {
       errors.forEach(error => Message.warning(error))
       return
     }
-    const mappings = inputMappings.value.map(m => ({ input: m.name, target: m.target }))
+    const mappings = inputMappings.value.map(m => ({
+      input: m.name,
+      target: m.target,
+      // 取值来源：feature=特征中心已配置特征，sample=直接取样本表字段；无来源历史数据按 feature 口径
+      source: m.source === 'sample' ? 'sample' : 'feature',
+      from: m.from
+    }))
     const payload = {
       table: sampleForm.value.tableNameInput,
       sourceType: sampleForm.value.sourceType,
@@ -1394,10 +1507,18 @@ const handleCancel = () => {
   margin-bottom: 10px;
 }
 
+/* 表格上方工具行：搜索框居左，快捷按钮居右（两者高度不同，按垂直居中对齐） */
+.table-search-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 /* 状态标签 */
 .status-tag { font-size: 12px; }
 
-/* 必填字段映射表：9 列密排，收紧单元格内边距避免文本裁切 */
+/* 关联条件配置表（步骤四）：9 列密排，收紧单元格内边距避免文本裁切 */
 .required-map-table :deep(.arco-table-cell) { padding-left: 8px; padding-right: 8px; }
 .required-map-table .field-name { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
 .required-map-table .cell-na { color: var(--color-text-4); }

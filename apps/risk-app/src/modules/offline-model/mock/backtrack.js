@@ -91,6 +91,9 @@ export const BACKTRACK_SOURCE_TABLES = [
 // 日期关联锚点：回溯时以样本观测日 watch_dt 为基准往前推 X 天与来源表日期字段对齐
 export const WATCH_DATE_FIELD = 'watch_dt'
 
+// 步骤五入参匹配：取值来源通道（feature=映射特征中心已配置特征；sample=直接映射步骤三样本表字段）
+export const INPUT_MATCH_SOURCES = { feature: '特征中心', sample: '样本表' }
+
 const DATE_COLUMN_NAME_RE = /(^|_)(dt|date|time|_dt)$|dt$|date$|time$/i
 
 // 日期类字段判定：类型是日期/时间，或字段名带 dt / date / time
@@ -211,6 +214,23 @@ function buildSingleModelLog(now) {
   }
 }
 
+// 大入参演示映射（700 行）：前 6 行与样本表字段同名且未匹配（供『一键入参匹配』同名命中），
+// 其余按 4 档交替：样本表已匹配 / 特征中心已匹配 / 未匹配 / 依赖模型未匹配，便于观察状态统计
+function seedBulkInputMappings(count = 700) {
+  const sampleFields = ['age', 'income', 'credit_history', 'user_id', 'cert_no', 'mobile']
+  return Array.from({ length: count }, (_, i) => {
+    if (i < sampleFields.length) {
+      return { input: sampleFields[i], target: '', from: '当前模型', source: 'feature' }
+    }
+    const input = `feat_${String(i + 1).padStart(3, '0')}`
+    const m = i % 4
+    if (m === 0) return { input, target: input, from: '当前模型', source: 'sample' }
+    if (m === 1) return { input, target: `fm_${input}`, from: '当前模型', source: 'feature' }
+    if (m === 2) return { input, target: '', from: '当前模型', source: 'feature' }
+    return { input, target: '', from: 'risk_regression_service', source: 'feature' }
+  })
+}
+
 // 预置一个示例任务，便于直接查看详情演示
 ;(function seed() {
   const now = new Date().toISOString()
@@ -282,9 +302,9 @@ function buildSingleModelLog(now) {
       // 底表来源：从变量中心 modelBaseMonthlyTableName 联动
       midloanBaseTable: 'risk_dw.ads_midloan_bigtxn_30d_m',
       inputMappings: [
-        { input: 'age', target: 'user_age', from: '当前模型' },
-        { input: 'income', target: 'user_income', from: '当前模型' },
-        { input: 'credit_history', target: 'credit_history', from: '当前模型' }
+        { input: 'age', target: 'user_age', from: '当前模型', source: 'feature' },
+        { input: 'income', target: 'user_income', from: '当前模型', source: 'feature' },
+        { input: 'credit_history', target: 'credit_history', from: '当前模型', source: 'sample' }
       ],
       outputs: seedOutputs,
       requiredFieldMappings: seedRequiredMappings({ business_code: '', session_number: '' }),
@@ -332,8 +352,8 @@ function buildSingleModelLog(now) {
       sqlWhere: "dt >= '2026-08-01' AND status = 'active'",
       featurePersist: false,
       inputMappings: [
-        { input: 'age', target: 'user_age', from: '当前模型' },
-        { input: 'income', target: 'user_income', from: '当前模型' }
+        { input: 'age', target: 'user_age', from: '当前模型', source: 'feature' },
+        { input: 'income', target: 'user_income', from: '当前模型', source: 'feature' }
       ],
       outputs: seedOutputs,
       requiredFieldMappings: seedRequiredMappings({ business_code: 'risk_biz', session_number: '' }),
@@ -416,9 +436,9 @@ function buildSingleModelLog(now) {
       sqlWhere: "dt >= '2026-07-01' AND dt <= '2026-07-31' AND cert_no IS NOT NULL",
       featurePersist: true,
       inputMappings: [
-        { input: 'age', target: 'user_age', from: '当前模型' },
-        { input: 'income', target: 'user_income', from: '当前模型' },
-        { input: 'credit_history', target: 'credit_history', from: '当前模型' }
+        { input: 'age', target: 'user_age', from: '当前模型', source: 'feature' },
+        { input: 'income', target: 'user_income', from: '当前模型', source: 'feature' },
+        { input: 'credit_history', target: 'credit_history', from: '当前模型', source: 'sample' }
       ],
       outputs: seedOutputs,
       requiredFieldMappings: seedRequiredMappings({ business_code: '', session_number: '' }),
@@ -479,8 +499,8 @@ function buildSingleModelLog(now) {
       sqlWhere: "dt >= '2026-08-01' AND dt <= '2026-08-14' AND status = 'active'",
       featurePersist: false,
       inputMappings: [
-        { input: 'age', target: 'user_age', from: '当前模型' },
-        { input: 'income', target: 'user_income', from: '当前模型' }
+        { input: 'age', target: 'user_age', from: '当前模型', source: 'feature' },
+        { input: 'income', target: 'user_income', from: '当前模型', source: 'feature' }
       ],
       outputs: seedOutputs,
       requiredFieldMappings: seedRequiredMappings({ business_code: '', session_number: '' }),
@@ -503,7 +523,43 @@ function buildSingleModelLog(now) {
     }
   }
   tasks.unshift(t4)
-  idSeq = 5
+
+  // 预置第五个任务：大入参演示（700 个模型入参，模型源头见 mock/model.js bulk_feature_score_service）
+  const now5 = new Date(Date.now() - 3600000).toISOString()
+  const t5 = {
+    id: 5,
+    status: BACKTRACK_STATUS.DRAFT,
+    progress: [],
+    result: null,
+    featurePersist: [],
+    logType: 'single',
+    log: buildSingleModelLog(now5),
+    createTime: now5,
+    updateTime: now5,
+    config: {
+      table: 'dw.risk_sample',
+      sourceType: 'doris',
+      dbName: 'dw',
+      tableName: 'dw.risk_sample',
+      mode: 'single',
+      observeDate: '',
+      dateRange: ['2026-10-01', '2026-10-31'],
+      serviceName: 'bulk_feature_score_service',
+      version: 'v1.0.0',
+      taskName: '大入参演示-700 个模型入参',
+      sqlWhere: '',
+      featurePersist: false,
+      inputMappings: seedBulkInputMappings(700),
+      outputs: seedOutputs,
+      requiredFieldMappings: seedRequiredMappings(),
+      landingForm: { summary: true, summaryType: 'general', channelCode: '', singleModel: true, singleTableType: 'offline' },
+      sceneTags: ['额度'],
+      mainScoreField: 'score',
+      associationMethod: 'flow_id'
+    }
+  }
+  tasks.unshift(t5)
+  idSeq = 6
 })()
 
 export function createBacktrack(data) {
@@ -655,6 +711,7 @@ export default {
   SOURCE_TABLE_TYPES,
   BACKTRACK_SOURCE_TABLES,
   WATCH_DATE_FIELD,
+  INPUT_MATCH_SOURCES,
   getSourceTableMeta,
   isExternalSourceTable,
   getDateFieldsOf

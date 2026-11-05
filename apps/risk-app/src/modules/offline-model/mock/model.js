@@ -406,6 +406,9 @@ export default {
 }
 
 // 模型平台同步相关 Mock
+// 大入参演示模型前 6 个入参的字段名：与 dw.risk_sample 样本表字段同名，供『一键入参匹配』演示同名命中
+const BULK_DEMO_SAMPLE_FIELDS = ['age', 'income', 'credit_history', 'user_id', 'cert_no', 'mobile']
+
 const platformModels = [
   {
     serviceName: 'credit_score_service',
@@ -507,6 +510,35 @@ const platformModels = [
       { name: 'model_score', type: 'number', description: '模型分' }
     ],
     fileUrl: '/platform/models/model_score_model_v1.pkl'
+  }
+  ,
+  // 大入参演示模型：700 个入参，用于验证步骤五『入参匹配』长列表渲染/搜索/一键入参匹配
+  {
+    serviceName: 'bulk_feature_score_service',
+    name: '大入参演示模型服务（700 入参）',
+    code: 'bulk_feature_score_model',
+    version: 'v1.0.0',
+    framework: FRAMEWORKS.XGBOOST,
+    type: MODEL_TYPES.CLASSIFICATION,
+    description: '含 700 个模型入参的性能演示服务，入参名 feat_007 ~ feat_700，前 6 个与样本表字段同名',
+    pkFields: ['cert_no', 'flow_id'],
+    inputs: Array.from({ length: 700 }, (_, i) => {
+      // 前 6 行取样本表真实字段名，便于在创建页演示『一键入参匹配』同名命中
+      if (i < BULK_DEMO_SAMPLE_FIELDS.length) {
+        return { name: BULK_DEMO_SAMPLE_FIELDS[i], type: 'number', description: '与样本表同名的演示入参' }
+      }
+      const n = String(i + 1).padStart(3, '0')
+      return {
+        name: `feat_${n}`,
+        type: i % 4 === 0 ? 'bigint' : i % 4 === 1 ? 'double' : i % 4 === 2 ? 'varchar(64)' : 'number',
+        description: `批量特征 #${i + 1}`
+      }
+    }),
+    outputs: [
+      { name: 'score', type: 'number', description: '风险评分' },
+      { name: 'label', type: 'number', description: '预测标签' }
+    ],
+    fileUrl: '/platform/models/bulk_feature_score_model_v1.pkl'
   }
 ]
 

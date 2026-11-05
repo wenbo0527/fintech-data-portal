@@ -116,8 +116,8 @@
             </a-descriptions>
           </a-collapse-item>
 
-          <!-- 步骤四：必填字段映射 -->
-          <a-collapse-item key="required" header="步骤四：必填字段映射">
+          <!-- 步骤四：关联条件配置 -->
+          <a-collapse-item key="required" header="步骤四：关联条件配置">
             <a-table
               class="required-map-table"
               :data="detail.config?.requiredFieldMappings || []"
@@ -181,6 +181,11 @@
               size="small"
               :pagination="false"
             >
+              <template #sourceTagCell="{ record }">
+                <a-tag :color="record.source === 'sample' ? 'green' : 'arcoblue'" size="small">
+                  {{ inputSourceLabel(record.source) }}
+                </a-tag>
+              </template>
               <template #statusCell="{ record }">
                 <a-tag :color="record.target ? 'green' : 'red'">
                   {{ record.target ? '已匹配' : '未匹配' }}
@@ -313,10 +318,15 @@ const requiredCols = computed(() => {
 })
 const requiredTableWidth = computed(() => requiredCols.value.reduce((sum, c) => sum + (c.width || 0), 0))
 
+// 入参匹配：取值来源字典（历史数据无 source 时按特征中心口径展示）
+const inputMatchSources = backtrackAPI.getInputMatchSources() || { feature: '特征中心', sample: '样本表' }
+const inputSourceLabel = (s) => inputMatchSources[s === 'sample' ? 'sample' : 'feature']
+
 const inputCols = [
-  { title: '入参', dataIndex: 'input', width: 180 },
-  { title: '映射到特征中心', dataIndex: 'target', width: 240 },
-  { title: '状态', slotName: 'statusCell', width: 120, align: 'center' }
+  { title: '入参', dataIndex: 'input', width: 150 },
+  { title: '来源', dataIndex: 'source', slotName: 'sourceTagCell', width: 110, align: 'center' },
+  { title: '映射到特征/字段', dataIndex: 'target', width: 220 },
+  { title: '状态', slotName: 'statusCell', width: 110, align: 'center' }
 ]
 const outputCols = [
   { title: '出参名', dataIndex: 'name', width: 180 },
@@ -427,7 +437,7 @@ onMounted(loadDetail)
   min-height: 300px;
 }
 .log-type-tag { margin-bottom: 12px; display: flex; gap: 8px; align-items: center; }
-/* 必填字段映射表：密排列宽下统一单元格内边距与文本样式 */
+/* 关联条件配置表（步骤四）：密排列宽下统一单元格内边距与文本样式 */
 .required-map-table :deep(.arco-table-cell) { padding-left: 8px; padding-right: 8px; }
 .cell-mono {
   font-family: 'SFMono-Regular', Consolas, monospace;

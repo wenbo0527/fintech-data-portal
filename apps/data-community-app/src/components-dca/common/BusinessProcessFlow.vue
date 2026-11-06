@@ -276,7 +276,7 @@ import {
 } from '@arco-design/web-vue/es/icon'
 import { Message } from '@arco-design/web-vue';
 import { processSteps, tableColumns } from '@/mock/businessProcessData'
-import BusinessProcessDrawer from '@/dfd-components/business-process/BusinessProcessDrawer.vue'
+import BusinessProcessDrawer from '@/components-dca/business-process/BusinessProcessDrawer.vue'
 import { domainTree, buildCascaderOptions, findDomainNameById, findScenarioNameById } from '@/mock/businessModuleData'
 
 interface TableField {

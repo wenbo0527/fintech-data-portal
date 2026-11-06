@@ -54,11 +54,12 @@ Mock 漂移是比副本更危险的一类：`data-map.ts` 6 份（44 B ~ 37,983 
 
 ### P0 事实校准（约 0.5 天 · 风险：低 · 不依赖任何前置）
 
-**进度（2026-11-05）**：`scripts/dev-with-subapps.js` 编排集合已修正为实测活跃集合——新增 mkt-app(5177) 与 dex-app(5180)，共 6 项；移除 `mainApp(5173)` 一步（`dev:main` 是 `echo + exit 0` 空操作，且预释放 5173 会 SIGKILL 本地运行中的 report-monitor 而脚本从不重启它）；归档 app 端口注释按各 vite.config 更正（dfd 5185 与 dca 相同、dmt 5181 与 touch 相同）。校验方式：`node --check` 通过；6/6 编排端口与各自 `vite.config.ts` 的 `port` 一致且 `dev` 脚本存在；非注释行已无 `5173/dev:main/mainApp`。**未执行完整 `pnpm dev` 实跑**，因为该脚本会 SIGKILL 当前已在运行的 6 台 dev server（5175/5176/5177/5180/5181/5185）。
+**进度（2026-11-05）**：`scripts/dev-with-subapps.js` 编排集合已修正为实测活跃集合——新增 mkt-app(5177) 与 dex-app(5180)，共 6 项；移除 `mainApp(5173)` 一步（`dev:main` 是 `echo + exit 0` 空操作，且预释放 5173 会 SIGKILL 本地运行中的 report-monitor 而脚本从不重启它）；归档 app 端口注释按各 vite.config 更正（dfd 5185 与 dca 相同、dmt 5181 与 touch 相同）。校验方式：`node --check` 通过；6/6 编排端口与各自 `vite.config.ts` 的 `port` 一致且 `dev` 脚本存在；非注释行已无 `5173/dev:main/mainApp` 残留（校验脚本可复用）。同一批运行时实测（改前）：6 台 dev server 全部 `/base/` → 200 `text/html` 且 `/src/main.ts` → 200 `text/javascript`，本地无「entry 被吞成 HTML」形态；同时确认 dev server 对不存在的模块路径返回 **200 + text/html**（SPA 兜底），因此任何健康检查必须校验 content-type，单看 HTTP 200 无效。
 
-运行时实测（作为本阶段事实基线）：6 台 dev server 全部 `/base/` → 200 `text/html` 且 `/src/main.ts` → 200 `text/javascript`，本地无「entry 被吞成 HTML」形态；同时确认 dev server 对不存在的模块路径返回 **200 + text/html**（SPA 兜底），因此任何健康检查必须校验 content-type，单看 HTTP 200 无效。
+**实跑验证（2026-11-05 补做，经用户授权关闭原 6 台 server 后执行）**：在 5173 挂回归探针后运行 `pnpm dev`，输出 `--- 全部 6 个子应用就绪 ---`；6/6 应用 `/base/` → 200 `text/html` 且 `/src/main.ts` → 200 `text/javascript`，与改前逐项一致；子进程日志无 error/warn/EADDRINUSE；**5173 探针全程存活**，证明移除 `mainApp(5173)` 的修复生效（旧逻辑会把它 SIGKILL）。
+实跑暴露的新缺陷（静态检查看不见）：`killByPort` 用 `lsof -ti tcp:<port>` 取 pid 后会 SIGKILL **全部**返回项，包括非监听进程——本次实际杀掉了 pid 33055（Qoder IDE Helper，仅是 5175 的连接方）。应改为 `lsof -ti tcp:<port> -sTCP:LISTEN`，只回收监听进程。
 
-其余未项：README 端口表重写、ARCHITECTURE 活跃度口径改为「4 核心 + 2 低频 + 3 停摆」、移除路线图中未创建的 `apps/main-shell` 目标、根 `.env` 退役（其 8001-8005 端口与 `VITE_QIANKUN_MODE` 均无效，且无 app 配置 `envDir` 指向根目录，核心应用启动时不加载它）。
+其余未项：`killByPort` 改为仅回收监听进程（`-sTCP:LISTEN`）；README 端口表重写、ARCHITECTURE 活跃度口径改为「4 核心 + 2 低频 + 3 停摆」、移除路线图中未创建的 `apps/main-shell` 目标、根 `.env` 退役（其 8001-8005 端口与 `VITE_QIANKUN_MODE` 均无效，且无 app 配置 `envDir` 指向根目录，核心应用启动时不加载它）。
 
 交付：根入口与冻结树解绑（删除/改名 `index.html`、`vite.config.js`、`vite-plugins/`，或明确标注仅供 `lint:archive` 使用）；README 端口表按实测重写（risk 5176 / hc 5175 / mkt 5177 / dex 5180 / touch 5181 / dca 5185 / semantic 8100 / backend 3001 / report-monitor 未设）；ARCHITECTURE 活跃度口径改为「4 核心 + 2 低频 + 3 停摆」；移除路线图中不存在的 `apps/main-shell` 目标。
 验收信号：`grep -rn "legacy-src/main.js" index.html` 为空；README 每行端口与 `apps/*/vite.config.ts` 逐项一致；无文档再宣称 main-shell 为计划项。
@@ -114,5 +115,5 @@ P0 与 P1 可并行启动且互不依赖。P2 是唯一的高风险长任务，�
 - A1 report-monitor 是否仍属计划内产品；其无 base、无 prod 部署且自 2026-09-09 停摆，若确认停摆则 C3 后端耦合不再需要整改。
 - A2 horizontal-canvas 与 mkt-app 的 postMessage 契约：mkt 侧持续 `postMessage` init（`apps/mkt-app/src/pages/canvas/index.vue:95-107`），但 hc 侧未发现 `message` 监听器——需确认该通道是否已废弃，若废弃应连同 `src/pages/canvas/` iframe 宿主逻辑一起收口。
 - A3 semantic-app 50 个文件在本分支未收口且全生命周期只有 1 次提交，属「新引入但未接入」状态；是否纳入 P1 registry 的 `deployed` 集合需产品确认。
-- A4 dex-app `src/pages/exploration/`（50 文件 / 30,944 行）被生产入口 `build-router.ts` 有意排除（只发 customer360），仅 dev 路由可达——需确认它是刻意保留的展示层还是可裁剪。
+- A4 **（已更正 2026-11-05）** 原判断「dex-app `exploration/` 被生产入口有意排除」不成立：`apps/dex-app/vite.config.ts:22-32` 的 `rollupOptions` 只有 `output.manualChunks`，**没有 `input`** → 真实构建入口是 `index.html → main.ts → router.ts`（28 条路由全发）。`build-entry.ts` / `build-router.ts` / `build-index.html` 是无人引用的死三件套，且 `build-entry.ts:5` import 了不存在的 `./App.vue`。故 `exploration/` 的裁剪须按「页面是否真的可达」重新评估，见 `cleanup-plan-2026-11.md` §6-D3/§8。
 - A5 dfd 死页面统计（14 个）以 dfd 本地为语料，因 dca 反向 alias 可能低估存活数，删除前需跨 app 复跑。

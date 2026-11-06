@@ -3,20 +3,22 @@ const http = require('http')
 const fs = require('fs')
 const path = require('path')
 
-function getPidsByPort(port) {
+// 只取监听进程：lsof -ti 不带 -sTCP:LISTEN 时也会返回该端口的连接方
+// （曾误杀 IDE Helper 等客户端进程），端口回收只应针对监听方
+function getListeningPids(port) {
   try {
-    const out = execSync(`lsof -ti tcp:${port}`, { stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim()
+    const out = execSync(`lsof -ti tcp:${port} -sTCP:LISTEN`, { stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim()
     if (!out) return []
-    return out.split('\n').filter(Boolean)
+    return [...new Set(out.split('\n').filter(Boolean))]
   } catch {
     return []
   }
 }
 
 async function killByPort(name, port, timeoutMs = 10000) {
-  const pids = getPidsByPort(port)
+  const pids = getListeningPids(port)
   if (!pids.length) return true
-  console.warn(`[${name}] 发现端口占用(${port})，准备关闭进程: ${pids.join(', ')}`)
+  console.warn(`[${name}] 发现端口占用(${port})，准备关闭监听进程: ${pids.join(', ')}`)
   for (const pid of pids) {
     try {
       process.kill(Number(pid), 'SIGKILL')
@@ -25,12 +27,12 @@ async function killByPort(name, port, timeoutMs = 10000) {
   const start = Date.now()
   return new Promise((resolve) => {
     const check = () => {
-      const left = getPidsByPort(port)
+      const left = getListeningPids(port)
       if (!left.length) {
         console.log(`[${name}] 端口(${port})已释放`)
         resolve(true)
       } else if (Date.now() - start > timeoutMs) {
-        console.error(`[${name}] 端口(${port})释放超时，仍存在进程: ${left.join(', ')}`)
+        console.error(`[${name}] 端口(${port})释放超时，仍存在监听进程: ${left.join(', ')}`)
         resolve(false)
       } else {
         setTimeout(check, 300)

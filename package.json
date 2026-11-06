@@ -26,6 +26,8 @@
     "migration:validate": "npm run lint:check && npm run typecheck && npm run migration:check",
     "sync:app-mocks": "node scripts/sync-app-mocks.mjs",
     "verify:external-data": "node scripts/verify-external-data-consistency.js",
+    "verify:dec01": "node scripts/verify-dec01-retirement.js",
+    "verify:dec01:selftest": "node scripts/verify-dec01-retirement.js --selftest",
     "audit": "npm audit --audit-level high",
     "depcheck": "depcheck",
     "clean": "rimraf dist node_modules/.cache"

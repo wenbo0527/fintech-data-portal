@@ -86,10 +86,11 @@ test-output*.log
 test-final-*.log
 test-success-*.log
 verify-*.js
-# 上面这条是为了挡住一次性验证脚本，但 scripts/ 下两份守卫是长期交付物
+# 上面这条是为了挡住一次性验证脚本，但 scripts/ 下三份守卫是长期交付物
 # （被 package.json 的 verify:* 脚本引用），必须入库，故显式反选
 !scripts/verify-external-data-consistency.js
 !scripts/verify-mock-column-consistency.js
+!scripts/verify-dec01-retirement.js
 comprehensive-*.js
 update-imports.js
 if patch fails*

@@ -2,10 +2,16 @@
   <PageContainer size="wide" :with-bg="false" class="uq-page">
     <PageHeader title="统一查询" sub-title="脚本目录 · SQL 编辑执行 · 快速创建任务调度">
       <template #extra>
-        <a-button @click="router.push({ name: 'unified-query-tasks' })">
-          <template #icon><icon-schedule /></template>
-          任务调度
-        </a-button>
+        <a-space size="mini">
+          <a-button @click="router.push({ name: 'unified-query-db-account' })">
+            <template #icon><icon-user /></template>
+            数据库账号
+          </a-button>
+          <a-button @click="router.push({ name: 'unified-query-tasks' })">
+            <template #icon><icon-schedule /></template>
+            任务调度
+          </a-button>
+        </a-space>
       </template>
     </PageHeader>
 

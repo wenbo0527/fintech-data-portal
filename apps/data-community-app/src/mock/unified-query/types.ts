@@ -331,3 +331,135 @@ export interface QueryHistory {
   /** 返回行数 */
   rowCount: number
 }
+
+/** ─────────── 数据库账号管理(DBA 自助服务) ─────────── */
+
+/** 数据库账号申请状态:已开通 / 审批中 / 已驳回 / 已过期 / 已释放 */
+export type DbAccountStatus = 'active' | 'applying' | 'rejected' | 'expired' | 'revoked'
+
+/** 账号权限级别:只读 / 读写 / 管理 */
+export type DbPrivilegeLevel = 'read' | 'write' | 'admin'
+
+/** 访问 Key 状态:启用 / 停用 / 已过期 */
+export type AccessKeyStatus = 'active' | 'disabled' | 'expired'
+
+/** 访问 Key 适用语言:Python / R / 两者 */
+export type ClientLanguage = 'python' | 'r' | 'both'
+
+/** 账号申请流转记录(详情抽屉时间线) */
+export interface DbAccountHistory {
+  ts: string
+  action: string
+  actor: string
+  from?: DbAccountStatus
+  to?: DbAccountStatus
+  comment?: string
+}
+
+/** 数据库账号权限记录:一个用户在一个数据源上的一份授权 */
+export interface DbAccountGrant {
+  /** 申请单号,如 DB20261106-001 */
+  id: string
+  datasource: DataSourceKey
+  /** 数据库账号名,如 dq_zhangsan_dr */
+  accountName: string
+  /** 集群 / 实例,如 internal / Inceptor */
+  cluster: string
+  /** 授权库列表 */
+  databases: string[]
+  privilege: DbPrivilegeLevel
+  status: DbAccountStatus
+  /** 有效期(月) */
+  validMonths: number
+  appliedAt: string
+  approvedAt?: string
+  /** 到期时间,审批中为空 */
+  expireAt?: string
+  approver?: string
+  purpose: string
+  /** 驳回原因 */
+  rejectReason?: string
+  /** 最近一次登录时间 */
+  lastLoginAt?: string
+  history: DbAccountHistory[]
+}
+
+/** 访问 Key 记录:用于 Python / R 客户端连接的凭证 */
+export interface AccessKeyRecord {
+  /** 记录编号,如 AK20260912-001 */
+  id: string
+  /** 用户自定义名称,如「风控建模-Python」 */
+  name: string
+  accessKeyId: string
+  /** 完整 SecretKey,仅在创建 / 重置时明文展示 */
+  secretKey: string
+  language: ClientLanguage
+  /** 授权数据源 */
+  datasources: DataSourceKey[]
+  status: AccessKeyStatus
+  createdAt: string
+  expireAt: string
+  lastUsedAt: string | null
+  /** 累计调用次数 */
+  callCount: number
+  purpose: string
+  owner: string
+}
+
+/** ─────────── 数据库账号管理(DBA 管理端) ─────────── */
+
+/** 账号物理状态:正常 / 锁定(可解锁)/ 停用(待回收) */
+export type DbAccountState = 'normal' | 'locked' | 'disabled'
+
+/** 账号来源:用户自助申请 / 管理端手工创建 */
+export type DbAccountSource = 'self-service' | 'admin'
+
+/**
+ * 数据库账号(管理端主体)
+ *
+ * 与 DbAccountGrant 的区别:grant 是「申请单」,account 是库里真实存在的账号,
+ * 管理端以账号为主体做密码重置、权限调整、锁定与回收。
+ * 密码本身不落库,只记录最近重置时间与有效期策略。
+ */
+export interface DbAccount {
+  id: string
+  /** 数据库账号名,如 dq_zhangsan_dr */
+  accountName: string
+  /** 所属用户 */
+  ownerName: string
+  ownerAccount: string
+  department: string
+  employeeNo: string
+  datasource: DataSourceKey
+  cluster: string
+  databases: string[]
+  privilege: DbPrivilegeLevel
+  state: DbAccountState
+  /** 密码最近重置时间 */
+  passwordUpdatedAt: string
+  /** 密码有效期(天),超出即强制重置 */
+  passwordValidDays: number
+  createdAt: string
+  expireAt: string
+  lastLoginAt: string | null
+  /** 关联访问 Key 数量 */
+  keyCount: number
+  source: DbAccountSource
+  /** 备注(锁定 / 停用原因等) */
+  remark?: string
+}
+
+/** 管理端操作审计记录 */
+export interface DbAdminAuditEntry {
+  id: string
+  ts: string
+  /** 操作类型:重置密码 / 修改权限 / 锁定账号 / 回收账号 ... */
+  action: string
+  /** 影响对象(账号名 / AccessKeyId) */
+  target: string
+  /** 影响对象所属用户 */
+  targetUser: string
+  operator: string
+  detail: string
+  level: 'info' | 'warn' | 'danger'
+}

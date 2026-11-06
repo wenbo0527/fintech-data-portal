@@ -781,6 +781,20 @@ const routes: RouteRecordRaw[] = [
         component: () => import('../pages/unified-query/export-tasks.vue'),
         meta: { title: '导出任务' }
       },
+      {
+        // 自助 DBA:按用户开通 Doris / Hive 权限 + 签发 Python / R 访问 Key
+        path: 'exploration/unified-query/db-account',
+        name: 'unified-query-db-account',
+        component: () => import('../pages/unified-query/db-account.vue'),
+        meta: { title: '数据库账号管理' }
+      },
+      {
+        // DBA 管理端:全库账号管理(重置密码 / 改权限 / 锁定 / 回收)+ 全库 Key + 审计
+        path: 'exploration/unified-query/db-account-admin',
+        name: 'unified-query-db-account-admin',
+        component: () => import('../pages/unified-query/db-account-admin.vue'),
+        meta: { title: '数据库账号管理(管理端)' }
+      },
       // ===== 指标中心 =====
       {
         path: 'exploration/metrics-center',

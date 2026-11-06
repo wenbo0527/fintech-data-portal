@@ -50,6 +50,7 @@ export default defineConfig({
       // T4 迁移期的显式残留：已搬入 dca 的页面其数据层依赖仍在 dfd，用 @/dfd-* 标出以便 grep 收敛
       { find: '@/dfd-api', replacement: path.resolve(DFD, 'api') },
       { find: '@/dfd-mock', replacement: path.resolve(DFD, 'mock') },
+      { find: '@/dfd-components', replacement: path.resolve(DFD, 'components') },
       { find: '@/shared', replacement: MONOREPO },
       // 跨子应用复用:dca 公共组件(data-community-app 解析 dfd-app 的 vue 时也需要这个 alias)
       { find: '@dca-components', replacement: path.resolve(__dirname, 'src/components-dca') },

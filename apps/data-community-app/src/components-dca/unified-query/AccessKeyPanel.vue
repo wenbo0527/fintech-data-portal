@@ -12,9 +12,8 @@
         allow-clear
         style="width: 220px"
       />
-      <a-select v-model="langFilter" :options="langFilterOptions" style="width: 140px" />
       <a-select v-model="statusFilter" :options="statusOptions" style="width: 130px" />
-      <a-button :disabled="!keyword && langFilter === 'all' && statusFilter === 'all'" @click="resetFilter">
+      <a-button :disabled="!keyword && statusFilter === 'all'" @click="resetFilter">
         重置
       </a-button>
       <a-button type="primary" style="margin-left: auto" @click="openCreate">
@@ -28,7 +27,7 @@
       :data="rows"
       row-key="id"
       size="medium"
-      :scroll="{ x: 1200 }"
+      :scroll="{ x: 1105 }"
       :pagination="{ pageSize: 8, showTotal: true, sizeCanChange: false }"
     >
       <template #keyName="{ record }">
@@ -53,11 +52,6 @@
           </a-tag>
         </a-space>
       </template>
-      <template #keyLang="{ record }">
-        <a-tag size="small" :color="langMeta(record.language).tag">
-          {{ langMeta(record.language).text }}
-        </a-tag>
-      </template>
       <template #keyStatus="{ record }">
         <a-tag size="small" :color="keyStatusMeta(record.status).tag">
           {{ keyStatusMeta(record.status).text }}
@@ -70,13 +64,13 @@
         </div>
       </template>
       <template #keyUsed="{ record }">
-        <div>{{ record.lastUsedAt ?? '从未使用' }}</div>
+        <div>{{ record.lastUsedAt ? record.lastUsedAt.slice(0, 16) : '从未使用' }}</div>
         <div class="cell-sub">累计调用 {{ record.callCount.toLocaleString() }} 次</div>
       </template>
       <template #keyOps="{ record }">
         <a-space size="mini" wrap>
           <a-link @click="openDetail(record)">代码示例</a-link>
-          <a-link @click="confirmReset(record)">重置密钥</a-link>
+          <a-link @click="openExtend(record)">续期</a-link>
           <a-link v-if="record.status !== 'expired'" @click="toggleKey(record)">
             {{ record.status === 'active' ? '停用' : '启用' }}
           </a-link>
@@ -96,14 +90,7 @@
     >
       <a-form :model="form" layout="vertical">
         <a-form-item label="Key 名称" required>
-          <a-input v-model="form.name" placeholder="如:风控建模-Python" allow-clear />
-        </a-form-item>
-        <a-form-item label="适用语言" required>
-          <a-radio-group v-model="form.language" type="button">
-            <a-radio value="python">Python</a-radio>
-            <a-radio value="r">R</a-radio>
-            <a-radio value="both">两者</a-radio>
-          </a-radio-group>
+          <a-input v-model="form.name" placeholder="如:风控建模-特征查询" allow-clear />
         </a-form-item>
         <a-form-item label="授权数据源(可多选)" required>
           <a-checkbox-group v-model="form.datasources">
@@ -134,10 +121,41 @@
       </a-form>
     </a-modal>
 
-    <!-- 密钥一次性展示 -->
+    <!-- 续期 -->
+    <a-modal
+      v-model:visible="extendVisible"
+      title="续期访问 Key"
+      ok-text="确定续期"
+      cancel-text="取消"
+      :width="480"
+      @ok="submitExtend"
+    >
+      <template v-if="extendTarget">
+        <a-descriptions :column="1" size="small" class="extend-info">
+          <a-descriptions-item label="Key 名称">{{ extendTarget.name }}</a-descriptions-item>
+          <a-descriptions-item label="当前有效期">
+            {{ extendTarget.expireAt }}
+            <span class="extend-info__hint">
+              {{ daysLeft(extendTarget.expireAt) >= 0 ? `剩余 ${daysLeft(extendTarget.expireAt)} 天` : '已过期' }}
+            </span>
+          </a-descriptions-item>
+        </a-descriptions>
+        <a-form layout="vertical">
+          <a-form-item label="续期时长" required>
+            <a-select v-model="extendDays" :options="KEY_EXPIRE_OPTIONS" />
+          </a-form-item>
+        </a-form>
+        <a-alert type="info" show-icon>
+          续期后有效期至 <b>{{ previewExpire }}</b>。
+          <template v-if="extendTarget.status === 'expired'">该 Key 已过期,续期后自动恢复启用。</template>
+        </a-alert>
+      </template>
+    </a-modal>
+
+    <!-- 一次性密钥展示 -->
     <a-modal
       v-model:visible="secretVisible"
-      :title="secretPayload?.mode === 'reset' ? '密钥已重置' : '访问 Key 创建成功'"
+      title="访问 Key 创建成功"
       :footer="false"
       :width="600"
       :mask-closable="false"
@@ -179,37 +197,35 @@
           </a-descriptions-item>
           <a-descriptions-item label="SecretKey">
             <code class="is-muted">{{ maskSecret(detail.secretKey) }}</code>
-            <a-link class="reset-link" @click="confirmReset(detail)">重置密钥</a-link>
+            <span class="secret-hint">仅创建时展示一次,遗失请删除后重建 Key</span>
           </a-descriptions-item>
-          <a-descriptions-item label="适用语言">{{ CLIENT_LANGUAGE_META[detail.language].text }}</a-descriptions-item>
           <a-descriptions-item label="授权数据源">
             <a-space size="mini">
               <a-tag v-for="ds in detail.datasources" :key="ds" size="small">{{ dsLabel(ds) }}</a-tag>
             </a-space>
           </a-descriptions-item>
           <a-descriptions-item label="状态">{{ ACCESS_KEY_STATUS_META[detail.status].text }}</a-descriptions-item>
-          <a-descriptions-item label="有效期">{{ detail.createdAt }} ~ {{ detail.expireAt }}</a-descriptions-item>
+          <a-descriptions-item label="有效期">
+            {{ detail.createdAt }} ~ {{ detail.expireAt }}
+            <a-link class="row-action" @click="openExtend(detail)">续期</a-link>
+          </a-descriptions-item>
           <a-descriptions-item label="最近使用">{{ detail.lastUsedAt ?? '从未使用' }}</a-descriptions-item>
           <a-descriptions-item label="用途">{{ detail.purpose }}</a-descriptions-item>
         </a-descriptions>
 
-        <div class="drawer-title">
-          连接示例
-          <a-radio-group v-model="codeLang" size="mini" type="button" class="code-lang">
-            <a-radio value="python">Python</a-radio>
-            <a-radio value="r">R</a-radio>
-          </a-radio-group>
-        </div>
-        <div class="code-block">
+        <div class="drawer-title">连接示例</div>
+        <div v-for="snippet in snippets" :key="snippet.lang" class="code-block">
           <div class="code-block__head">
-            <span>{{ CONNECTION_ENDPOINT[detail.datasources[0]].host }}</span>
-            <a-link @click="copyText(codeSnippet, '连接示例')"><icon-copy /> 复制代码</a-link>
+            <span class="code-block__lang">{{ snippet.lang }}</span>
+            <a-link @click="copyText(snippet.code, `${snippet.lang} 连接示例`)">
+              <icon-copy /> 复制代码
+            </a-link>
           </div>
-          <pre><code>{{ codeSnippet }}</code></pre>
+          <pre><code>{{ snippet.code }}</code></pre>
         </div>
         <div class="code-hint">
-          代码中的 &lt;SecretKey&gt; 需替换为创建 / 重置时保存的密钥;Doris 走 MySQL 协议,
-          Hive 走 HiveServer2。密钥泄露时应立即重置。
+          代码中的 &lt;SecretKey&gt; 需替换为创建 Key 时保存的密钥;Doris 走 MySQL 协议,
+          Hive 走 HiveServer2。密钥遗失或泄露时应删除并重建 Key。
         </div>
       </template>
     </a-drawer>
@@ -221,7 +237,7 @@
  * 统一查询 · 数据库账号管理 —— 访问 Key 面板
  *
  * 为 Python / R 客户端签发 AccessKeyId + SecretKey:
- * 创建 / 重置时一次性展示密钥,支持停用、启用、删除与连接示例复制。
+ * 创建时一次性展示密钥,支持续期、停用、启用、删除与连接示例复制。
  */
 import { computed, reactive, ref } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
@@ -231,14 +247,12 @@ import {
   ACCOUNT_PURPOSE_OPTIONS,
   buildPythonSnippet,
   buildRSnippet,
-  CLIENT_LANGUAGE_META,
-  CONNECTION_ENDPOINT,
+  extendExpireAt,
   KEY_EXPIRE_OPTIONS
 } from '@/mock/unified-query/db-account'
 import type {
   AccessKeyRecord,
   AccessKeyStatus,
-  ClientLanguage,
   DataSourceKey
 } from '@/mock/unified-query/types'
 import { copyText, daysLeft, dsLabel, maskSecret } from './db-account-utils'
@@ -246,21 +260,11 @@ import { copyText, daysLeft, dsLabel, maskSecret } from './db-account-utils'
 const store = useUqDbAccountStore()
 
 /* 表格插槽的 record 为 any,用带类型的取值函数避免 TS7053 */
-const langMeta = (language: ClientLanguage) => CLIENT_LANGUAGE_META[language]
 const keyStatusMeta = (status: AccessKeyStatus) => ACCESS_KEY_STATUS_META[status]
 
 /* ── 筛选 ─────────────────────────────── */
 const keyword = ref('')
-const langFilter = ref<'all' | ClientLanguage>('all')
 const statusFilter = ref<'all' | AccessKeyStatus>('all')
-
-const langFilterOptions = [
-  { label: '全部语言', value: 'all' },
-  ...(Object.keys(CLIENT_LANGUAGE_META) as ClientLanguage[]).map(l => ({
-    label: CLIENT_LANGUAGE_META[l].text,
-    value: l
-  }))
-]
 
 const statusOptions = [
   { label: '全部状态', value: 'all' },
@@ -273,7 +277,6 @@ const statusOptions = [
 const rows = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   return store.keys.filter(k => {
-    if (langFilter.value !== 'all' && k.language !== langFilter.value) return false
     if (statusFilter.value !== 'all' && k.status !== statusFilter.value) return false
     if (kw && !k.name.toLowerCase().includes(kw) && !k.accessKeyId.toLowerCase().includes(kw)) return false
     return true
@@ -282,7 +285,6 @@ const rows = computed(() => {
 
 function resetFilter() {
   keyword.value = ''
-  langFilter.value = 'all'
   statusFilter.value = 'all'
 }
 
@@ -290,7 +292,6 @@ const columns = [
   { title: '名称', dataIndex: 'name', slotName: 'keyName', width: 160 },
   { title: 'AccessKeyId', dataIndex: 'accessKeyId', slotName: 'keyAk', width: 200 },
   { title: '授权数据源', dataIndex: 'datasources', slotName: 'keyDs', width: 110 },
-  { title: '适用语言', dataIndex: 'language', slotName: 'keyLang', width: 95 },
   { title: '状态', dataIndex: 'status', slotName: 'keyStatus', width: 85 },
   { title: '有效期', dataIndex: 'expireAt', slotName: 'keyExpire', width: 145 },
   { title: '最近使用', dataIndex: 'lastUsedAt', slotName: 'keyUsed', width: 165 },
@@ -303,13 +304,11 @@ const purposeOptions = ACCOUNT_PURPOSE_OPTIONS.map(p => ({ label: p, value: p })
 const createVisible = ref(false)
 const form = reactive<{
   name: string
-  language: ClientLanguage
   datasources: DataSourceKey[]
   expireDays: number
   purpose: string
 }>({
   name: '',
-  language: 'python',
   datasources: [],
   expireDays: 90,
   purpose: ''
@@ -317,7 +316,6 @@ const form = reactive<{
 
 function openCreate() {
   form.name = ''
-  form.language = 'python'
   form.datasources = store.availableDatasources.slice(0, 1)
   form.expireDays = 90
   form.purpose = ''
@@ -330,27 +328,24 @@ function submitCreate() {
   if (!form.purpose.trim()) return Message.warning('请填写用途说明')
   const record = store.createKey({
     name: form.name.trim(),
-    language: form.language,
     datasources: [...form.datasources],
     expireDays: form.expireDays,
     purpose: form.purpose.trim()
   })
   createVisible.value = false
-  showSecret('create', record)
+  showSecret(record)
 }
 
 /* ── 密钥弹窗 ─────────────────────────── */
 const secretVisible = ref(false)
 const secretPayload = ref<{
-  mode: 'create' | 'reset'
   name: string
   accessKeyId: string
   secretKey: string
 } | null>(null)
 
-function showSecret(mode: 'create' | 'reset', record: AccessKeyRecord) {
+function showSecret(record: AccessKeyRecord) {
   secretPayload.value = {
-    mode,
     name: record.name,
     accessKeyId: record.accessKeyId,
     secretKey: record.secretKey
@@ -368,18 +363,31 @@ function toggleKey(record: AccessKeyRecord) {
   Message.success(`Key「${record.name}」已${updated.status === 'active' ? '启用' : '停用'}`)
 }
 
-function confirmReset(record: AccessKeyRecord) {
-  Modal.confirm({
-    title: '重置 SecretKey',
-    content: `重置后旧密钥立即失效,使用「${record.name}」的 Python / R 连接需要同步更新。确定继续?`,
-    okText: '确定重置',
-    cancelText: '取消',
-    onOk: () => {
-      const secret = store.resetSecret(record.id)
-      if (!secret) return Message.error('重置失败,Key 不存在')
-      showSecret('reset', record)
-    }
-  })
+/* ── 续期 ─────────────────────────────── */
+const extendVisible = ref(false)
+const extendTarget = ref<AccessKeyRecord | null>(null)
+const extendDays = ref(90)
+
+const previewExpire = computed(() =>
+  extendTarget.value ? extendExpireAt(extendTarget.value.expireAt, extendDays.value) : '—'
+)
+
+function openExtend(record: AccessKeyRecord) {
+  extendTarget.value = record
+  extendDays.value = 90
+  extendVisible.value = true
+}
+
+function submitExtend() {
+  const target = extendTarget.value
+  if (!target) return
+  const wasExpired = target.status === 'expired'
+  const updated = store.extendKey(target.id, extendDays.value)
+  if (!updated) return Message.error('续期失败,Key 不存在')
+  extendVisible.value = false
+  Message.success(
+    `Key「${target.name}」已续期至 ${updated.expireAt}${wasExpired ? ',并已恢复启用' : ''}`
+  )
 }
 
 function confirmDelete(record: AccessKeyRecord) {
@@ -400,18 +408,20 @@ function confirmDelete(record: AccessKeyRecord) {
 /* ── 详情 / 代码示例 ──────────────────── */
 const detailVisible = ref(false)
 const detail = ref<AccessKeyRecord | null>(null)
-const codeLang = ref<'python' | 'r'>('python')
 
 function openDetail(record: AccessKeyRecord) {
   detail.value = record
-  codeLang.value = record.language === 'r' ? 'r' : 'python'
   detailVisible.value = true
 }
 
-const codeSnippet = computed(() => {
+/** 连接示例:Python 与 R 同时展示,不再按 Key 区分语言 */
+const snippets = computed(() => {
   const key = detail.value
-  if (!key) return ''
-  return codeLang.value === 'python' ? buildPythonSnippet(key) : buildRSnippet(key)
+  if (!key) return []
+  return [
+    { lang: 'Python', code: buildPythonSnippet(key) },
+    { lang: 'R', code: buildRSnippet(key) }
+  ]
 })
 
 defineExpose({ openCreate })
@@ -513,7 +523,23 @@ defineExpose({ openCreate })
   text-align: right;
 }
 
-.reset-link {
+.secret-hint {
+  margin-left: 12px;
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
+.extend-info {
+  margin-bottom: 12px;
+
+  &__hint {
+    margin-left: 8px;
+    font-size: 12px;
+    color: var(--color-text-3);
+  }
+}
+
+.row-action {
   margin-left: 12px;
 }
 
@@ -526,15 +552,15 @@ defineExpose({ openCreate })
   font-weight: 600;
 }
 
-.code-lang {
-  margin-left: auto;
-}
-
 .code-block {
   border: 1px solid var(--color-border-2);
   border-radius: 6px;
   overflow: hidden;
   background: #1e1e1e;
+
+  & + & {
+    margin-top: 12px;
+  }
 
   &__head {
     display: flex;
@@ -553,6 +579,11 @@ defineExpose({ openCreate })
         color: #d0e0ff;
       }
     }
+  }
+
+  &__lang {
+    font-weight: 600;
+    color: #e5e6eb;
   }
 
   pre {

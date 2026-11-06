@@ -219,10 +219,9 @@ export const SEED_DB_ACCOUNTS: DbAccount[] = [
 export const SEED_ADMIN_EXTRA_KEYS: AccessKeyRecord[] = [
   {
     id: 'AK20260705-004',
-    name: '信贷风控报表-Python',
+    name: '信贷风控报表',
     accessKeyId: 'DCAK5E2B8D14A7C903',
     secretKey: 'dcs_71c4e0a95b2d38f6ca17e5b90d4f2a86',
-    language: 'python',
     datasources: ['doris'],
     status: 'active',
     createdAt: '2026-07-05 10:00:00',
@@ -234,10 +233,9 @@ export const SEED_ADMIN_EXTRA_KEYS: AccessKeyRecord[] = [
   },
   {
     id: 'AK20260820-005',
-    name: '数据质量巡检-R',
+    name: '数据质量巡检',
     accessKeyId: 'DCAK2A9F6C30E8B571',
     secretKey: 'dcs_08b3f5d19a6c47e2d8f01b7c4e59a3d2',
-    language: 'r',
     datasources: ['hive'],
     status: 'active',
     createdAt: '2026-08-20 09:15:00',
@@ -249,10 +247,9 @@ export const SEED_ADMIN_EXTRA_KEYS: AccessKeyRecord[] = [
   },
   {
     id: 'AK20260930-006',
-    name: '营销标签加工-Python',
+    name: '营销标签加工',
     accessKeyId: 'DCAK8D3E57B2F0C946',
     secretKey: 'dcs_5e9a2c7b10d84f63a7b0e29d51c8f4a7',
-    language: 'python',
     datasources: ['doris'],
     status: 'disabled',
     createdAt: '2026-09-30 14:40:00',

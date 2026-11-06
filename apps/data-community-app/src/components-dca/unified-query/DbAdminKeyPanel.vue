@@ -12,7 +12,6 @@
         allow-clear
         style="width: 240px"
       />
-      <a-select v-model="langFilter" :options="langOptions" style="width: 140px" />
       <a-select v-model="statusFilter" :options="statusOptions" style="width: 130px" />
       <a-button :disabled="!hasFilter" @click="resetFilter">重置</a-button>
       <span class="toolbar-hint">共 {{ rows.length }} 个 Key</span>
@@ -23,7 +22,7 @@
       :data="rows"
       row-key="id"
       size="medium"
-      :scroll="{ x: 1220 }"
+      :scroll="{ x: 1130 }"
       :pagination="{ pageSize: 8, showTotal: true, sizeCanChange: false }"
     >
       <template #colName="{ record }">
@@ -51,9 +50,6 @@
             :color="ds === 'doris' ? 'arcoblue' : 'orange'"
           >{{ dsLabel(ds) }}</a-tag>
         </a-space>
-      </template>
-      <template #colLang="{ record }">
-        <a-tag size="small" :color="langMeta(record.language).tag">{{ langMeta(record.language).text }}</a-tag>
       </template>
       <template #colStatus="{ record }">
         <a-tag size="small" :color="keyStatusMeta(record.status).tag">
@@ -109,7 +105,7 @@
             <code>{{ resetTarget.accessKeyId }}</code>
           </div>
           <div class="target-card__sub">
-            所属用户 {{ resetTarget.owner }} · 适用 {{ langMeta(resetTarget.language).text }}
+            所属用户 {{ resetTarget.owner }} · 已调用 {{ resetTarget.callCount }} 次
           </div>
         </div>
 
@@ -165,14 +161,12 @@ import { Message, Modal } from '@arco-design/web-vue'
 import DangerConfirmModal from './DangerConfirmModal.vue'
 import { useUqDbAccountAdminStore } from '@/stores-dca/unified-query/db-account-admin'
 import {
-  ACCESS_KEY_STATUS_META,
-  CLIENT_LANGUAGE_META
+  ACCESS_KEY_STATUS_META
 } from '@/mock/unified-query/db-account'
 import { ACCOUNT_OWNER } from '@/mock/unified-query/db-account'
 import type {
   AccessKeyRecord,
-  AccessKeyStatus,
-  ClientLanguage
+  AccessKeyStatus
 } from '@/mock/unified-query/types'
 import { copyText, dateOf, daysLeft, dsLabel, timeOf } from './db-account-utils'
 
@@ -181,15 +175,7 @@ const ownerName = ACCOUNT_OWNER.name
 
 /* ── 筛选 ─────────────────────────────── */
 const keyword = ref('')
-const langFilter = ref<'all' | ClientLanguage>('all')
 const statusFilter = ref<'all' | AccessKeyStatus>('all')
-
-const langOptions = [
-  { label: '全部语言', value: 'all' },
-  { label: 'Python', value: 'python' },
-  { label: 'R', value: 'r' },
-  { label: 'Python + R', value: 'both' }
-]
 
 const statusOptions = [
   { label: '全部状态', value: 'all' },
@@ -199,19 +185,17 @@ const statusOptions = [
 ]
 
 const hasFilter = computed(
-  () => !!keyword.value || langFilter.value !== 'all' || statusFilter.value !== 'all'
+  () => !!keyword.value || statusFilter.value !== 'all'
 )
 
 function resetFilter() {
   keyword.value = ''
-  langFilter.value = 'all'
   statusFilter.value = 'all'
 }
 
 const rows = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   return admin.keys.filter(k => {
-    if (langFilter.value !== 'all' && k.language !== langFilter.value) return false
     if (statusFilter.value !== 'all' && k.status !== statusFilter.value) return false
     if (!kw) return true
     return [k.name, k.accessKeyId, k.owner].some(field => field.toLowerCase().includes(kw))
@@ -219,22 +203,17 @@ const rows = computed(() => {
 })
 
 const columns = [
-  { title: '名称', dataIndex: 'name', slotName: 'colName', width: 165 },
+  { title: '名称', dataIndex: 'name', slotName: 'colName', width: 160 },
   { title: '所属用户', dataIndex: 'owner', slotName: 'colOwner', width: 100 },
-  { title: 'AccessKeyId', dataIndex: 'accessKeyId', slotName: 'colAk', width: 195 },
+  { title: 'AccessKeyId', dataIndex: 'accessKeyId', slotName: 'colAk', width: 215 },
   { title: '授权数据源', dataIndex: 'datasources', slotName: 'colDs', width: 105 },
-  { title: '适用语言', dataIndex: 'language', slotName: 'colLang', width: 90 },
   { title: '状态', dataIndex: 'status', slotName: 'colStatus', width: 85 },
-  { title: '有效期', dataIndex: 'expireAt', slotName: 'colExpire', width: 140 },
+  { title: '有效期', dataIndex: 'expireAt', slotName: 'colExpire', width: 130 },
   { title: '最近使用', dataIndex: 'lastUsedAt', slotName: 'colUsed', width: 145 },
-  { title: '操作', dataIndex: 'operations', slotName: 'colOps', width: 195 }
+  { title: '操作', dataIndex: 'operations', slotName: 'colOps', width: 190 }
 ]
 
 /* ── 展示辅助 ─────────────────────────── */
-function langMeta(language: ClientLanguage) {
-  return CLIENT_LANGUAGE_META[language]
-}
-
 function keyStatusMeta(status: AccessKeyStatus) {
   return ACCESS_KEY_STATUS_META[status]
 }
@@ -319,7 +298,7 @@ const revokeItems = computed(() => {
     `Key 名称:${target.name}`,
     `AccessKeyId:${target.accessKeyId}`,
     `隶属用户:${target.owner}`,
-    `适用语言:${langMeta(target.language).text} · 已调用 ${target.callCount} 次`,
+    `已调用 ${target.callCount.toLocaleString()} 次 · 授权 ${target.datasources.map(d => dsLabel(d)).join('、')}`,
     '历史上调用记录保留,但该 Key 无法恢复使用'
   ]
 })

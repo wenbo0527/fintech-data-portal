@@ -11,7 +11,6 @@
 import type {
   AccessKeyRecord,
   AccessKeyStatus,
-  ClientLanguage,
   DataSourceKey,
   DbAccountGrant,
   DbAccountStatus,
@@ -72,13 +71,6 @@ export const ACCESS_KEY_STATUS_META: Record<AccessKeyStatus, { text: string; tag
   expired: { text: '已过期', tag: 'red' }
 }
 
-/** 访问 Key 适用语言展示口径 */
-export const CLIENT_LANGUAGE_META: Record<ClientLanguage, { text: string; tag: string }> = {
-  python: { text: 'Python', tag: 'arcoblue' },
-  r: { text: 'R', tag: 'purple' },
-  both: { text: 'Python + R', tag: 'cyan' }
-}
-
 /** Key 有效期选项(天) */
 export const KEY_EXPIRE_OPTIONS = [
   { label: '30 天(临时分析)', value: 30 },
@@ -86,6 +78,20 @@ export const KEY_EXPIRE_OPTIONS = [
   { label: '180 天', value: 180 },
   { label: '365 天', value: 365 }
 ]
+
+/**
+ * 续期后的到期日:从「原到期日」与「今天」中较晚者起算,
+ * 避免已过期 Key 续期后仍早于今天。返回 YYYY-MM-DD。
+ */
+export function extendExpireAt(expireAt: string, days: number): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const base = new Date(`${expireAt}T00:00:00`)
+  const from = base.getTime() > today.getTime() ? base : today
+  from.setDate(from.getDate() + days)
+  return `${from.getFullYear()}-${pad(from.getMonth() + 1)}-${pad(from.getDate())}`
+}
 
 /** 账号申请有效期选项(月) */
 export const GRANT_VALID_MONTHS_OPTIONS = [3, 6, 12, 24]
@@ -189,10 +195,9 @@ export const SEED_DB_ACCOUNT_GRANTS: DbAccountGrant[] = [
 export const SEED_ACCESS_KEYS: AccessKeyRecord[] = [
   {
     id: 'AK20260912-001',
-    name: '风控建模-Python',
+    name: '风控建模-特征查询',
     accessKeyId: 'DCAK3F8A2C71D9E4B65',
     secretKey: 'dcs_9f3c71ba2e5d48c6a0b7f8421d95e3cc',
-    language: 'python',
     datasources: ['doris'],
     status: 'active',
     createdAt: '2026-09-12 10:30:00',
@@ -204,17 +209,16 @@ export const SEED_ACCESS_KEYS: AccessKeyRecord[] = [
   },
   {
     id: 'AK20260601-002',
-    name: '周报取数-R',
+    name: '周报取数',
     accessKeyId: 'DCAK7B1E5A90C2F834',
     secretKey: 'dcs_4a8e02c7b96d51f3e7c40a18b6d2f9a5',
-    language: 'r',
     datasources: ['doris', 'hive'],
     status: 'active',
     createdAt: '2026-06-01 09:00:00',
     expireAt: '2027-06-01',
     lastUsedAt: '2026-10-28 16:20:00',
     callCount: 342,
-    purpose: '周报指标核算(R 脚本)',
+    purpose: '周报指标核算',
     owner: '张三'
   },
   {
@@ -222,7 +226,6 @@ export const SEED_ACCESS_KEYS: AccessKeyRecord[] = [
     name: '临时分析-已停用',
     accessKeyId: 'DCAK9C4D2F66B1A7E308',
     secretKey: 'dcs_2b6d90f4c1a83e75b0d9528ce4a17f36',
-    language: 'both',
     datasources: ['hive'],
     status: 'disabled',
     createdAt: '2026-08-15 14:20:00',
@@ -263,7 +266,7 @@ export function buildPythonSnippet(record: AccessKeyRecord): string {
   if (useHive) lines.push('from pyhive import hive             # Hive:HiveServer2')
   lines.push('')
   lines.push(`ACCESS_KEY = "${record.accessKeyId}"`)
-  lines.push('SECRET_KEY = "<SecretKey>"          # 创建 / 重置时返回的密钥')
+  lines.push('SECRET_KEY = "<SecretKey>"          # 创建 Key 时返回的密钥')
   if (useDoris) {
     const d = CONNECTION_ENDPOINT.doris
     lines.push('')
@@ -296,7 +299,7 @@ export function buildRSnippet(record: AccessKeyRecord): string {
   if (useHive) lines.push('library(odbc)                       # Hive:HiveServer2 ODBC')
   lines.push('')
   lines.push(`ACCESS_KEY <- "${record.accessKeyId}"`)
-  lines.push('SECRET_KEY <- "<SecretKey>"         # 创建 / 重置时返回的密钥')
+  lines.push('SECRET_KEY <- "<SecretKey>"         # 创建 Key 时返回的密钥')
   if (useDoris) {
     const d = CONNECTION_ENDPOINT.doris
     lines.push('')

@@ -3,7 +3,7 @@
  *
  * 管理两类自助申请:
  *   1. 数据源权限(Doris / Hive)— 提交后进入审批中,约 2 秒模拟审批通过
- *   2. 访问 Key(Python / R)— 创建 / 重置时返回一次性明文 SecretKey
+ *   2. 访问 Key(Python / R)— 创建时返回一次性明文 SecretKey,可续期
  *
  * 全部为前端 Mock,不发起任何 HTTP 请求。
  */
@@ -11,6 +11,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import {
   ACCOUNT_OWNER,
+  extendExpireAt,
   GRANT_SCOPE_OPTIONS,
   randomAccessKeyId,
   randomSecretKey,
@@ -19,7 +20,6 @@ import {
 } from '@/mock/unified-query/db-account'
 import type {
   AccessKeyRecord,
-  ClientLanguage,
   DataSourceKey,
   DbAccountGrant,
   DbPrivilegeLevel
@@ -210,7 +210,6 @@ export const useUqDbAccountStore = defineStore('uqDbAccount', () => {
   /** 新建访问 Key,返回含明文 SecretKey 的记录(仅此次可见) */
   function createKey(payload: {
     name: string
-    language: ClientLanguage
     datasources: DataSourceKey[]
     expireDays: number
     purpose: string
@@ -221,7 +220,6 @@ export const useUqDbAccountStore = defineStore('uqDbAccount', () => {
       name: payload.name,
       accessKeyId: randomAccessKeyId(),
       secretKey: randomSecretKey(),
-      language: payload.language,
       datasources: [...payload.datasources],
       status: 'active',
       createdAt: stamp,
@@ -243,13 +241,13 @@ export const useUqDbAccountStore = defineStore('uqDbAccount', () => {
     return key
   }
 
-  /** 重置 SecretKey,返回新密钥(仅此次可见) */
-  function resetSecret(id: string): string | null {
+  /** 续期:从「原到期日 / 今天」较晚者起算,已过期的 Key 续期后恢复启用 */
+  function extendKey(id: string, days: number): AccessKeyRecord | null {
     const key = getKeyById(id)
     if (!key) return null
-    key.secretKey = randomSecretKey()
-    key.status = 'active'
-    return key.secretKey
+    key.expireAt = extendExpireAt(key.expireAt, days)
+    if (key.status === 'expired') key.status = 'active'
+    return key
   }
 
   /** 删除访问 Key */
@@ -275,7 +273,7 @@ export const useUqDbAccountStore = defineStore('uqDbAccount', () => {
     revokeGrant,
     createKey,
     toggleKey,
-    resetSecret,
+    extendKey,
     deleteKey
   }
 })

@@ -343,9 +343,6 @@ export type DbPrivilegeLevel = 'read' | 'write' | 'admin'
 /** 访问 Key 状态:启用 / 停用 / 已过期 */
 export type AccessKeyStatus = 'active' | 'disabled' | 'expired'
 
-/** 访问 Key 适用语言:Python / R / 两者 */
-export type ClientLanguage = 'python' | 'r' | 'both'
-
 /** 账号申请流转记录(详情抽屉时间线) */
 export interface DbAccountHistory {
   ts: string
@@ -388,12 +385,11 @@ export interface DbAccountGrant {
 export interface AccessKeyRecord {
   /** 记录编号,如 AK20260912-001 */
   id: string
-  /** 用户自定义名称,如「风控建模-Python」 */
+  /** 用户自定义名称,如「风控建模-特征查询」 */
   name: string
   accessKeyId: string
   /** 完整 SecretKey,仅在创建 / 重置时明文展示 */
   secretKey: string
-  language: ClientLanguage
   /** 授权数据源 */
   datasources: DataSourceKey[]
   status: AccessKeyStatus

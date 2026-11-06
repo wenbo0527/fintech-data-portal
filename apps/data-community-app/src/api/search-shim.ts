@@ -12,7 +12,7 @@
 import { TableCatalogStore, type LogicalTable } from '@/mock-dca/shared/table-catalog-store'
 import { BusinessConceptStore } from '@/mock-dca/shared/business-concept-store'
 import { mockMetrics } from '@/mock-dca/listing-store'
-import { externalResources } from '@/mock/external-resources'
+import { externalResources } from '@/mock-dca/external-resources'
 
 const mockDelay = <T>(data: T, ms = 120): Promise<T> =>
   new Promise(resolve => setTimeout(() => resolve(data), ms))

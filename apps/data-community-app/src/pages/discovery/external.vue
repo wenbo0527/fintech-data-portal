@@ -104,7 +104,7 @@ import { Message } from '@arco-design/web-vue'
 import { IconSearch, IconPlus } from '@arco-design/web-vue/es/icon'
 import MissingTicketModal from '@/components-dca/common/MissingTicketModal.vue'
 import { useMissingTicket } from '@/composables/useMissingTicket'
-import { externalResources } from '@/mock/external-resources'
+import { externalResources } from '@/mock-dca/external-resources'
 
 const { showMissingTicketModal, ticketContext, showMissingTicket, handleMissingTicketConfirm } = useMissingTicket()
 

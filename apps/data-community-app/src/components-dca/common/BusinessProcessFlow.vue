@@ -275,9 +275,9 @@ import {
   IconClockCircle
 } from '@arco-design/web-vue/es/icon'
 import { Message } from '@arco-design/web-vue';
-import { processSteps, tableColumns } from '@/mock/businessProcessData'
+import { processSteps, tableColumns } from '@/mock-dca/businessProcessData'
 import BusinessProcessDrawer from '@/components-dca/business-process/BusinessProcessDrawer.vue'
-import { domainTree, buildCascaderOptions, findDomainNameById, findScenarioNameById } from '@/mock/businessModuleData'
+import { domainTree, buildCascaderOptions, findDomainNameById, findScenarioNameById } from '@/mock-dca/businessModuleData'
 
 interface TableField {
   name: string

@@ -874,7 +874,7 @@ import { Message } from '@arco-design/web-vue'
 import type { FieldRule, FormInstance, TableColumnData } from '@arco-design/web-vue'
 import { useDraggableColumns } from '@/composables/useDraggableColumns'
 // 血缘图组件：与「血缘分析」页（dfd-pages/lineage）复用同一 X6 图实现
-import LineageGraph from '@/dfd-pages/lineage/components/LineageGraph.vue'
+import LineageGraph from '../../lineage/components/LineageGraph.vue'
 import {
   TableCatalogStore,
   STATUS_LABELS,

@@ -85,7 +85,7 @@ import {
   createNodeData as createMockNodeData,
   getDbName,
   getOwner
-} from '@/dfd-mock/shared/lineage-data'
+} from '@/mock-dca/shared/lineage-data'
 
 const props = defineProps({
   tableName: {

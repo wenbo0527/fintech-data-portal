@@ -87,6 +87,9 @@ export interface TableItem {
   type: 'dim' | 'fact' | 'dws' | 'dwd' | 'ads' | 'ods';
   assetType: 'Asset' | 'Resource'; // 新增：资产类型打标
   category: 'ODS' | 'DWD' | 'DWS' | 'ADS' | 'DIM';
+  sourceType?: 'hive' | 'business'; // 数据来源类型：hive=数据仓库表, business=业务系统源表
+  sourceSystem?: string; // 业务系统名称（sourceType=business 时）
+  dbType?: string; // 数据库类型（mysql/oracle/pg/doris/clickhouse 等）
   domain: string;
   updateFrequency: string;
   owner: string;
@@ -978,14 +981,186 @@ export const mockTables: TableItem[] = [
   }
 ];
 
+// ========== 业务系统源表（ODS 层，直接来自业务系统数据库）==========
+const businessSourceTables: TableItem[] = [
+  {
+    name: 'ods_core_trade_order', type: 'ods', assetType: 'Resource', sourceType: 'business', sourceSystem: '核心交易系统', dbType: 'mysql',
+    category: 'ODS', domain: '交易域', updateFrequency: '实时', owner: '李开发',
+    description: '核心交易系统交易订单明细表，记录每笔交易的核心信息。来源：核心交易系统(MySQL)。',
+    recordCount: 5800000, storageSize: '12GB', partitionKeys: ['create_date'], indexKeys: ['order_id', 'user_id'],
+    createdTime: '2024-01-01T00:00:00Z', lastModified: '2025-01-27T10:30:00Z',
+    tags: ['交易', '订单', '业务源表', 'MySQL'], qualityScore: 92,
+    fields: [
+      { name: 'order_id', type: 'string', description: '订单ID', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: true, primaryKey: true }, tags: ['主键'], lastUpdated: '2025-01-27T10:30:00Z' },
+      { name: 'user_id', type: 'string', description: '用户ID', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['用户标识'], lastUpdated: '2025-01-27T10:30:00Z' },
+      { name: 'amount', type: 'decimal', description: '交易金额', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.CONFIDENTIAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['金额'], lastUpdated: '2025-01-27T10:30:00Z' },
+      { name: 'order_status', type: 'string', description: '订单状态', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['状态'], lastUpdated: '2025-01-27T10:30:00Z' },
+      { name: 'create_time', type: 'timestamp', description: '创建时间', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.NORMAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['时间戳'], lastUpdated: '2025-01-27T10:30:00Z' }
+    ]
+  },
+  {
+    name: 'ods_core_trade_account', type: 'ods', assetType: 'Resource', sourceType: 'business', sourceSystem: '核心交易系统', dbType: 'mysql',
+    category: 'ODS', domain: '交易域', updateFrequency: '日更新', owner: '李开发',
+    description: '核心交易系统账户信息表，存储用户资金账户基础信息。来源：核心交易系统(MySQL)。',
+    recordCount: 320000, storageSize: '2.5GB', partitionKeys: [], indexKeys: ['account_id', 'user_id'],
+    createdTime: '2024-01-01T00:00:00Z', lastModified: '2025-01-27T10:30:00Z',
+    tags: ['账户', '业务源表', 'MySQL'], qualityScore: 95,
+    fields: [
+      { name: 'account_id', type: 'string', description: '账户ID', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: true, primaryKey: true }, tags: ['主键'], lastUpdated: '2025-01-27T10:30:00Z' },
+      { name: 'user_id', type: 'string', description: '用户ID', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['用户标识'], lastUpdated: '2025-01-27T10:30:00Z' },
+      { name: 'balance', type: 'decimal', description: '账户余额', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.CONFIDENTIAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['金额'], lastUpdated: '2025-01-27T10:30:00Z' },
+      { name: 'account_status', type: 'string', description: '账户状态', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['状态'], lastUpdated: '2025-01-27T10:30:00Z' }
+    ]
+  },
+  {
+    name: 'ods_risk_decision_log', type: 'ods', assetType: 'Resource', sourceType: 'business', sourceSystem: '风控决策引擎', dbType: 'doris',
+    category: 'ODS', domain: '风控域', updateFrequency: '实时', owner: '张风控',
+    description: '风控决策引擎决策日志表，记录每次风控规则引擎的执行结果。来源：风控决策引擎(Doris)。',
+    recordCount: 12000000, storageSize: '25GB', partitionKeys: ['decision_date'], indexKeys: ['decision_id', 'user_id'],
+    createdTime: '2024-01-01T00:00:00Z', lastModified: '2025-01-27T09:15:00Z',
+    tags: ['风控', '决策', '业务源表', 'Doris'], qualityScore: 88,
+    fields: [
+      { name: 'decision_id', type: 'string', description: '决策ID', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: true, primaryKey: true }, tags: ['主键'], lastUpdated: '2025-01-27T09:15:00Z' },
+      { name: 'user_id', type: 'string', description: '用户ID', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['用户标识'], lastUpdated: '2025-01-27T09:15:00Z' },
+      { name: 'decision_result', type: 'string', description: '决策结果(通过/拒绝/人工)', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['风控结果'], lastUpdated: '2025-01-27T09:15:00Z' },
+      { name: 'rule_hit', type: 'string', description: '命中规则', qualityLevel: DataQualityLevel.MEDIUM, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: true, unique: false, primaryKey: false }, tags: ['规则'], lastUpdated: '2025-01-27T09:15:00Z' }
+    ]
+  },
+  {
+    name: 'ods_risk_rule_config', type: 'ods', assetType: 'Resource', sourceType: 'business', sourceSystem: '风控决策引擎', dbType: 'doris',
+    category: 'ODS', domain: '风控域', updateFrequency: '日更新', owner: '张风控',
+    description: '风控规则配置表，存储风控引擎的规则定义和参数。来源：风控决策引擎(Doris)。',
+    recordCount: 850, storageSize: '50MB', partitionKeys: [], indexKeys: ['rule_id'],
+    createdTime: '2024-01-01T00:00:00Z', lastModified: '2025-01-27T09:15:00Z',
+    tags: ['风控', '规则', '配置', '业务源表', 'Doris'], qualityScore: 90,
+    fields: [
+      { name: 'rule_id', type: 'string', description: '规则ID', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: true, primaryKey: true }, tags: ['主键'], lastUpdated: '2025-01-27T09:15:00Z' },
+      { name: 'rule_name', type: 'string', description: '规则名称', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['名称'], lastUpdated: '2025-01-27T09:15:00Z' },
+      { name: 'rule_status', type: 'string', description: '规则状态(启用/停用)', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['状态'], lastUpdated: '2025-01-27T09:15:00Z' }
+    ]
+  },
+  {
+    name: 'ods_user_info', type: 'ods', assetType: 'Resource', sourceType: 'business', sourceSystem: '用户中心', dbType: 'pg',
+    category: 'ODS', domain: '用户域', updateFrequency: '实时', owner: '王运营',
+    description: '用户中心用户信息表，存储用户注册基本信息。来源：用户中心(PostgreSQL)。',
+    recordCount: 2100000, storageSize: '3.5GB', partitionKeys: [], indexKeys: ['user_id', 'mobile'],
+    createdTime: '2024-01-01T00:00:00Z', lastModified: '2025-01-27T11:20:00Z',
+    tags: ['用户', '信息', '业务源表', 'PostgreSQL'], qualityScore: 96,
+    fields: [
+      { name: 'user_id', type: 'string', description: '用户ID', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: true, primaryKey: true }, tags: ['主键'], lastUpdated: '2025-01-27T11:20:00Z' },
+      { name: 'mobile', type: 'string', description: '手机号', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.CONFIDENTIAL, constraints: { nullable: false, unique: true, primaryKey: false }, tags: ['联系方式', '敏感'], lastUpdated: '2025-01-27T11:20:00Z' },
+      { name: 'nickname', type: 'string', description: '昵称', qualityLevel: DataQualityLevel.MEDIUM, businessImportance: BusinessImportance.NORMAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: true, unique: false, primaryKey: false }, tags: ['昵称'], lastUpdated: '2025-01-27T11:20:00Z' },
+      { name: 'register_time', type: 'timestamp', description: '注册时间', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['时间'], lastUpdated: '2025-01-27T11:20:00Z' }
+    ]
+  },
+  {
+    name: 'ods_user_login_log', type: 'ods', assetType: 'Resource', sourceType: 'business', sourceSystem: '用户中心', dbType: 'pg',
+    category: 'ODS', domain: '用户域', updateFrequency: '实时', owner: '王运营',
+    description: '用户中心登录日志表，记录用户每次登录的行为数据。来源：用户中心(PostgreSQL)。',
+    recordCount: 45000000, storageSize: '18GB', partitionKeys: ['login_date'], indexKeys: ['log_id', 'user_id'],
+    createdTime: '2024-01-01T00:00:00Z', lastModified: '2025-01-27T11:20:00Z',
+    tags: ['用户', '登录', '日志', '业务源表', 'PostgreSQL'], qualityScore: 85,
+    fields: [
+      { name: 'log_id', type: 'string', description: '日志ID', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: true, primaryKey: true }, tags: ['主键'], lastUpdated: '2025-01-27T11:20:00Z' },
+      { name: 'user_id', type: 'string', description: '用户ID', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['用户标识'], lastUpdated: '2025-01-27T11:20:00Z' },
+      { name: 'login_time', type: 'timestamp', description: '登录时间', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['时间'], lastUpdated: '2025-01-27T11:20:00Z' },
+      { name: 'ip_address', type: 'string', description: '登录IP', qualityLevel: DataQualityLevel.MEDIUM, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.CONFIDENTIAL, constraints: { nullable: true, unique: false, primaryKey: false }, tags: ['IP', '风控因子'], lastUpdated: '2025-01-27T11:20:00Z' }
+    ]
+  },
+  {
+    name: 'ods_mkt_campaign', type: 'ods', assetType: 'Resource', sourceType: 'business', sourceSystem: '营销活动平台', dbType: 'hive',
+    category: 'ODS', domain: '营销域', updateFrequency: '日更新', owner: '陈营销',
+    description: '营销活动平台活动表，记录营销活动的配置和执行信息。来源：营销活动平台(Hive)。',
+    recordCount: 8500, storageSize: '500MB', partitionKeys: ['campaign_date'], indexKeys: ['campaign_id'],
+    createdTime: '2024-01-01T00:00:00Z', lastModified: '2025-01-27T08:45:00Z',
+    tags: ['营销', '活动', '业务源表', 'Hive'], qualityScore: 87,
+    fields: [
+      { name: 'campaign_id', type: 'string', description: '活动ID', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: true, primaryKey: true }, tags: ['主键'], lastUpdated: '2025-01-27T08:45:00Z' },
+      { name: 'campaign_name', type: 'string', description: '活动名称', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['名称'], lastUpdated: '2025-01-27T08:45:00Z' },
+      { name: 'start_time', type: 'timestamp', description: '开始时间', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['时间'], lastUpdated: '2025-01-27T08:45:00Z' },
+      { name: 'end_time', type: 'timestamp', description: '结束时间', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['时间'], lastUpdated: '2025-01-27T08:45:00Z' }
+    ]
+  },
+  {
+    name: 'ods_mkt_coupon', type: 'ods', assetType: 'Resource', sourceType: 'business', sourceSystem: '营销活动平台', dbType: 'hive',
+    category: 'ODS', domain: '营销域', updateFrequency: '日更新', owner: '陈营销',
+    description: '营销活动平台优惠券表，记录优惠券发放和使用信息。来源：营销活动平台(Hive)。',
+    recordCount: 3200000, storageSize: '4GB', partitionKeys: ['issue_date'], indexKeys: ['coupon_id', 'user_id'],
+    createdTime: '2024-01-01T00:00:00Z', lastModified: '2025-01-27T08:45:00Z',
+    tags: ['营销', '优惠券', '业务源表', 'Hive'], qualityScore: 89,
+    fields: [
+      { name: 'coupon_id', type: 'string', description: '优惠券ID', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: true, primaryKey: true }, tags: ['主键'], lastUpdated: '2025-01-27T08:45:00Z' },
+      { name: 'user_id', type: 'string', description: '用户ID', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['用户标识'], lastUpdated: '2025-01-27T08:45:00Z' },
+      { name: 'coupon_value', type: 'decimal', description: '优惠券面值', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['金额'], lastUpdated: '2025-01-27T08:45:00Z' },
+      { name: 'use_status', type: 'string', description: '使用状态', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['状态'], lastUpdated: '2025-01-27T08:45:00Z' }
+    ]
+  },
+  {
+    name: 'ods_fin_voucher', type: 'ods', assetType: 'Resource', sourceType: 'business', sourceSystem: '财务核算系统', dbType: 'oracle',
+    category: 'ODS', domain: '财务域', updateFrequency: '日更新', owner: '吴财务',
+    description: '财务核算系统凭证表，记录会计凭证信息。来源：财务核算系统(Oracle)。',
+    recordCount: 1850000, storageSize: '6GB', partitionKeys: ['voucher_date'], indexKeys: ['voucher_id'],
+    createdTime: '2024-01-01T00:00:00Z', lastModified: '2025-01-26T17:30:00Z',
+    tags: ['财务', '凭证', '业务源表', 'Oracle'], qualityScore: 94,
+    fields: [
+      { name: 'voucher_id', type: 'string', description: '凭证ID', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: true, primaryKey: true }, tags: ['主键'], lastUpdated: '2025-01-26T17:30:00Z' },
+      { name: 'voucher_no', type: 'string', description: '凭证编号', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: true, primaryKey: false }, tags: ['编号'], lastUpdated: '2025-01-26T17:30:00Z' },
+      { name: 'amount', type: 'decimal', description: '金额', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.CONFIDENTIAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['金额'], lastUpdated: '2025-01-26T17:30:00Z' },
+      { name: 'voucher_date', type: 'date', description: '凭证日期', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['日期'], lastUpdated: '2025-01-26T17:30:00Z' }
+    ]
+  },
+  {
+    name: 'ods_fin_accounting', type: 'ods', assetType: 'Resource', sourceType: 'business', sourceSystem: '财务核算系统', dbType: 'oracle',
+    category: 'ODS', domain: '财务域', updateFrequency: '月更新', owner: '吴财务',
+    description: '财务核算系统会计科目表，存储科目体系配置。来源：财务核算系统(Oracle)。',
+    recordCount: 3200, storageSize: '20MB', partitionKeys: [], indexKeys: ['subject_code'],
+    createdTime: '2024-01-01T00:00:00Z', lastModified: '2025-01-26T17:30:00Z',
+    tags: ['财务', '会计', '科目', '业务源表', 'Oracle'], qualityScore: 97,
+    fields: [
+      { name: 'subject_code', type: 'string', description: '科目编码', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: true, primaryKey: true }, tags: ['主键', '编码'], lastUpdated: '2025-01-26T17:30:00Z' },
+      { name: 'subject_name', type: 'string', description: '科目名称', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['名称'], lastUpdated: '2025-01-26T17:30:00Z' },
+      { name: 'parent_code', type: 'string', description: '上级科目编码', qualityLevel: DataQualityLevel.MEDIUM, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: true, unique: false, primaryKey: false }, tags: ['层级'], lastUpdated: '2025-01-26T17:30:00Z' }
+    ]
+  },
+  {
+    name: 'ods_olap_event_log', type: 'ods', assetType: 'Resource', sourceType: 'business', sourceSystem: '数据分析平台', dbType: 'clickhouse',
+    category: 'ODS', domain: '营销域', updateFrequency: '实时', owner: '王运营',
+    description: '数据分析平台事件日志表，记录用户行为埋点事件。来源：数据分析平台(ClickHouse)。',
+    recordCount: 88000000, storageSize: '45GB', partitionKeys: ['event_date'], indexKeys: ['event_id', 'user_id'],
+    createdTime: '2024-01-01T00:00:00Z', lastModified: '2025-01-27T14:15:00Z',
+    tags: ['行为', '事件', '日志', '业务源表', 'ClickHouse'], qualityScore: 82,
+    fields: [
+      { name: 'event_id', type: 'string', description: '事件ID', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: true, primaryKey: true }, tags: ['主键'], lastUpdated: '2025-01-27T14:15:00Z' },
+      { name: 'user_id', type: 'string', description: '用户ID', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['用户标识'], lastUpdated: '2025-01-27T14:15:00Z' },
+      { name: 'event_name', type: 'string', description: '事件名称', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['事件'], lastUpdated: '2025-01-27T14:15:00Z' },
+      { name: 'event_time', type: 'timestamp', description: '事件时间', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['时间'], lastUpdated: '2025-01-27T14:15:00Z' }
+    ]
+  },
+  {
+    name: 'ods_olap_user_behavior', type: 'ods', assetType: 'Resource', sourceType: 'business', sourceSystem: '数据分析平台', dbType: 'clickhouse',
+    category: 'ODS', domain: '用户域', updateFrequency: '日更新', owner: '王运营',
+    description: '数据分析平台用户行为汇总表，按用户维度聚合行为数据。来源：数据分析平台(ClickHouse)。',
+    recordCount: 2100000, storageSize: '3.2GB', partitionKeys: ['stat_date'], indexKeys: ['user_id'],
+    createdTime: '2024-01-01T00:00:00Z', lastModified: '2025-01-27T14:15:00Z',
+    tags: ['用户', '行为', '业务源表', 'ClickHouse'], qualityScore: 86,
+    fields: [
+      { name: 'user_id', type: 'string', description: '用户ID', qualityLevel: DataQualityLevel.HIGH, businessImportance: BusinessImportance.CRITICAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: true, primaryKey: true }, tags: ['主键'], lastUpdated: '2025-01-27T14:15:00Z' },
+      { name: 'active_days', type: 'int', description: '活跃天数', qualityLevel: DataQualityLevel.MEDIUM, businessImportance: BusinessImportance.IMPORTANT, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['活跃度'], lastUpdated: '2025-01-27T14:15:00Z' },
+      { name: 'page_views', type: 'int', description: '页面浏览数', qualityLevel: DataQualityLevel.MEDIUM, businessImportance: BusinessImportance.NORMAL, sensitivity: DataSensitivity.INTERNAL, constraints: { nullable: false, unique: false, primaryKey: false }, tags: ['浏览'], lastUpdated: '2025-01-27T14:15:00Z' }
+    ]
+  }
+];
+
 // 统一的元数据 Store 供增删改查
 export const MetadataStore = {
   getTables() {
-    return mockTables;
+    // hive 表补充 sourceType 标记，合并业务系统源表
+    const hiveTables = mockTables.map(t => ({ ...t, sourceType: 'hive' as const }));
+    return [...hiveTables, ...businessSourceTables];
   },
 
   getTableByName(name: string) {
-    return mockTables.find(t => t.name === name);
+    return this.getTables().find(t => t.name === name);
   },
 
   addTable(table: TableItem) {

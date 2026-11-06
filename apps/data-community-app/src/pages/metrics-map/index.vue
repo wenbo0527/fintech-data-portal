@@ -117,7 +117,7 @@ import BatchImportModal from '@/components/modals/BatchImportModal.vue'
 import BusinessProcessFlow from '@/components-dca/common/BusinessProcessFlow.vue'
 import { METRIC_TYPE_LABELS, REGULATORY_CATEGORY_LABELS, MetricType, type MetricItem } from '@/types/metrics'
 import { useRouter } from 'vue-router'
-import MissingTicketModal from '@/pages/search/MissingTicketModal.vue'
+import MissingTicketModal from '@/components-dca/common/MissingTicketModal.vue'
 import { useMissingTicket } from '@/composables/useMissingTicket'
 
 const { showMissingTicketModal, ticketContext, showMissingTicket, handleMissingTicketConfirm } = useMissingTicket()

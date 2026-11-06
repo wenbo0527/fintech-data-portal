@@ -1,0 +1,891 @@
+/* 现代化工具栏样式配置 */
+
+/* 工具栏容器 */
+.enhanced-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(8px);
+  position: relative;
+  z-index: 10;
+  margin-bottom: 16px;
+}
+
+.enhanced-toolbar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* 工具栏分组 */
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.toolbar-group:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  right: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 24px;
+  background: #e5e7eb;
+}
+
+/* 工具栏按钮基础样式 */
+.toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  min-width: 40px;
+  height: 40px;
+  user-select: none;
+}
+
+.toolbar-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  transition: left 0.5s;
+}
+
+.toolbar-btn:hover::before {
+  left: 100%;
+}
+
+.toolbar-btn:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  transform: translateY(-1px);
+  box-shadow: 
+    0 4px 12px rgba(59, 130, 246, 0.15),
+    0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.toolbar-btn:active {
+  transform: translateY(0);
+  box-shadow: 
+    0 2px 4px rgba(59, 130, 246, 0.15),
+    0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.toolbar-btn.active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: white;
+  box-shadow: 
+    0 4px 12px rgba(59, 130, 246, 0.3),
+    0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.toolbar-btn.active:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+  transform: translateY(-1px);
+}
+
+.toolbar-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.toolbar-btn:disabled:hover {
+  border-color: #e5e7eb;
+  color: #374151;
+  transform: none;
+  box-shadow: none;
+}
+
+/* 工具栏图标 */
+.toolbar-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.toolbar-btn:hover .toolbar-icon {
+  transform: scale(1.1);
+}
+
+.toolbar-btn.active .toolbar-icon {
+  transform: scale(1.05);
+}
+
+/* 工具栏文本 */
+.toolbar-text {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* 缩放控制组 */
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.zoom-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: white;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.zoom-btn:hover {
+  background: #3b82f6;
+  color: white;
+  transform: scale(1.05);
+}
+
+.zoom-btn:active {
+  transform: scale(0.95);
+}
+
+.zoom-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.zoom-btn:disabled:hover {
+  background: white;
+  color: #374151;
+  transform: none;
+}
+
+.zoom-display {
+  min-width: 60px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  padding: 0 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.zoom-display:hover {
+  background: #eff6ff;
+  color: #3b82f6;
+}
+
+/* 布局控制组 */
+.layout-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.layout-btn {
+  width: 40px;
+  height: 40px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 16px;
+  position: relative;
+}
+
+.layout-btn:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+.layout-btn.active {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: white;
+}
+
+.layout-btn.loading::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #e5e7eb;
+  border-top: 2px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* 操作控制组 */
+.action-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.action-btn {
+  padding: 8px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  overflow: hidden;
+}
+
+.action-btn.primary {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: white;
+}
+
+.action-btn.primary:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.action-btn.danger {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: white;
+}
+
+.action-btn.danger:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.action-btn.success {
+  background: #10b981;
+  border-color: #10b981;
+  color: white;
+}
+
+.action-btn.success:hover {
+  background: #059669;
+  border-color: #059669;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.action-btn:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+/* 状态栏 */
+.toolbar-status {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+.status-indicator.warning {
+  background: #f59e0b;
+  animation: pulse-warning 2s infinite;
+}
+
+.status-indicator.error {
+  background: #ef4444;
+  animation: blink-error 1s infinite;
+}
+
+@keyframes pulse-warning {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.2);
+  }
+}
+
+@keyframes blink-error {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* 快捷键提示 */
+.toolbar-shortcuts {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 12px;
+  margin-top: 8px;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: all 0.3s ease;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+.enhanced-toolbar:hover .toolbar-shortcuts {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.shortcut-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.shortcut-action {
+  color: #374151;
+  font-weight: 500;
+}
+
+.shortcut-keys {
+  display: flex;
+  gap: 2px;
+}
+
+.shortcut-key {
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #374151;
+  min-width: 20px;
+  text-align: center;
+}
+
+/* 工具栏下拉菜单 */
+.toolbar-dropdown {
+  position: relative;
+}
+
+.dropdown-trigger {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dropdown-arrow {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.2s ease;
+}
+
+.toolbar-dropdown.open .dropdown-arrow {
+  transform: rotate(180deg);
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 160px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 4px;
+  margin-top: 4px;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: all 0.2s ease;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+.toolbar-dropdown.open .dropdown-menu {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dropdown-item:hover {
+  background: #f3f4f6;
+  color: #3b82f6;
+}
+
+.dropdown-item.active {
+  background: #eff6ff;
+  color: #3b82f6;
+}
+
+.dropdown-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dropdown-item.disabled:hover {
+  background: transparent;
+  color: #374151;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: #e5e7eb;
+  margin: 4px 0;
+}
+
+/* 工具栏搜索 */
+.toolbar-search {
+  position: relative;
+  width: 200px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 8px 12px 8px 36px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 14px;
+  background: white;
+  transition: all 0.2s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: #9ca3af;
+}
+
+.search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: none;
+  color: #9ca3af;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.search-clear:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+/* 工具栏通知 */
+.toolbar-notification {
+  position: relative;
+}
+
+.notification-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 16px;
+  height: 16px;
+  background: #ef4444;
+  color: white;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: pulse-notification 2s infinite;
+}
+
+@keyframes pulse-notification {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .enhanced-toolbar {
+    padding: 8px 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  .toolbar-group {
+    gap: 4px;
+  }
+  
+  .toolbar-group:not(:last-child)::after {
+    display: none;
+  }
+  
+  .toolbar-btn {
+    padding: 6px 8px;
+    min-width: 36px;
+    height: 36px;
+  }
+  
+  .toolbar-text {
+    display: none;
+  }
+  
+  .zoom-controls {
+    padding: 2px;
+  }
+  
+  .zoom-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+  }
+  
+  .zoom-display {
+    min-width: 50px;
+    font-size: 10px;
+  }
+  
+  .layout-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 14px;
+  }
+  
+  .action-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+  
+  .toolbar-search {
+    width: 150px;
+  }
+  
+  .search-input {
+    padding: 6px 10px 6px 32px;
+    font-size: 12px;
+  }
+  
+  .toolbar-shortcuts {
+    display: none;
+  }
+}
+
+/* 深色模式支持 */
+@media (prefers-color-scheme: dark) {
+  .enhanced-toolbar {
+    background: #1f2937;
+    border-color: #374151;
+  }
+  
+  .toolbar-group:not(:last-child)::after {
+    background: #374151;
+  }
+  
+  .toolbar-btn {
+    background: #374151;
+    border-color: #4b5563;
+    color: #f3f4f6;
+  }
+  
+  .toolbar-btn:hover {
+    border-color: #60a5fa;
+    color: #60a5fa;
+  }
+  
+  .toolbar-btn.active {
+    background: #60a5fa;
+    border-color: #60a5fa;
+  }
+  
+  .toolbar-btn.active:hover {
+    background: #3b82f6;
+    border-color: #3b82f6;
+  }
+  
+  .zoom-controls {
+    background: #374151;
+    border-color: #4b5563;
+  }
+  
+  .zoom-btn {
+    background: #4b5563;
+    color: #f3f4f6;
+  }
+  
+  .zoom-btn:hover {
+    background: #60a5fa;
+  }
+  
+  .zoom-display {
+    color: #f3f4f6;
+  }
+  
+  .zoom-display:hover {
+    background: #1e3a8a;
+    color: #93c5fd;
+  }
+  
+  .layout-btn {
+    background: #374151;
+    border-color: #4b5563;
+    color: #f3f4f6;
+  }
+  
+  .layout-btn:hover {
+    border-color: #60a5fa;
+    color: #60a5fa;
+  }
+  
+  .layout-btn.active {
+    background: #60a5fa;
+    border-color: #60a5fa;
+  }
+  
+  .action-btn {
+    background: #374151;
+    border-color: #4b5563;
+    color: #f3f4f6;
+  }
+  
+  .action-btn:hover {
+    border-color: #60a5fa;
+    color: #60a5fa;
+  }
+  
+  .action-btn.primary {
+    background: #60a5fa;
+    border-color: #60a5fa;
+  }
+  
+  .action-btn.primary:hover {
+    background: #3b82f6;
+    border-color: #3b82f6;
+  }
+  
+  .toolbar-status {
+    color: #9ca3af;
+  }
+  
+  .toolbar-shortcuts,
+  .dropdown-menu {
+    background: #374151;
+    border-color: #4b5563;
+  }
+  
+  .shortcut-action,
+  .dropdown-item {
+    color: #f3f4f6;
+  }
+  
+  .shortcut-key {
+    background: #4b5563;
+    border-color: #6b7280;
+    color: #f3f4f6;
+  }
+  
+  .dropdown-item:hover {
+    background: #4b5563;
+    color: #60a5fa;
+  }
+  
+  .dropdown-item.active {
+    background: #1e3a8a;
+    color: #93c5fd;
+  }
+  
+  .dropdown-divider {
+    background: #4b5563;
+  }
+  
+  .search-input {
+    background: #374151;
+    border-color: #4b5563;
+    color: #f3f4f6;
+  }
+  
+  .search-input:focus {
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.1);
+  }
+  
+  .search-icon {
+    color: #6b7280;
+  }
+  
+  .search-clear {
+    color: #6b7280;
+  }
+  
+  .search-clear:hover {
+    background: #4b5563;
+    color: #f3f4f6;
+  }
+}
+
+/* 高对比度模式 */
+@media (prefers-contrast: high) {
+  .toolbar-btn,
+  .zoom-btn,
+  .layout-btn,
+  .action-btn {
+    border-width: 2px;
+  }
+  
+  .toolbar-btn:hover,
+  .zoom-btn:hover,
+  .layout-btn:hover,
+  .action-btn:hover {
+    border-width: 3px;
+  }
+  
+  .toolbar-btn.active,
+  .layout-btn.active {
+    border-width: 3px;
+  }
+  
+  .search-input {
+    border-width: 2px;
+  }
+  
+  .search-input:focus {
+    border-width: 3px;
+  }
+}
+
+/* 减少动画模式 */
+@media (prefers-reduced-motion: reduce) {
+  .toolbar-btn,
+  .toolbar-icon,
+  .zoom-btn,
+  .layout-btn,
+  .action-btn,
+  .dropdown-arrow,
+  .dropdown-menu,
+  .toolbar-shortcuts,
+  .search-input,
+  .search-clear {
+    transition: none;
+    animation: none;
+  }
+  
+  .toolbar-btn::before {
+    transition: none;
+  }
+  
+  .toolbar-btn:hover::before {
+    left: 0;
+    opacity: 0;
+  }
+  
+  .status-indicator.warning,
+  .status-indicator.error,
+  .notification-badge {
+    animation: none;
+  }
+  
+  .layout-btn.loading::after {
+    animation: none;
+  }
+}

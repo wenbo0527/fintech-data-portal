@@ -751,7 +751,7 @@ import {
 import { LineageGraph } from '@app/lineage-graph'
 import { mockTables } from '@/mock-dca/data-map'
 import { listingStore } from '@/mock-dca/listing-store'
-import { formatDateTime } from '@/utils/dateUtils'
+import { formatDateTime } from '@/utils-dca/dateUtils'
 
 // 关联/血缘关系类型颜色映射
 const relationTypeColor: Record<string, string> = {

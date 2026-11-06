@@ -240,7 +240,7 @@ import {
   startMetadataTaskAsync,
   onTaskComplete
 } from '@/mock-dca/metadata-bus'
-import { formatDateTime } from '@/utils/dateUtils'
+import { formatDateTime } from '@/utils-dca/dateUtils'
 
 type ClusterType = 'HIVE' | 'MySQL' | 'Oracle'
 type Health = 'healthy' | 'warning' | 'offline'

@@ -233,7 +233,7 @@ import {
 } from '@arco-design/web-vue/es/icon'
 import { mockTables } from '@/mock-dca/data-map'
 import { listingStore } from '@/mock-dca/listing-store'
-import { formatDateTime } from '@/utils/dateUtils'
+import { formatDateTime } from '@/utils-dca/dateUtils'
 
 type ShelfStatus = 'active' | 'onShelf' | 'offShelf'
 type ClusterType = 'HIVE'

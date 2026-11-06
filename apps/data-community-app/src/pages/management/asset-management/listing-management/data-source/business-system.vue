@@ -156,7 +156,7 @@ import {
 } from '@/mock-dca/data-map'
 import { listingStore } from '@/mock-dca/listing-store'
 import { triggerSyncFromShelf, runMetadataTask, createMetadataTask } from '@/mock-dca/metadata-bus'
-import { formatDateTime } from '@/utils/dateUtils'
+import { formatDateTime } from '@/utils-dca/dateUtils'
 
 type ShelfStatus = 'active' | 'onShelf' | 'offShelf'
 

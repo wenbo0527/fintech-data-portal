@@ -288,7 +288,7 @@ import {
 import { MetricType, RegulatoryCategory } from '@/types/metrics'
 import { generateExcelTemplate } from '@/utils-dca/excelUtils'
 import StatusTag from '@/components/common/StatusTag.vue'
-import DateUtils from '@/utils/dateUtils'
+import DateUtils from '@/utils-dca/dateUtils'
 
 type UploadCategory = 'business' | 'regulatory'
 interface SimpleUploadFile {

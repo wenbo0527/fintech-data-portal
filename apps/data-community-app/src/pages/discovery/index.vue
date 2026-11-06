@@ -314,7 +314,7 @@ import {
 
 import { onMounted, markRaw } from 'vue'
 import { useRoute } from 'vue-router'
-import MissingTicketModal from '@/pages/search/MissingTicketModal.vue'
+import MissingTicketModal from '@/components-dca/common/MissingTicketModal.vue'
 import { useMissingTicket } from '@/composables/useMissingTicket'
 
 const { showMissingTicketModal, ticketContext, showMissingTicket, handleMissingTicketConfirm } = useMissingTicket()

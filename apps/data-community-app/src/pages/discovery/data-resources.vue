@@ -62,7 +62,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { IconPlus, IconLeft, IconRight } from '@arco-design/web-vue/es/icon'
 import PageBanner from '@/components-dca/common/PageBanner.vue'
-import MissingTicketModal from '@/pages/search/MissingTicketModal.vue'
+import MissingTicketModal from '@/components-dca/common/MissingTicketModal.vue'
 import { useMissingTicket } from '@/composables/useMissingTicket'
 
 const { showMissingTicketModal, ticketContext, showMissingTicket, handleMissingTicketConfirm } = useMissingTicket()

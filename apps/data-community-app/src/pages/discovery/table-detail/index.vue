@@ -901,7 +901,7 @@ import {
   type TableStatus
 } from '@/mock-dca/shared/table-catalog-store'
 import { useRoleStore } from '@/stores-dca/role'
-import MissingTicketModal from '@/pages/search/MissingTicketModal.vue'
+import MissingTicketModal from '@/components-dca/common/MissingTicketModal.vue'
 import { useMissingTicket } from '@/composables/useMissingTicket'
 
 type ChangeLogType = ChangeLogItem['type']

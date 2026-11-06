@@ -244,7 +244,7 @@ import {
 } from '@/mock-dca/shared/table-catalog-store'
 import { searchApi } from '@/api/search-shim'
 // 注意别名遮蔽：@/pages 指向 dfd-app/src/pages，@/composables 指向 dca 本地 src/composables
-import MissingTicketModal from '@/pages/search/MissingTicketModal.vue'
+import MissingTicketModal from '@/components-dca/common/MissingTicketModal.vue'
 import { useMissingTicket } from '@/composables/useMissingTicket'
 
 /* ---------------------------------------------------------------------

@@ -85,7 +85,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import { IconSearch, IconPlus } from '@arco-design/web-vue/es/icon'
-import MissingTicketModal from '@/pages/search/MissingTicketModal.vue'
+import MissingTicketModal from '@/components-dca/common/MissingTicketModal.vue'
 import { useMissingTicket } from '@/composables/useMissingTicket'
 import { TableCatalogStore } from '@/mock-dca/shared/table-catalog-store'
 

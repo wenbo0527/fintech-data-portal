@@ -183,7 +183,7 @@ import { Message } from '@arco-design/web-vue'
 import type { FieldRule, FormInstance } from '@arco-design/web-vue'
 import { IconPlus } from '@arco-design/web-vue/es/icon'
 import PageBanner from '@/components-dca/common/PageBanner.vue'
-import MissingTicketModal from '@/pages/search/MissingTicketModal.vue'
+import MissingTicketModal from '@/components-dca/common/MissingTicketModal.vue'
 import { useMissingTicket } from '@/composables/useMissingTicket'
 // 注意：dca 自己的 mock 必须走 @/mock-dca（@/mock 与 @/pages 别名指向 dfd 项目）
 import { TableCatalogStore } from '@/mock-dca/shared/table-catalog-store'

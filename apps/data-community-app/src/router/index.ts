@@ -89,13 +89,13 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'discovery/metrics-map',
         name: 'metrics-map',
-        component: () => import('@/dfd-pages/metrics-map/index.vue'),
+        component: () => import('../pages/metrics-map/index.vue'),
         meta: { title: '指标地图' }
       },
       {
         path: 'discovery/metrics-map/detail/:id',
         name: 'MetricsMapDetail',
-        component: () => import('@/dfd-pages/metrics-map/detail.vue'),
+        component: () => import('../pages/metrics-map/detail.vue'),
         meta: { title: '指标详情' }
       },
       {
@@ -163,7 +163,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'discovery/lineage',
         name: 'lineage',
-        component: () => import('@/dfd-pages/lineage/index.vue'),
+        component: () => import('../pages/lineage/index.vue'),
         meta: { title: '血缘构建' }
       },
       {

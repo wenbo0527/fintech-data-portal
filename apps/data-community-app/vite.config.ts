@@ -47,6 +47,9 @@ export default defineConfig({
       { find: '@mock-shared', replacement: path.resolve(__dirname, 'src/mock/shared') },
       { find: '@/composables', replacement: path.resolve(__dirname, 'src/composables') },
       { find: '@/dfd-pages', replacement: path.resolve(DFD, 'pages') },
+      // T4 迁移期的显式残留：已搬入 dca 的页面其数据层依赖仍在 dfd，用 @/dfd-* 标出以便 grep 收敛
+      { find: '@/dfd-api', replacement: path.resolve(DFD, 'api') },
+      { find: '@/dfd-mock', replacement: path.resolve(DFD, 'mock') },
       { find: '@/shared', replacement: MONOREPO },
       // 跨子应用复用:dca 公共组件(data-community-app 解析 dfd-app 的 vue 时也需要这个 alias)
       { find: '@dca-components', replacement: path.resolve(__dirname, 'src/components-dca') },
@@ -114,12 +117,16 @@ export default defineConfig({
       { find: '@/store', replacement: path.resolve(DFD, 'store') },
       { find: '@/stores', replacement: path.resolve(DFD, 'stores') },
       { find: '@/constants', replacement: path.resolve(DFD, 'constants') },
-      { find: '@/composables', replacement: path.resolve(DFD, 'composables') },
       { find: '@/config', replacement: path.resolve(DFD, 'config') },
       { find: '@/styles', replacement: path.resolve(DFD, 'styles') },
       { find: '@/pages', replacement: path.resolve(DFD, 'pages') },
       { find: '@/router', replacement: path.resolve(DFD, 'router') },
       { find: '@/modules', replacement: path.resolve(DFD, 'modules') },
+      // 更正（2026-11-05）：曾按「dca 自身 src 零引用」删过 @/constants|router|modules|styles 四条，
+      // 构建随即失败——这些 specifier 是被 dca 编译的 **dfd 源文件**在用（如 dfd:components/common/StatusTag.vue
+      // 用 @/constants、dfd:pages/data-map/TableDetailPage.vue 用 @/router、dfd:store/modules/contract.ts 用
+      // @/modules、dfd:pages/lineage/components/LineageGraph.vue 用 CSS @import '@/styles/…'）。
+      // 结论：alias 表必须与文件同步迁移，不能先行删除；只有 :117 那条与 @/composables 重复的声明确实永不生效。
 
       // 最后才是 @ 本身(最不具体)
       { find: '@', replacement: path.resolve(__dirname, 'src') },

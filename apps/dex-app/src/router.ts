@@ -45,10 +45,20 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '客群中心' }
   },
   {
+    // DEC-01(a)：人群域权威在 mkt-app，dex 侧对齐其既有行为 —— 该路径直接重定向到人群管理。
+    // 原 index.vue 的入口卡片因 `$route.name === 'audience-system'` 与路由 name 'AudienceSystem'
+    // 大小写不匹配而从不渲染（空白页），且卡片按钮指向的 audience-management 此前没有路由记录，
+    // 导致 customer-center/index.vue:17、audience-create.vue:9、audience-detail.vue:1494 三处活引用落空。
     path: '/exploration/customer-center/audience-system',
     name: 'AudienceSystem',
-    component: () => import('./pages/exploration/customer-center/audience-system/index.vue'),
+    redirect: { name: 'AudienceManagement' },
     meta: { title: '人群圈选' }
+  },
+  {
+    path: '/exploration/customer-center/audience-system/audience-management',
+    name: 'AudienceManagement',
+    component: () => import('./pages/exploration/customer-center/audience-system/audience-management.vue'),
+    meta: { title: '人群管理' }
   },
   {
     path: '/exploration/customer-center/audience-system/audience-create',

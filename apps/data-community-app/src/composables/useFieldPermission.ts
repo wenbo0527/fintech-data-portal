@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue'
-import { useUserStore } from '@/stores/user'
+import { useUserStore } from '@/stores-dca/user'
 
 /**
  * 字段权限统一入口(P1#3 + 客户 360 v3.3)

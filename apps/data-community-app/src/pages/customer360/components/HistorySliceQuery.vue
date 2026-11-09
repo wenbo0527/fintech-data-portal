@@ -281,7 +281,7 @@
 import { ref, computed, onMounted, watch, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message, Modal } from '@arco-design/web-vue'
-import { getDataModelsList, executeDataModel } from '@/api/dataModels'
+import { getDataModelsList, executeDataModel } from '@/api-dca/dataModels'
 import { IconCopy, IconRefresh, IconDelete, IconEye, IconPlus, IconFilter, IconInfoCircle } from '@arco-design/web-vue/es/icon'
 import { copyToClipboard } from '@/utils/copy'
 import QueryResultDetail from './QueryResultDetail.vue'

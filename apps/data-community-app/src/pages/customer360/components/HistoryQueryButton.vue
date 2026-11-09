@@ -114,7 +114,7 @@ import {
   IconHistory,
   IconStorage
 } from '@arco-design/web-vue/es/icon'
-import { getDataModelsList } from '@/api/dataModels'
+import { getDataModelsList } from '@/api-dca/dataModels'
 import HistorySliceQuery from './HistorySliceQuery.vue'
 import CustomQueryPanel from './CustomQueryPanel.vue'
 

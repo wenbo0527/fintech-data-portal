@@ -38,6 +38,8 @@ export default defineConfig({
     alias: [
       // 最长前缀(最具体)放最前
       { find: '@/components-dca', replacement: path.resolve(__dirname, 'src/components-dca') },
+      // 精确到文件：搬入的 MonacoEditor 副本生效，同时避免改动 unified-query/SqlEditor.vue（并行工作流文件）
+      { find: '@/components/MonacoEditor.vue', replacement: path.resolve(__dirname, 'src/components-dca/common/MonacoEditor.vue') },
       { find: '@/api-dca', replacement: path.resolve(__dirname, 'src/api') },
       { find: '@/types-dca', replacement: path.resolve(__dirname, 'src/types-dca') },
       { find: '@/stores-dca', replacement: path.resolve(__dirname, 'src/stores-dca') },

@@ -38,6 +38,7 @@ export default defineConfig({
     alias: [
       // 最长前缀(最具体)放最前
       { find: '@/components-dca', replacement: path.resolve(__dirname, 'src/components-dca') },
+      { find: '@/api-dca', replacement: path.resolve(__dirname, 'src/api') },
       { find: '@/types-dca', replacement: path.resolve(__dirname, 'src/types-dca') },
       { find: '@/stores-dca', replacement: path.resolve(__dirname, 'src/stores-dca') },
       { find: '@/utils-dca', replacement: path.resolve(__dirname, 'src/utils-dca') },

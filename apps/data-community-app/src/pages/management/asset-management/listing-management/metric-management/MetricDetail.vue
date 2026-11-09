@@ -282,8 +282,8 @@ import { Message } from '@arco-design/web-vue'
 import { IconLeft, IconPlus } from '@arco-design/web-vue/es/icon'
 import metricsMock from '@/mock/metrics'
 import MonacoEditor from '@/components/MonacoEditor.vue'
-import { userApi } from '@/api/community'
-import type { User, QueryParams } from '@/types/community'
+import { userApi } from '@/api-dca/community'
+import type { User, QueryParams } from '@/types-dca/community'
 
 const route = useRoute()
 const router = useRouter()

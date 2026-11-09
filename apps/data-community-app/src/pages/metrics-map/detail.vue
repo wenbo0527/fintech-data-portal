@@ -381,7 +381,7 @@ import {
   IconShareAlt
 } from '@arco-design/web-vue/es/icon'
 import { Message } from '@arco-design/web-vue'
-import { MetricType, type MetricItem } from '@/types/metrics'
+import { MetricType, type MetricItem } from '@/types-dca/metrics'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 
 // 路由

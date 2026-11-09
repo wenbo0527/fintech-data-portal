@@ -189,7 +189,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { IconSearch, IconRefresh } from '@arco-design/web-vue/es/icon'
-import { getVariableGraph, getVariableLineage } from '@/api/variable-map'
+import { getVariableGraph, getVariableLineage } from '@/api-dca/variable-map'
 
 const searchName = ref('')
 const searchType = ref('')

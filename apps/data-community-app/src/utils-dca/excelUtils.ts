@@ -1,6 +1,6 @@
 import { saveAs } from 'file-saver'
 import * as XLSX from 'xlsx'
-import { MetricType, RegulatoryCategory, RegulatoryCategories } from '@/types/metrics'
+import { MetricType, RegulatoryCategory, RegulatoryCategories } from '@/types-dca/metrics'
 
 /**
  * 生成并下载Excel模板

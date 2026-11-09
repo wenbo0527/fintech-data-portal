@@ -515,7 +515,7 @@ export const searchApi = {
       return Promise.all([
         import('@/mock/shared/metadata-store'),
         import('@/mock/shared/business-concept-store'),
-        import('@/mock/metrics'),
+        import('@/mock-dca/metrics'),
         import('@/mock-dca/external-resources')
       ]).then(([{ MetadataStore }, { BusinessConceptStore }, { metrics }, { externalResources }]) => {
         const lowerKeyword = keyword.toLowerCase()

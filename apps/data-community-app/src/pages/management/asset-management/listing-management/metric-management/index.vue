@@ -285,7 +285,7 @@ import {
   IconUpload,
   IconDownload
 } from '@arco-design/web-vue/es/icon'
-import { MetricType, RegulatoryCategory } from '@/types/metrics'
+import { MetricType, RegulatoryCategory } from '@/types-dca/metrics'
 import { generateExcelTemplate } from '@/utils-dca/excelUtils'
 import StatusTag from '@/components-dca/common/StatusTag.vue'
 import DateUtils from '@/utils-dca/dateUtils'

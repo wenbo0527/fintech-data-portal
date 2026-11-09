@@ -74,7 +74,7 @@ import { useRouter } from 'vue-router'
 import { Graph } from '@antv/x6'
 import { Message } from '@arco-design/web-vue'
 import { useVariableStore } from '@/store/modules/variable'
-import { featureAPI } from '@/api/offlineModel'
+import { featureAPI } from '@/api-dca/offlineModel'
 import { IconSearch } from '@arco-design/web-vue/es/icon'
 
 const router = useRouter()

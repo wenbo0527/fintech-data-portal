@@ -49,10 +49,9 @@ export default defineConfig({
       { find: '@/mock-shared', replacement: path.resolve(__dirname, 'src/mock/shared') },
       { find: '@mock-shared', replacement: path.resolve(__dirname, 'src/mock/shared') },
       { find: '@/composables', replacement: path.resolve(__dirname, 'src/composables') },
-      { find: '@/dfd-pages', replacement: path.resolve(DFD, 'pages') },
-      // T4 迁移期的显式残留：已搬入 dca 的页面其数据层依赖仍在 dfd，用 @/dfd-* 标出以便 grep 收敛
-      { find: '@/dfd-api', replacement: path.resolve(DFD, 'api') },
-      { find: '@/dfd-mock', replacement: path.resolve(DFD, 'mock') },
+      // 迁移完成（2026-11-06）：dca→dfd 闭包归零，@/dfd-pages、@/dfd-api、@/dfd-mock、
+      // @/dfd-components 四个迁移期脚手架别名已全部无用并删除；下方指向 DFD 的通用别名
+      // （@/pages、@/components、@/api/*、@/mock/* 等）经 build 验证后可另行清理
       { find: '@/shared', replacement: MONOREPO },
       // 跨子应用复用:dca 公共组件(data-community-app 解析 dfd-app 的 vue 时也需要这个 alias)
       { find: '@dca-components', replacement: path.resolve(__dirname, 'src/components-dca') },

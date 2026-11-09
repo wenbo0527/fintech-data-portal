@@ -105,15 +105,15 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import request from '@/dfd-api/request'
+import request from '@/api-dca/request'
 import * as XLSX from 'xlsx'
 import type { TreeNodeData } from '@arco-design/web-vue'
 import type { RequestOption, UploadRequest, FileItem } from '@arco-design/web-vue/es/upload/interfaces'
 // 强制使用 TS 版指标 mock，避免误用旧版 JS
 import metricsMock from '@/mock-dca/metrics'
 import { IconUpload, IconDownload, IconPlus } from '@arco-design/web-vue/es/icon'
-import IncrementalImportModal from '@/components/modals/IncrementalImportModal.vue'
-import BatchImportModal from '@/components/modals/BatchImportModal.vue'
+import IncrementalImportModal from '@/components-dca/modals/IncrementalImportModal.vue'
+import BatchImportModal from '@/components-dca/modals/BatchImportModal.vue'
 import BusinessProcessFlow from '@/components-dca/common/BusinessProcessFlow.vue'
 import { METRIC_TYPE_LABELS, REGULATORY_CATEGORY_LABELS, MetricType, type MetricItem } from '@/types-dca/metrics'
 import { useRouter } from 'vue-router'

@@ -115,13 +115,13 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'discovery/unified-metrics',
         name: 'unified-metrics',
-        component: () => import('@/dfd-pages/unified-metrics/index.vue'),
+        component: () => import('../pages/unified-metrics/index.vue'),
         meta: { title: '统一指标' }
       },
       {
         path: 'discovery/indicator-dashboard',
         name: 'discovery-indicator-dashboard',
-        component: () => import('@/dfd-pages/indicator-dashboard/index.vue'),
+        component: () => import('../pages/indicator-dashboard/index.vue'),
         meta: { title: '指标看板' }
       },
       {
@@ -133,7 +133,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'discovery/variable-map',
         name: 'variable-map',
-        component: () => import('@/dfd-pages/variable-map/index.vue'),
+        component: () => import('../pages/variable-map/index.vue'),
         meta: { title: '特征地图' }
       },
       {
@@ -145,7 +145,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'discovery/feature-map',
         name: 'feature-map',
-        component: () => import('@/dfd-pages/feature-map/index.vue'),
+        component: () => import('../pages/feature-map/index.vue'),
         meta: { title: '特征地图' }
       },
       {

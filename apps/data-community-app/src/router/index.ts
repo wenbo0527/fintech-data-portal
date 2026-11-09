@@ -56,7 +56,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'discovery/asset-catalog',
         name: 'asset-catalog',
-        component: () => import('@/dfd-pages/asset-catalog/index.vue'),
+        component: () => import('../pages/asset-catalog/index.vue'),
         // 用真实 dfd 复制版本
         meta: { title: '资产目录' }
       },
@@ -77,8 +77,16 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'discovery/credit',
         name: 'credit',
-        component: () => import('@/dfd-pages/credit/index.vue'),
+        component: () => import('../pages/credit/index.vue'),
         meta: { title: '征信查询' }
+      },
+      {
+        // 迁移 credit/ 时发现：dca 从未注册征信详情路由（dfd 侧有 credit/detail / CreditDetail），
+        // 详情页只能在 dfd 树内被直接引用，在 dca 里不可达。此处补齐以对齐权威行为。
+        path: 'discovery/credit/detail',
+        name: 'CreditDetail',
+        component: () => import('../pages/credit/detail.vue'),
+        meta: { title: '征信详情' }
       },
       {
         path: 'discovery/external',
@@ -260,7 +268,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'management',
         name: 'management',
-        component: () => import('@/dfd-pages/asset-management/index.vue'),
+        component: () => import('../pages/asset-management/index.vue'),
         meta: { title: '数据管理' }
       },
       // 2026-08-06 清理:management/favorites 已统一到 discovery/favorites(我的关注)

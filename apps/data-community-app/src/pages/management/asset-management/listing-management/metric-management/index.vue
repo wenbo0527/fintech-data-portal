@@ -287,7 +287,7 @@ import {
 } from '@arco-design/web-vue/es/icon'
 import { MetricType, RegulatoryCategory } from '@/types/metrics'
 import { generateExcelTemplate } from '@/utils-dca/excelUtils'
-import StatusTag from '@/components/common/StatusTag.vue'
+import StatusTag from '@/components-dca/common/StatusTag.vue'
 import DateUtils from '@/utils-dca/dateUtils'
 
 type UploadCategory = 'business' | 'regulatory'

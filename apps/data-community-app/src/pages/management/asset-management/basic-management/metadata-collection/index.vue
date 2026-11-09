@@ -204,7 +204,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { IconPlus } from '@arco-design/web-vue/es/icon'
 import type { FormInstance } from '@arco-design/web-vue'
-import { createMetadataTask as createMetadataTaskApi, getMetadataTaskDetail } from '@/api/metadata'
+import { createMetadataTask as createMetadataTaskApi, getMetadataTaskDetail } from '@/api-dca/metadata'
 import { createMetadataTask, startMetadataTaskAsync } from '@/mock-dca/metadata-bus'
 import { useRoute } from 'vue-router'
 

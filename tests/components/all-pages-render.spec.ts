@@ -223,7 +223,7 @@ const pagesToTest = [
     group: '发现域 - API/外数',
     path: '/home/discovery/external',
     name: '外数管理',
-    loader: () => import('@/pages/discovery/external/index.vue')
+    loader: () => import('@/pages/discovery/external.vue')
   },
   {
     group: '发现域 - 指标治理',

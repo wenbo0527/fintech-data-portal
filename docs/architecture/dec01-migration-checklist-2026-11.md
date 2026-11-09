@@ -255,3 +255,14 @@ dca 的 vite alias 有 **67 条**，其中指向 `apps/dfd-app/src` 的一族会
 后续批次规模（按 d0 行数降序）：`pages/metrics-map/detail.vue` 1,314、`pages/unified-metrics/index.vue` 1,224、`pages/feature-map/index.vue` 704、`api/community.ts` 627、`pages/metrics-map/index.vue` 552、`pages/credit/index.vue` 545、`pages/lineage/components/LineageGraph.vue` 543（连带 891 行 CSS）、`mock/metrics.ts` 543 …；闭包里最大的单个拉入项是 `dfd:components/BusinessProcessFlow.vue` 2,221 行。
 
 **闭包算不到的一类耦合**：localStorage 键共享。dca 与 dfd 的 store 都写 localStorage（如 `table-catalog-store`），跨 app 的数据依赖不表现为 import 边，迁入后需按 key 做一次数据流核对。
+
+## 2g. 阴影死副本清理（2026-11-06）· 阻塞项归零
+
+dca 的 `pages/discovery/{external,variable-dict,feature-dict,indicator-dict}/index.vue` 四份目录形态副本已删除。删除前逐项确认：目录内只有 `index.vue`；router 指向的是**扁平文件** `discovery/<x>.vue`；全库唯一引用是 `tests/components/all-pages-render.spec.ts`（该测试的 `@` 别名本就无法解析），已改为引用扁平文件以保留原意。
+
+**这一步让 BLOCKER_SOURCE_LIVE 由 4 降为 0** —— T0b 目标达成。同时暴露了闸门的一处路径匹配局限：
+
+- 这 4 个 dfd 页面在 dca 的权威实现是**扁平文件**（`pages/discovery/<x>.vue`），而闸门按「段边界后缀」匹配不到目录↔扁平的对应关系，故删除死副本后它们被判为 `NO_COUNTERPART` 而非「有权威实现」。这是**保守方向**的误判（会要求另判，不会误删），已在自检输出中说明。
+- 自检样本同步更新为 4 条：`RETIREABLE`（alias 回归）、`MERGE_FIRST`（并入语义）、`NO_COUNTERPART`（阴影形态诚实性）、以及一条反向用例。因当前全库阻塞项为 0，`BLOCKER_SOURCE_LIVE` 分支**无现成正例**，脚本已在输出中显式提示：一旦重新出现阻塞项，必须把它加回 `EXPECTED`，否则该分支相当于未覆盖。
+
+当前分类：BLOCKER 0 / MERGE_FIRST 25 文件 15,642 行 / BOTH_DEAD 7 / RETIREABLE 53 / AUTH_LARGER 109 / NO_COUNTERPART 501 文件 158,890 行。

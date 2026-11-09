@@ -328,11 +328,16 @@ function run ({ onlyApp } = {}) {
  * 历史用例 dex:audience-system/index.vue 已在 T0b 退役，改用现存反例。
  */
 const EXPECTED = [
-  { app: 'dfd-app', rel: 'pages/external/index.vue', cat: 'BLOCKER_SOURCE_LIVE' },
-  { app: 'dex-app', rel: 'pages/exploration/customer-center/datasource/index.vue', cat: 'NO_COUNTERPART' },
-  // alias 修复的回归用例：dca 本地 mock 经 @/mock-dca 被 23 处活页面引用，不得再判为不可达
-  { app: 'dmt-app', rel: 'mock/listing-store.ts', cat: 'RETIREABLE' }
-]
+  // 迁移期回归：dca 本地副本经 @/mock-dca 被活页面引用，alias 失效会立刻变 BLOCKER
+  { app: 'dmt-app', rel: 'mock/listing-store.ts', cat: 'RETIREABLE' },
+  // 合并语义：权威可达但本方更大，必须走「先并入再退役」
+  { app: 'dmt-app', rel: 'mock/metadata-bus.ts', cat: 'MERGE_FIRST' },
+  // 阴影形态的诚实性：dca 的 discovery/<x>/index.vue 死副本已于 2026-11-06 删除，
+  // 其扁平文件 discovery/<x>.vue 才是权威实现；按路径匹配 dfd 页应落 NO_COUNTERPART
+  { app: 'dfd-app', rel: 'pages/external/index.vue', cat: 'NO_COUNTERPART' },
+  // 反向用例：权威可达的逐字节相同副本不得被判为阻塞/双死
+  { app: 'dex-app', rel: 'pages/exploration/customer-center/datasource/index.vue', cat: 'NO_COUNTERPART' }
+];
 
 function selftest () {
   const { groups } = run()
@@ -344,6 +349,8 @@ function selftest () {
     console.log(`  ${ok ? 'PASS' : 'FAIL'} ${e.app}/${e.rel} → 期望 ${e.cat}，实际 ${hit ? hit.cat : '未扫到'}`)
     if (!ok) {failed++}
   }
+  console.log('  说明：全库当前 BLOCKER_SOURCE_LIVE 为 0，故该分支无现成正例；一旦重新出现阻塞项，' +
+    '应把它加回 EXPECTED 作为正例，否则该分支相当于未被覆盖')
   // 反向自检：不应把权威侧可达的重复文件误报为阻塞或双死
   const falseBlock = [...(groups.BLOCKER_SOURCE_LIVE || []), ...(groups.BOTH_DEAD || [])].filter(x => x.src.rel.includes('audience-detail.vue'))
   console.log(`  ${falseBlock.length === 0 ? 'PASS' : 'FAIL'} audience-detail.vue（权威可达的逐字节相同副本）未被误判为阻塞`)

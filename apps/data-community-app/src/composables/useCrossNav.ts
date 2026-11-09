@@ -14,7 +14,6 @@ export const ROUTE_KEYS = {
   discoveryHome: { module: 'discovery', page: 'index' },
   discoveryOverview: { module: 'discovery', page: 'overview' },
   discoveryMetrics: { module: 'discovery', page: 'metrics-map' },
-  discoveryVariable: { module: 'discovery', page: 'variable-map' },
   discoveryLineage: { module: 'discovery', page: 'lineage' },
   discoverySearch: { module: 'discovery', page: 'search' },
   // management
@@ -46,7 +45,6 @@ export const ROUTE_TABLE: Record<string, string> = {
   'discovery:asset-catalog': '/discovery/asset-catalog',
   'discovery:overview': '/discovery/overview',
   'discovery:metrics-map': '/discovery/metrics-map',
-  'discovery:variable-map': '/discovery/variable-map',
   'discovery:lineage': '/discovery/lineage',
   'discovery:search': '/discovery/search',
   'discovery:favorites': '/discovery/favorites', // 2026-08-06:统一收藏入口

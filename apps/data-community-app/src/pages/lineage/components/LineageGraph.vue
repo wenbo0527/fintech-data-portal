@@ -286,10 +286,8 @@ const navigateToDetail = (nodeData) => {
       })
       break
     case 'Variable':
-      router.push({
-        path: '/discovery/variable-dict',
-        query: { variable: label }
-      })
+      // 变量能力已归 risk-app（后续裁定），dca 内改指特征字典（原 query 参数两端均未读取）
+      router.push({ path: '/discovery/feature-dict' })
       break
     default:
       Message.info(`暂无 ${label} 的详情页面`)

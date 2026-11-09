@@ -365,7 +365,6 @@ const iconMap: Record<string, any> = {
   'asset-catalog': IconStorage,
   'customer360': IconUserGroup,
   'metrics-map': IconBranch,
-  'variable-map': IconDesktop,
   'lineage': IconLink,
   'service': IconDesktop,
   'metadata-modeling': IconCode,

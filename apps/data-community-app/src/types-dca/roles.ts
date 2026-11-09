@@ -24,7 +24,6 @@ export type WorkbenchShortcut =
   | 'asset-catalog'
   | 'customer360'
   | 'metrics-map'
-  | 'variable-map'
   | 'lineage'
   // management
   | 'service'
@@ -194,7 +193,6 @@ export const SHORTCUT_REGISTRY: Record<WorkbenchShortcut, ShortcutMeta> = {
   'asset-catalog': { key: 'asset-catalog', title: '资产目录', desc: '资产目录台账', iconName: 'IconStorage', module: 'discovery', routeKey: 'discovery:asset-catalog' },
   'customer360': { key: 'customer360', title: '客户 360', desc: '客户全景查询', iconName: 'IconUserGroup', module: 'exploration', routeKey: 'exploration:customer360' },
   'metrics-map': { key: 'metrics-map', title: '指标地图', desc: '业务指标体系', iconName: 'IconBranch', module: 'discovery', routeKey: 'discovery:metrics-map' },
-  'variable-map': { key: 'variable-map', title: '特征地图', desc: '特征与画像管理', iconName: 'IconDesktop', module: 'discovery', routeKey: 'discovery:variable-map' },
   'lineage': { key: 'lineage', title: '血缘构建', desc: '上下游血缘追踪', iconName: 'IconLink', module: 'discovery', routeKey: 'discovery:lineage' },
   // management
   'service': { key: 'service', title: '数据服务', desc: 'API 与服务管理', iconName: 'IconDesktop', module: 'management', routeKey: 'management:service' },

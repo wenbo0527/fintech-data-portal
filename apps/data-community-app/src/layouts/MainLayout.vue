@@ -241,7 +241,6 @@ const discoveryMenus = [
   //   同步修复 variable-dict 与 feature-dict 曾同名「特征字典」的重复命名 bug
   { key: 'discovery-group-element', title: '✨ 数据要素 · 过渡期将迁至专题层', children: [
     { key: 'discovery/indicator-dict', title: '指标字典' },
-    { key: 'discovery/variable-dict', title: '变量字典' },
     { key: 'discovery/feature-dict', title: '特征字典' },
     { key: 'discovery/external', title: '外部数据' },
     // 数据要素 v2 更新版:按存储引擎选型注册的新形态入口
@@ -592,15 +591,12 @@ const NAME_BY_PATH: Record<string, string> = {
 
   // —— 数据要素(精简到 4 个核心入口,与 discoveryMenus 保持一致)——
   'discovery/indicator-dict': 'indicator-dict',
-  'discovery/variable-dict': 'variable-dict',
   'discovery/feature-dict': 'feature-dict',
   'discovery/external': 'external',
   'discovery/risk-feature': 'risk-feature',
   'discovery/marketing-event': 'marketing-event',
   'discovery/hbase-tables': 'hbase-tables',
   'discovery/metrics-map': 'metrics-map',
-  'discovery/variable-map': 'variable-map',
-  'discovery/feature-map': 'feature-map',
 
   // —— 治理运营 ——
   'discovery/lineage': 'lineage',

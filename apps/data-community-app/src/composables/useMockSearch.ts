@@ -62,9 +62,9 @@ const MOCK_RECORDS: SearchRecord[] = [
 
   // ── 字段(field) ──────────────────────────────
   { id: 'f-001', type: 'field', name: 'loan_amount', description: '贷款金额字段',
-    domain: '用户域', owner: '王运营', path: 'discovery/variable-dict', query: { var: 'loan_amount' }, score: 0 },
+    domain: '用户域', owner: '王运营', path: 'discovery/feature-dict', score: 0 },
   { id: 'f-002', type: 'field', name: 'credit_score', description: '征信评分字段',
-    domain: '风控域', owner: '张风控', path: 'discovery/variable-dict', query: { var: 'credit_score' }, score: 0 }
+    domain: '风控域', owner: '张风控', path: 'discovery/feature-dict', score: 0 }
 ]
 
 /**
@@ -75,7 +75,7 @@ export const JUMP_TARGETS: Record<SearchRecordType, { path: string }> = {
   table:  { path: 'discovery/asset-catalog' },
   metric: { path: 'discovery/indicator-dict' },
   api:    { path: 'discovery/api-market' },
-  field:  { path: 'discovery/variable-dict' }
+  field:  { path: 'discovery/feature-dict' }
 }
 
 /**

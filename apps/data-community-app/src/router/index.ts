@@ -131,24 +131,6 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '指标地铁图' }
       },
       {
-        path: 'discovery/variable-map',
-        name: 'variable-map',
-        component: () => import('../pages/variable-map/index.vue'),
-        meta: { title: '特征地图' }
-      },
-      {
-        path: 'discovery/variable-dict',
-        name: 'variable-dict',
-        component: () => import('../pages/discovery/variable-dict.vue'),
-        meta: { title: '变量字典' } // 2026-09 P4：修复与 feature-dict 同名「特征字典」的重复命名
-      },
-      {
-        path: 'discovery/feature-map',
-        name: 'feature-map',
-        component: () => import('../pages/feature-map/index.vue'),
-        meta: { title: '特征地图' }
-      },
-      {
         path: 'discovery/feature-dict',
         name: 'feature-dict',
         component: () => import('../pages/discovery/feature-dict.vue'),

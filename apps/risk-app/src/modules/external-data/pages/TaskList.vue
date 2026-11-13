@@ -437,7 +437,8 @@ const buildValidationReport = (record: AsyncTask, rec: PersistRecord | null): Va
       report.consistencySkipReason = '未上线产品无线上数据可对比'
       return report
     }
-    const details = buildConsistencyDetails(100, reviewDate)
+    // 明细的 create_time 取落库临时表（t1）的回溯时间
+    const details = buildConsistencyDetails(100, { createTime: reviewDate })
     report.consistency = summarizeConsistency(details, targetTable)
     report.details = details
   }

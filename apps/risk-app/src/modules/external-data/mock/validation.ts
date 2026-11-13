@@ -4,25 +4,26 @@
  *
  * 数据来源说明：
  *   1. 三重行数口径：入库行数（临时库批次记录）、源文件行数（回溯返回文件）、原样本文件行数（原样本上传文件）；
- *   2. 一致性校验关联条件（R68）：SM4 加密身份证号 + review date 双条件，故抽样 ID 生成 SM4 形态的密文串；
- *   3. 抽样规模遵循 R72（50-100 条），mock 固定生成 100 条；
+ *   2. 一致性校验关联口径（R68）：t1 = 落库临时表（回溯值来源），t2 = 用户所选目标表（线上值来源），
+ *      两表按 cert_no + create_time 等值关联，明细以客户号（cert_no）为主体逐字段对比；
+ *   3. 抽样规模遵循 R72（50-100 条），mock 固定生成 100 条明细；
  *   4. 排序遵循 R71：不匹配项排在最前。
  */
 
-/** 验证明细（R70：抽样 ID 为 SM4 身份证号） */
+/** 验证明细：客户号 + 回溯字段逐字段对比结果 */
 export interface ValidationDetail {
-  /** SM4 加密身份证号 */
-  sampleId: string
-  /** 对比字段名 */
+  /** 客户号（cert_no，取自 t1 落库临时表） */
+  certNo: string
+  /** 样本回溯时间（create_time，取自 t1 落库临时表） */
+  createTime: string
+  /** 对比的回溯字段名 */
   field: string
-  /** 线上值 */
+  /** 线上值（t2 目标表） */
   onlineValue: string
-  /** 回溯值 */
+  /** 回溯值（t1 落库临时表） */
   retroValue: string
-  /** 是否一致 */
+  /** 对比结果：true = 一致，false = 不同 */
   consistent: boolean
-  /** review date（关联条件之一） */
-  reviewDate: string
   /** 关联状态（R69：仅展示关联成功的，未关联成功的计入关联失败数） */
   related: boolean
   /** 差异分布标注（R75 分布校验标注，由 Python 侧生成后回填） */
@@ -65,47 +66,64 @@ export interface ConsistencySummary {
   diffSummary: string
 }
 
-/** 生成稳定的 SM4 形态密文（mock：64 位十六进制） */
-function mockSm4(seed: number): string {
-  let s = (seed * 2654435761) >>> 0
-  let out = ''
-  for (let i = 0; i < 64; i++) {
-    s = (s * 1103515245 + 12345) >>> 0
-    out += '0123456789abcdef'[(s >>> (i % 16)) % 16]
+/** 参与一致性对比的默认回溯字段（页面未传入映射字段时兜底） */
+const DEFAULT_CONSISTENCY_FIELDS = [
+  'std_loan_cnt_12m',
+  'std_overdue_amt_max',
+  'std_credit_score',
+  'std_risk_level_code',
+  'std_loan_cnt_1m',
+  'std_loan_cnt_3m',
+]
+
+/** 按字段下标生成稳定的回溯值（mock） */
+function mockFieldValue(field: string, seq: number): string {
+  const idx = DEFAULT_CONSISTENCY_FIELDS.indexOf(field)
+  const kind = idx >= 0 ? idx : field.length % 6
+  switch (kind) {
+    case 1: return ((seq + 1) * 1200.5).toFixed(2)
+    case 2: return String(560 + (seq % 90))
+    case 3: return ['A', 'B', 'C', 'D'][seq % 4]
+    case 4: return String(seq % 5)
+    case 5: return String((seq * 2) % 7)
+    default: return String((seq * 3) % 18)
   }
-  return out
 }
 
-/** 参与一致性对比的标准字段（R68 关联后按字段值比对） */
-const CONSISTENCY_FIELDS = [
-  { field: 'std_loan_cnt_12m', gen: (i: number) => String((i * 3) % 18) },
-  { field: 'std_overdue_amt_max', gen: (i: number) => ((i + 1) * 1200.5).toFixed(2) },
-  { field: 'std_credit_score', gen: (i: number) => String(560 + (i % 90)) },
-  { field: 'std_risk_level_code', gen: (i: number) => ['A', 'B', 'C', 'D'][i % 4] },
-  { field: 'std_loan_cnt_1m', gen: (i: number) => String(i % 5) },
-  { field: 'std_loan_cnt_3m', gen: (i: number) => String((i * 2) % 7) },
-]
+/** 一致性校验入参 */
+export interface ConsistencyDetailOptions {
+  /** 样本回溯时间（create_time，取自 t1 临时库） */
+  createTime?: string
+  /** 参与对比的回溯字段（来自字段映射的标准字段） */
+  fields?: string[]
+}
 
 /**
  * 生成一致性校验明细
- * @param count 抽样条数（R72：50-100 条）
- * @param reviewDate 回溯日期（关联条件之一）
+ * 一行 = 一个客户号的某个回溯字段：回溯值取自 t1 临时库，线上值取自 t2 目标表，
+ * 两者相同记「一致」，不同记「不同」。
+ * @param count 抽样明细条数（R72：50-100 条）
+ * @param options 关联口径（create_time 取值与参与对比的字段）
  */
-export function buildConsistencyDetails(count = 100, reviewDate = '2026-09-30'): ValidationDetail[] {
+export function buildConsistencyDetails(count = 100, options: ConsistencyDetailOptions = {}): ValidationDetail[] {
+  const createTime = options.createTime || '2026-09-30'
+  const fields = options.fields?.length ? options.fields : DEFAULT_CONSISTENCY_FIELDS
   const details: ValidationDetail[] = []
   for (let i = 0; i < count; i++) {
-    const meta = CONSISTENCY_FIELDS[i % CONSISTENCY_FIELDS.length]
-    const value = meta.gen(i)
-    // 每 17 条制造一条不一致；每 29 条制造一条关联失败
+    // 每个客户号按字段展开成多行，客户号本身按序号稳定生成
+    const customerSeq = Math.floor(i / fields.length) + 1
+    const field = fields[i % fields.length]
+    const retroValue = mockFieldValue(field, i)
+    // 每 17 条制造一条不同，每 29 条制造一条关联失败
     const consistent = i % 17 !== 0
     const related = i % 29 !== 0
     details.push({
-      sampleId: mockSm4(i + 1),
-      field: meta.field,
-      onlineValue: related ? value : '—',
-      retroValue: value,
+      certNo: `CUST${String(customerSeq).padStart(8, '0')}`,
+      createTime,
+      field,
+      onlineValue: related ? (consistent ? retroValue : mockFieldValue(field, i + 7)) : '—',
+      retroValue,
       consistent: related && consistent,
-      reviewDate,
       related,
       diffDistribution: related && !consistent ? `差值区间 [${(i % 5) * 100 + 100}, ${(i % 5) * 100 + 200}]，占该字段不一致样本 ${((i % 5) + 1) * 12}.5%` : undefined,
     })

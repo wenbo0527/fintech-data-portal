@@ -282,20 +282,20 @@ export interface ValidationReport {
   details: ValidationDetail[]
 }
 
-/** 验证明细（R70：抽样 ID 为 SM4 身份证号） */
+/** 验证明细：客户号 + 回溯字段逐字段对比结果 */
 export interface ValidationDetail {
-  /** SM4 加密身份证号 */
-  sampleId: string
-  /** 对比字段名 */
+  /** 客户号（cert_no，取自 t1 落库临时表） */
+  certNo: string
+  /** 样本回溯时间（create_time，取自 t1 落库临时表） */
+  createTime: string
+  /** 对比的回溯字段名 */
   field: string
-  /** 线上值 */
+  /** 线上值（t2 目标表） */
   onlineValue: string
-  /** 回溯值 */
+  /** 回溯值（t1 落库临时表） */
   retroValue: string
-  /** 是否一致 */
+  /** 对比结果：true = 一致，false = 不同 */
   consistent: boolean
-  /** review date（关联条件之一 R68） */
-  reviewDate: string
 }
 
 /** 任务执行日志（R88：任务明细按时间顺序展示执行轨迹） */
@@ -340,6 +340,8 @@ export interface TaskResumeContext {
   reviewDate: string
   /** 一致性校验目标表 */
   consistencyTargetTable: string
+  /** 一致性校验 WHERE 过滤条件（t1 临时库 JOIN t2 目标表后的可编辑过滤条件） */
+  consistencyWhereCondition?: string
   /** 已匹配的前置外发任务 ID */
   outboundTaskIds: string[]
   /** 续做应落位的步骤序号（0 基） */

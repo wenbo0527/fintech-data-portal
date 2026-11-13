@@ -966,8 +966,31 @@ export function useBacktrackPersist() {
     }
   }
 
-  /** 回溯日期（3.2 一致性校验关联条件 + 3.3 写入 datax 分区，R40/R68）：由回溯文件名自动解析 */
+  /** 回溯日期（3.3 写入 datax 分区，R40）：由回溯文件名自动解析 */
   const reviewDate = ref('')
+
+  /**
+   * 一致性校验关联的两张表（R68）
+   *   t1 = 落库临时表（回溯值来源，固定为落临时库环节写入的表）
+   *   t2 = 用户选择的一致性校验目标表（线上值来源）
+   */
+  const CONSISTENCY_TEMP_TABLE = 'tmp_ext_retro_raw'
+  const CONSISTENCY_TARGET_ALIAS = 't2'
+  /** 关联条件：cert_no 与 create_time 双字段等值关联，固定不变，不随 WHERE 条件变化 */
+  const CONSISTENCY_JOIN_CONDITION = `t1.cert_no = ${CONSISTENCY_TARGET_ALIAS}.cert_no AND t1.create_time = ${CONSISTENCY_TARGET_ALIAS}.create_time`
+
+  /**
+   * 一致性校验 WHERE 过滤条件（可编辑）
+   * 取代原先只读的「样本回溯时间」标签：默认按回溯日期收敛 t2 的样本范围，
+   * 用户可改成任意合法 Hive 条件（区间、多字段组合等），变更后需重新执行校验
+   */
+  const consistencyWhereCondition = ref('')
+
+  /** WHERE 条件是否被用户改写（改写后不再跟随回溯日期自动重置默认值） */
+  const consistencyWhereDirty = ref(false)
+
+  /** 按回溯日期生成默认 WHERE 条件（只过滤目标表 t2 的 create_time，避免全表关联） */
+  const buildDefaultConsistencyWhere = (date: string) => (date ? `${CONSISTENCY_TARGET_ALIAS}.create_time = '${date}'` : '')
 
   /**
    * 按回溯文件名自动解析回溯日期
@@ -982,6 +1005,9 @@ export function useBacktrackPersist() {
     const d = new Date()
     const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     reviewDate.value = parsed || today
+    // 换文件视为新的比对范围：WHERE 条件回到默认值（按新的回溯日期过滤 t2）
+    consistencyWhereDirty.value = false
+    consistencyWhereCondition.value = buildDefaultConsistencyWhere(reviewDate.value)
   }
 
   /** 分区值预览（R40：分区字段固定 datax，值为 review date 格式转换结果） */
@@ -1098,18 +1124,90 @@ export function useBacktrackPersist() {
   /** 一致性校验跳过原因 */
   const consistencySkipReason = ref('')
 
-  /** 回溯日期变更后需重新执行一致性校验（review date 是 R68 关联条件之一） */
-  watch(reviewDate, () => {
+  /** 回溯日期变更后需重新执行一致性校验，并同步默认 WHERE 条件（用户已改写时保留手写条件） */
+  watch(reviewDate, (date) => {
     consistencyChecked.value = false
+    if (!consistencyWhereDirty.value) {
+      consistencyWhereCondition.value = buildDefaultConsistencyWhere(date)
+    }
   })
 
-  /** 一致性校验目标表（R67） */
+  /** 一致性校验目标表（R67，关联 SQL 中的 t2） */
   const consistencyTargetOptions = ref<HiveTableItem[]>([])
   const consistencyTargetTable = ref('')
 
   /** 校验目标表变更后需重新执行一致性校验（比对对象变化）；已跳过态不受影响 */
   watch(consistencyTargetTable, () => {
     consistencyChecked.value = false
+  })
+
+  /** WHERE 条件变更后需重新执行一致性校验（比对范围变化） */
+  watch(consistencyWhereCondition, () => {
+    consistencyChecked.value = false
+  })
+
+  /** 用户编辑 WHERE 条件：标记为已改写，避免被回溯日期解析出的默认值覆盖 */
+  const onConsistencyWhereInput = () => {
+    consistencyWhereDirty.value = true
+  }
+
+  /** 恢复默认 WHERE 条件（按当前回溯日期过滤 t2） */
+  const resetConsistencyWhere = () => {
+    consistencyWhereDirty.value = false
+    consistencyWhereCondition.value = buildDefaultConsistencyWhere(reviewDate.value)
+  }
+
+  /** 参与对比的兜底回溯字段（字段映射尚未生成时使用，保证 SQL 预览与明细口径一致） */
+  const DEFAULT_COMPARE_FIELDS = [
+    'std_loan_cnt_12m',
+    'std_overdue_amt_max',
+    'std_credit_score',
+    'std_risk_level_code',
+    'std_loan_cnt_1m',
+    'std_loan_cnt_3m',
+  ]
+
+  /** 参与一致性对比的回溯字段（来自字段映射的已落表标准字段，排除客户号与 create_time） */
+  const consistencyCompareFields = computed(() => {
+    const cols = fieldMappings.value
+      .filter((m) => m.targetField && m.targetField !== NON_STD_FIELD)
+      .map((m) => m.targetField)
+    const mapped = Array.from(new Set(cols.filter((c) => c !== 'cert_no' && c !== 'create_time')))
+    return mapped.length ? mapped : DEFAULT_COMPARE_FIELDS
+  })
+
+  /**
+   * 本次一致性校验的关联 SQL 预览
+   * 结果列与下方明细表一一对应：cert_no / create_time / field / retro_value / online_value / compare_result
+   * 用 Hive stack UDTF 把宽表列转为行，一次 JOIN 即可产出逐字段对比结果，无需多次 UNION ALL 重复扫描
+   * 注意：要求目标表 t2 含与临时库同名的标准字段
+   */
+  const consistencySqlPreview = computed(() => {
+    const target = consistencyTargetTable.value || '（请选择目标表）'
+    const where = consistencyWhereCondition.value.trim()
+    const fields = consistencyCompareFields.value
+    // 字段多时只展开前 4 个，避免 stack 参数过长撑爆预览面板
+    const shown = fields.slice(0, 4)
+    // cast 统一为 string：不同字段类型混合时 stack 要求分支类型一致
+    const stackArgs = shown
+      .map((f) => `    '${f}', cast(t1.${f} AS string), cast(t2.${f} AS string)`)
+      .join(',\n')
+    const restNote = fields.length > shown.length
+      ? `-- 共 ${fields.length} 个回溯字段，stack 仅展开前 ${shown.length} 个，其余按同样三元组追加\n`
+      : ''
+    return `${restNote}SELECT t1.cert_no AS cert_no,
+       t1.create_time AS create_time,
+       f.field AS field,
+       f.retro_value AS retro_value,
+       f.online_value AS online_value,
+       CASE WHEN f.retro_value <=> f.online_value THEN '一致' ELSE '不同' END AS compare_result
+  FROM ${CONSISTENCY_TEMP_TABLE} t1
+  JOIN ${target} ${CONSISTENCY_TARGET_ALIAS}
+    ON ${CONSISTENCY_JOIN_CONDITION}
+LATERAL VIEW stack(${shown.length},
+${stackArgs}
+) f AS field, retro_value, online_value${where ? `\n WHERE ${where}` : ''}
+ ORDER BY CASE WHEN f.retro_value <=> f.online_value THEN 1 ELSE 0 END`
   })
 
   /** 一致性校验结论是否已就绪（已执行通过 或 已跳过；两者均不阻断落 Hive 标准库） */
@@ -1187,14 +1285,23 @@ export function useBacktrackPersist() {
       return
     }
     if (!consistencyTargetTable.value) {
-      Message.warning('请先选择一致性校验的目标表')
+      Message.warning('请先选择一致性校验的目标表（t2）')
+      return
+    }
+    const where = consistencyWhereCondition.value.trim()
+    if (!where) {
+      Message.warning('请填写一致性校验的 WHERE 过滤条件')
       return
     }
     validating.value = true
     // R86：一致性校验属只读类执行动作，创建异步任务后再执行
     const task = await createPersistTask('一致性校验', persistBatches.value[0]?.backid ?? '', false, 2)
     try {
-      const details = await fetchConsistencyDetails(100, reviewDate.value || '2026-09-30')
+      // 明细 create_time 取落库临时表（t1），字段取当前映射后的回溯标准字段
+      const details = await fetchConsistencyDetails(100, {
+        createTime: reviewDate.value,
+        fields: consistencyCompareFields.value,
+      })
       consistencyDetails.value = details
       consistencySummary.value = await fetchConsistencySummary(details, consistencyTargetTable.value)
       consistencyPagination.total = sortedConsistencyDetails.value.length
@@ -1206,7 +1313,7 @@ export function useBacktrackPersist() {
       await finishPersistTask(
         task.taskId,
         '成功',
-        `抽样 ${s.sampleTotal} 条：关联成功 ${s.matchedTotal} 条，关联失败 ${s.unmatchedTotal} 条，不一致 ${s.inconsistentTotal} 条`
+        `抽样 ${s.sampleTotal} 条：关联成功 ${s.matchedTotal} 条，关联失败 ${s.unmatchedTotal} 条，不一致 ${s.inconsistentTotal} 条；t1=${CONSISTENCY_TEMP_TABLE}，t2=${consistencyTargetTable.value}，WHERE ${where}`
       )
       Message.info(`抽样 ${s.sampleTotal} 条：关联成功 ${s.matchedTotal} 条，关联失败 ${s.unmatchedTotal} 条，不一致 ${s.inconsistentTotal} 条`)
     } catch (e) {
@@ -1320,6 +1427,7 @@ export function useBacktrackPersist() {
       partitionValue: partitionValue.value,
       reviewDate: reviewDate.value,
       consistencyTargetTable: consistencyTargetTable.value,
+      consistencyWhereCondition: consistencyWhereCondition.value,
       outboundTaskIds: [...matchedTaskIds.value],
       resumeStep,
     }
@@ -1428,6 +1536,11 @@ export function useBacktrackPersist() {
     if (ctx.hiveTable) hiveTable.value = ctx.hiveTable
     if (ctx.reviewDate) reviewDate.value = ctx.reviewDate
     if (ctx.consistencyTargetTable) consistencyTargetTable.value = ctx.consistencyTargetTable
+    // 续做时回填用户改写的 WHERE 条件；标记已改写，避免被回溯日期解析出的默认值覆盖
+    if (ctx.consistencyWhereCondition) {
+      consistencyWhereCondition.value = ctx.consistencyWhereCondition
+      consistencyWhereDirty.value = true
+    }
     // 6. 批次：已落临时库则恢复批次信息
     if (ctx.backid) {
       persistBatches.value = [
@@ -1665,6 +1778,13 @@ export function useBacktrackPersist() {
     consistencyReady,
     consistencyTargetOptions,
     consistencyTargetTable,
+    consistencyTempTable: CONSISTENCY_TEMP_TABLE,
+    consistencyJoinCondition: CONSISTENCY_JOIN_CONDITION,
+    consistencyWhereCondition,
+    consistencyCompareFields,
+    consistencySqlPreview,
+    onConsistencyWhereInput,
+    resetConsistencyWhere,
     consistencyDetails,
     consistencySummary,
     validating,

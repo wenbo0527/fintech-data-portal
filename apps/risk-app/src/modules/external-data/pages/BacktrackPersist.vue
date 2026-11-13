@@ -581,12 +581,7 @@
           <a-divider id="sec-3-2" :class="{ 'section-active': batchContext?.sectionKey === 'sec-3-2' }" orientation="left">3.2 一致性抽样校验</a-divider>
           <a-space align="end" wrap style="margin-bottom: 12px">
             <div class="inline-field">
-              <span class="inline-field-label">样本回溯时间（create_time，R68 关联条件之一）</span>
-              <a-tag color="arcoblue" size="medium">{{ reviewDate || '—' }}</a-tag>
-              <div class="table-tip">由回溯文件名自动解析，页面无需输入</div>
-            </div>
-            <div class="inline-field">
-              <span class="inline-field-label">一致性校验目标表</span>
+              <span class="inline-field-label">一致性校验目标表（t2）</span>
               <a-select
                 v-model="consistencyTargetTable"
                 allow-search
@@ -615,9 +610,42 @@
             <a-tag v-if="consistencyChecked" color="green" size="medium">校验已完成，可推进 Hive</a-tag>
             <a-tag v-else-if="consistencySkipped" color="orange" size="medium">已跳过校验，可推进 Hive</a-tag>
           </a-space>
+
+          <!-- 关联与过滤条件：t1 为落库临时表，t2 为所选目标表；关联条件固定，WHERE 可编辑 -->
+          <div class="consistency-rule">
+            <div class="consistency-rule-head">
+              <span class="inline-field-label">关联与过滤条件</span>
+              <a-button size="mini" type="text" :disabled="!persistBatches.length" @click="resetConsistencyWhere">
+                <template #icon><icon-refresh /></template>
+                恢复默认（按回溯日期）
+              </a-button>
+            </div>
+            <div class="consistency-rule-meta">
+              <span>t1 = 落库临时表 <span class="mono">{{ consistencyTempTable }}</span></span>
+              <span>t2 = 所选目标表 <span class="mono">{{ consistencyTargetTable || '（未选择）' }}</span></span>
+              <span>对比回溯字段 <span class="mono">{{ consistencyCompareFields.length }}</span> 个</span>
+            </div>
+            <div class="consistency-rule-join">
+              ON <span class="mono">{{ consistencyJoinCondition }}</span>
+            </div>
+            <a-textarea
+              v-model="consistencyWhereCondition"
+              :auto-size="{ minRows: 1, maxRows: 4 }"
+              :disabled="!persistBatches.length"
+              placeholder="WHERE 过滤条件，例如：t2.create_time = '2026-09-30'"
+              @input="onConsistencyWhereInput"
+            />
+            <pre class="consistency-sql mono">{{ consistencySqlPreview }}</pre>
+          </div>
           <div class="table-tip" style="margin-bottom: 12px">
-            回溯值取自临时库 <span class="mono">tmp_ext_retro_raw</span>，线上值取自所选样本表；关联条件为 cert_no（SM4 加密身份证号）+ create_time（样本回溯时间）双条件，
-            其中 create_time 由回溯文件名自动解析；抽样规模 50~100 条；结果存临时表后分页展示，不匹配项排在最前；页面不提供导出。
+            回溯值取自临时库 <span class="mono">{{ consistencyTempTable }}</span>（t1），线上值取自所选目标表（t2）；两表按
+            <span class="mono">cert_no</span> + <span class="mono">create_time</span> 等值关联（
+            <span class="mono">t1.cert_no = t2.cert_no AND t1.create_time = t2.create_time</span>），关联条件固定不可改。
+            上方 SQL 的结果列与下方明细一一对应：<span class="mono">cert_no</span>（客户号）、<span class="mono">create_time</span>（t1）、
+            <span class="mono">field</span>（对比字段）、<span class="mono">retro_value</span>（t1 回溯值）、<span class="mono">online_value</span>（t2 线上值）、
+            <span class="mono">compare_result</span>（一致/不同）；回溯值与线上值相同记「一致」、不同记「不同」，不匹配项排在最前。
+            WHERE 过滤条件可编辑，默认按回溯日期收敛 t2 的样本范围；抽样规模 50~100 条；页面不提供导出。
+            <strong>要求目标表含与临时库同名的标准字段</strong>，否则需先补充 t1↔t2 的字段映射。
             <strong>未上线产品无线上数据可对比时可跳过校验</strong>，跳过后仍可推进 Hive 标准库，验证报告中标注「未执行」。
           </div>
 
@@ -640,21 +668,21 @@
             v-if="consistencyDetails.length"
             :data="pagedConsistencyDetails"
             :pagination="consistencyPagination"
-            row-key="sampleId"
+            :row-key="consistencyRowKey"
             size="small"
             @page-change="onConsistencyPageChange"
           >
             <template #columns>
-              <a-table-column title="抽样ID（SM4身份证号）" data-index="sampleId" :width="200">
-                <template #cell="{ record }"><span class="mono">{{ record.sampleId }}</span></template>
+              <a-table-column title="客户号（cert_no，t1）" data-index="certNo" :width="200">
+                <template #cell="{ record }"><span class="mono">{{ record.certNo }}</span></template>
               </a-table-column>
-              <a-table-column title="create_time" data-index="reviewDate" :width="140" />
+              <a-table-column title="create_time（t1 临时库）" data-index="createTime" :width="170" />
               <a-table-column title="对比字段" data-index="field" :width="200" />
-              <a-table-column title="线上值" data-index="onlineValue" />
-              <a-table-column title="回溯值（临时库）" data-index="retroValue" />
-              <a-table-column title="结果" :width="90">
+              <a-table-column title="回溯值（t1 临时库）" data-index="retroValue" />
+              <a-table-column title="线上值（t2 目标表）" data-index="onlineValue" />
+              <a-table-column title="对比结果" :width="100">
                 <template #cell="{ record }">
-                  <a-tag size="small" :color="record.consistent ? 'green' : 'red'">{{ record.consistent ? 'true' : 'false' }}</a-tag>
+                  <a-tag size="small" :color="record.consistent ? 'green' : 'red'">{{ record.consistent ? '一致' : '不同' }}</a-tag>
                 </template>
               </a-table-column>
               <a-table-column title="差异分布标注" :width="260">
@@ -1015,6 +1043,8 @@ const {
   tempPreviewVisible, openTempPreview, tempPreviewRows, tempPreviewColumns,
   consistencyChecked, consistencySkipped, consistencySkipReason, consistencyReady,
   consistencyTargetOptions, consistencyTargetTable, consistencyDetails, consistencySummary,
+  consistencyTempTable, consistencyJoinCondition, consistencyWhereCondition, consistencySqlPreview,
+  consistencyCompareFields, onConsistencyWhereInput, resetConsistencyWhere,
   validating, consistencyPagination, pagedConsistencyDetails, onConsistencyPageChange,
   loadConsistencyTables, runTripleRowCheck, runConsistencyCheck, skipConsistencyCheck,
   notifyConfig, loadNotifyConfig, notifySent, sendNotify,
@@ -1049,6 +1079,9 @@ const batchContext = ref<BatchContext | null>(null)
 /* ---------- 派生状态 ---------- */
 /** 当前 backid（R51） */
 const currentBackid = computed(() => persistBatches.value[0]?.backid || '')
+
+/** 一致性校验明细行唯一键：客户号 + 对比字段 */
+const consistencyRowKey = (record: { certNo: string; field: string }) => `${record.certNo}-${record.field}`
 
 /** 写入总行数 */
 const totalWriteRows = computed(() => persistBatches.value.reduce((sum, b) => sum + b.rows, 0))
@@ -1608,6 +1641,47 @@ const applyBatchFromRoute = async (backid: string) => {
 .mono {
   font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 12px;
+}
+
+/* ---------- 一致性校验关联与过滤条件（t1 JOIN t2 + 可编辑 WHERE） ---------- */
+.consistency-rule {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--color-border-2);
+  border-radius: 4px;
+  background: var(--color-fill-1);
+}
+
+.consistency-rule-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.consistency-rule-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--color-text-2);
+}
+
+.consistency-rule-join {
+  font-size: 12px;
+  color: var(--color-text-2);
+}
+
+.consistency-sql {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--color-fill-2);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .match-file-head {

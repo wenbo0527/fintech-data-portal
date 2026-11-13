@@ -33,7 +33,7 @@ import type { RetroFile, RetroTreeNode, ProcessedFileRecord, PreviewRow } from '
 import { getBacktrackProduct, listBacktrackProducts } from '../mock/backtrackProducts'
 import type { BacktrackProduct } from '../mock/backtrackProducts'
 import { buildConsistencyDetails, summarizeConsistency, buildTripleRowCheck } from '../mock/validation'
-import type { ValidationDetail, ConsistencySummary, TripleRowCheck } from '../mock/validation'
+import type { ValidationDetail, ConsistencySummary, TripleRowCheck, ConsistencyDetailOptions } from '../mock/validation'
 import { notifyConfigMock, buildNotifyContent, sendNotification } from '../mock/notify'
 import type { NotifyConfig, NotifyContent, NotifyChannel } from '../mock/notify'
 
@@ -231,9 +231,13 @@ export async function fetchBacktrackProducts(agencyCode?: string): Promise<Backt
   return []
 }
 
-/** 生成一致性校验明细（R72 抽样 50-100 条） */
-export async function fetchConsistencyDetails(count = 100, reviewDate?: string): Promise<ValidationDetail[]> {
-  if (useMock) return buildConsistencyDetails(count, reviewDate)
+/**
+ * 生成一致性校验明细（R72 抽样 50-100 条）
+ * @param count 抽样明细条数
+ * @param options 关联口径：create_time 取自 t1 临时库，fields 为参与对比的回溯字段
+ */
+export async function fetchConsistencyDetails(count = 100, options?: ConsistencyDetailOptions): Promise<ValidationDetail[]> {
+  if (useMock) return buildConsistencyDetails(count, options)
   return []
 }
 

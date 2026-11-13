@@ -1,56 +1,18 @@
 <template>
   <div class="grant-panel">
-    <!-- 数据源当前状态 -->
-    <a-row :gutter="12" class="ds-row">
-      <a-col v-for="panel in dsPanels" :key="panel.ds" :span="12">
-        <div class="ds-card" :class="panel.grant ? `is-${panel.grant.status}` : 'is-none'">
-          <div class="ds-card__head">
-            <icon-storage class="ds-card__icon" />
-            <span class="ds-card__name">{{ panel.label }}</span>
-            <a-tag size="small" :color="DB_ACCOUNT_STATUS_META[panel.status].tag">
-              {{ DB_ACCOUNT_STATUS_META[panel.status].text }}
-            </a-tag>
-            <span class="ds-card__cluster">{{ GRANT_SCOPE_OPTIONS[panel.ds].cluster }}</span>
-          </div>
-          <div class="ds-card__body">
-            <div class="ds-kv">
-              <span class="ds-kv__label">账号</span>
-              <code v-if="panel.grant" class="ds-kv__code">{{ panel.grant.accountName }}</code>
-              <span v-else class="is-muted">未开通</span>
-            </div>
-            <div class="ds-kv">
-              <span class="ds-kv__label">授权范围</span>
-              <span>{{ scopeText(panel.grant) }}</span>
-            </div>
-            <div class="ds-kv">
-              <span class="ds-kv__label">有效期</span>
-              <span :class="{ 'is-muted': !panel.grant?.expireAt }">{{ expireText(panel.grant) }}</span>
-            </div>
-          </div>
-          <div class="ds-card__foot">
-            <a-button v-if="canApply(panel.grant)" size="mini" type="primary" @click="openApply(panel.ds, panel.grant)">
-              {{ panel.grant ? '重新申请' : '申请开通' }}
-            </a-button>
-            <a-button v-if="panel.grant?.status === 'active'" size="mini" @click="openExtend(panel.grant!)">续期</a-button>
-            <a-button
-              v-if="panel.grant?.status === 'active'"
-              size="mini"
-              status="danger"
-              @click="confirmRevoke(panel.grant!)"
-            >释放</a-button>
-            <a-button v-if="panel.grant" size="mini" type="text" @click="openDetail(panel.grant!)">详情</a-button>
-            <span v-if="panel.status === 'applying'" class="ds-card__hint">
-              <icon-loading />
-              审批中,通过后自动生效
-            </span>
-            <span v-else-if="panel.status === 'rejected'" class="ds-card__hint is-danger">
-              <icon-exclamation-circle />
-              已驳回,可修改后重新申请
-            </span>
-          </div>
-        </div>
-      </a-col>
-    </a-row>
+    <!-- 当前状态摘要:一行两个数据源,不重复列表字段 -->
+    <div class="status-strip">
+      <div v-for="panel in dsPanels" :key="panel.ds" class="status-item">
+        <icon-storage class="status-item__icon" />
+        <span class="status-item__name">{{ panel.label }}</span>
+        <code v-if="panel.grant" class="status-item__code">{{ panel.grant.accountName }}</code>
+        <span v-else class="is-muted">未开通</span>
+        <a-tag size="small" :color="DB_ACCOUNT_STATUS_META[panel.status].tag">
+          {{ DB_ACCOUNT_STATUS_META[panel.status].text }}
+        </a-tag>
+        <span class="status-item__scope">{{ scopeText(panel.grant) }}</span>
+      </div>
+    </div>
 
     <!-- 申请记录 -->
     <div class="toolbar">
@@ -60,12 +22,9 @@
         allow-clear
         style="width: 220px"
       />
-      <a-select v-model="dsFilter" :options="dsFilterOptions" style="width: 130px" />
       <a-select v-model="statusFilter" :options="statusOptions" style="width: 130px" />
-      <a-button :disabled="!keyword && dsFilter === 'all' && statusFilter === 'all'" @click="resetFilter">
-        重置
-      </a-button>
-      <span class="toolbar-hint">共 {{ rows.length }} 条申请记录</span>
+      <a-button :disabled="!keyword && statusFilter === 'all'" @click="resetFilter">重置</a-button>
+      <span class="toolbar-hint">共 {{ rows.length }} 条记录</span>
     </div>
 
     <a-table
@@ -73,7 +32,7 @@
       :data="rows"
       row-key="id"
       size="medium"
-      :scroll="{ x: 1230 }"
+      :scroll="{ x: 1135 }"
       :pagination="{ pageSize: 8, showTotal: true, sizeCanChange: false }"
     >
       <template #grantDs="{ record }">
@@ -96,17 +55,16 @@
         </a-tag>
       </template>
       <template #grantStatus="{ record }">
-        <a-tag size="small" :color="accountStatusMeta(record.status).tag">
-          <template #icon>
-            <icon-loading v-if="record.status === 'applying'" />
-            <span v-else class="cell-dot" :style="{ background: accountStatusMeta(record.status).dot }" />
-          </template>
-          {{ accountStatusMeta(record.status).text }}
-        </a-tag>
-      </template>
-      <template #grantExpire="{ record }">
-        <div>{{ record.expireAt ?? '—' }}</div>
-        <div class="cell-sub">{{ expireHint(record) }}</div>
+        <a-space size="mini">
+          <a-tag size="small" :color="accountStatusMeta(record.status).tag">
+            <template #icon>
+              <icon-loading v-if="record.status === 'applying'" />
+              <span v-else class="cell-dot" :style="{ background: accountStatusMeta(record.status).dot }" />
+            </template>
+            {{ accountStatusMeta(record.status).text }}
+          </a-tag>
+          <a-tag v-if="isCurrent(record)" size="small" color="gray">当前</a-tag>
+        </a-space>
       </template>
       <template #grantApplied="{ record }">
         <div>{{ dateOf(record.appliedAt) }}</div>
@@ -115,10 +73,8 @@
       <template #grantOps="{ record }">
         <a-space size="mini" wrap>
           <a-link @click="openDetail(record)">详情</a-link>
-          <a-link v-if="record.status === 'active'" @click="openExtend(record)">续期</a-link>
           <a-link v-if="record.status === 'active'" status="danger" @click="confirmRevoke(record)">释放</a-link>
           <a-link v-if="canApply(record)" @click="openApply(record.datasource, record)">重新申请</a-link>
-          <span v-if="record.status === 'applying'" class="cell-loading"><icon-loading /> 审批中</span>
         </a-space>
       </template>
     </a-table>
@@ -155,23 +111,13 @@
             </a-checkbox>
           </a-checkbox-group>
         </a-form-item>
-        <a-row :gutter="12">
-          <a-col :span="12">
-            <a-form-item label="权限级别" required>
-              <a-radio-group v-model="applyForm.privilege">
-                <a-radio value="read">只读</a-radio>
-                <a-radio value="write">读写</a-radio>
-              </a-radio-group>
-            </a-form-item>
-          </a-col>
-          <a-col :span="12">
-            <a-form-item label="有效期" required>
-              <a-select v-model="applyForm.validMonths">
-                <a-option v-for="m in GRANT_VALID_MONTHS_OPTIONS" :key="m" :value="m">{{ m }} 个月</a-option>
-              </a-select>
-            </a-form-item>
-          </a-col>
-        </a-row>
+        <a-form-item label="权限级别" required>
+          <!-- 自助申请只开放只读：读写 / 管理权限由 DBA 在管理端授予 -->
+          <a-space size="mini" align="center">
+            <a-tag color="arcoblue">只读</a-tag>
+            <span class="form-hint">自助申请仅支持只读权限;如需读写 / 管理权限,请联系 DBA 在管理端授予</span>
+          </a-space>
+        </a-form-item>
         <a-form-item label="用途说明" required>
           <a-select
             v-model="applyForm.purpose"
@@ -181,33 +127,7 @@
             placeholder="选择或输入用途"
           />
         </a-form-item>
-        <a-alert v-if="applyForm.privilege === 'write'" type="warning" show-icon class="modal-tip">
-          读写权限需数据 Owner 会签,审批时长可能延长。
-        </a-alert>
       </a-form>
-    </a-modal>
-
-    <!-- 续期 -->
-    <a-modal
-      v-model:visible="extendVisible"
-      title="账号续期"
-      ok-text="提交续期"
-      cancel-text="取消"
-      :ok-button-loading="submitting"
-      @ok="submitExtend"
-    >
-      <a-descriptions v-if="extendTarget" :column="1" size="small" class="extend-desc">
-        <a-descriptions-item label="数据库账号">{{ extendTarget.accountName }}</a-descriptions-item>
-        <a-descriptions-item label="当前到期">{{ extendTarget.expireAt ?? '—' }}</a-descriptions-item>
-      </a-descriptions>
-      <a-form :model="extendForm" layout="vertical">
-        <a-form-item label="续期时长" required>
-          <a-select v-model="extendForm.validMonths">
-            <a-option v-for="m in GRANT_VALID_MONTHS_OPTIONS" :key="m" :value="m">{{ m }} 个月</a-option>
-          </a-select>
-        </a-form-item>
-      </a-form>
-      <a-alert type="info" show-icon>续期通过后,有效期从审批通过当日起重新计算。</a-alert>
     </a-modal>
 
     <!-- 账号详情 -->
@@ -224,7 +144,6 @@
               {{ DB_ACCOUNT_STATUS_META[detail.status].text }}
             </a-tag>
           </a-descriptions-item>
-          <a-descriptions-item label="有效期至">{{ detail.expireAt ?? '审批通过后生成' }}</a-descriptions-item>
           <a-descriptions-item label="审批人">{{ detail.approver ?? '—' }}</a-descriptions-item>
           <a-descriptions-item label="用途">{{ detail.purpose }}</a-descriptions-item>
           <a-descriptions-item label="最近登录">{{ detail.lastLoginAt ?? '—' }}</a-descriptions-item>
@@ -251,8 +170,8 @@
 /**
  * 统一查询 · 数据库账号管理 —— 数据源权限面板
  *
- * 按用户申请 Doris / Hive 库级授权;已开通可续期 / 释放,
- * 驳回 / 过期 / 释放后可重新申请。审批流由 store 定时器模拟。
+ * 按用户申请 Doris / Hive 库级授权(账号长期有效,无到期日);已开通可释放,
+ * 驳回 / 释放后可重新申请。每个数据源只展示最新一份申请,历史流转在详情抽屉中查看。
  */
 import { computed, reactive, ref, watch } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
@@ -261,7 +180,6 @@ import {
   ACCOUNT_PURPOSE_OPTIONS,
   DB_ACCOUNT_STATUS_META,
   GRANT_SCOPE_OPTIONS,
-  GRANT_VALID_MONTHS_OPTIONS,
   PRIVILEGE_META
 } from '@/mock/unified-query/db-account'
 import type {
@@ -270,7 +188,7 @@ import type {
   DbAccountStatus,
   DbPrivilegeLevel
 } from '@/mock/unified-query/types'
-import { canApply, dateOf, dsLabel, expireHint, expireText, scopeText, timeOf } from './db-account-utils'
+import { canApply, dateOf, dsLabel, scopeText, timeOf } from './db-account-utils'
 
 const store = useUqDbAccountStore()
 
@@ -278,7 +196,7 @@ const store = useUqDbAccountStore()
 const privilegeMeta = (level: DbPrivilegeLevel) => PRIVILEGE_META[level]
 const accountStatusMeta = (status: DbAccountStatus) => DB_ACCOUNT_STATUS_META[status]
 
-/* ── 数据源卡片 ───────────────────────── */
+/* ── 当前状态摘要(一行) ───────────────── */
 const dsPanels = computed(() =>
   (['doris', 'hive'] as DataSourceKey[]).map(ds => {
     const grant = ds === 'doris' ? store.dorisGrant : store.hiveGrant
@@ -291,16 +209,9 @@ const dsPanels = computed(() =>
   })
 )
 
-/* ── 列表筛选 ─────────────────────────── */
+/* ── 申请记录列表 ─────────────────────── */
 const keyword = ref('')
-const dsFilter = ref<'all' | DataSourceKey>('all')
 const statusFilter = ref<'all' | DbAccountStatus>('all')
-
-const dsFilterOptions = [
-  { label: '全部数据源', value: 'all' },
-  { label: 'Doris', value: 'doris' },
-  { label: 'Hive', value: 'hive' }
-]
 
 const statusOptions = [
   { label: '全部状态', value: 'all' },
@@ -310,19 +221,39 @@ const statusOptions = [
   }))
 ]
 
+/** 每个数据源最新一条申请视为「当前」,列表里加标记区分历史记录 */
+const currentIds = computed(() => {
+  const seen = new Set<DataSourceKey>()
+  const ids = new Set<string>()
+  for (const g of [...store.grants].sort((a, b) => b.appliedAt.localeCompare(a.appliedAt))) {
+    if (seen.has(g.datasource)) {
+      continue
+    }
+    seen.add(g.datasource)
+    ids.add(g.id)
+  }
+  return ids
+})
+const isCurrent = (grant: DbAccountGrant) => currentIds.value.has(grant.id)
+
+/** 全部申请记录,按申请时间倒序 */
 const rows = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
-  return store.grants.filter(g => {
-    if (dsFilter.value !== 'all' && g.datasource !== dsFilter.value) return false
-    if (statusFilter.value !== 'all' && g.status !== statusFilter.value) return false
-    if (kw && !g.id.toLowerCase().includes(kw) && !g.accountName.toLowerCase().includes(kw)) return false
-    return true
-  })
+  return [...store.grants]
+    .sort((a, b) => b.appliedAt.localeCompare(a.appliedAt))
+    .filter(g => {
+      if (statusFilter.value !== 'all' && g.status !== statusFilter.value) {
+        return false
+      }
+      if (kw && !g.id.toLowerCase().includes(kw) && !g.accountName.toLowerCase().includes(kw)) {
+        return false
+      }
+      return true
+    })
 })
 
 function resetFilter() {
   keyword.value = ''
-  dsFilter.value = 'all'
   statusFilter.value = 'all'
 }
 
@@ -332,28 +263,24 @@ const columns = [
   { title: '数据库账号', dataIndex: 'accountName', slotName: 'grantAccount', width: 170 },
   { title: '授权范围', dataIndex: 'databases', slotName: 'grantScope', width: 210 },
   { title: '权限', dataIndex: 'privilege', slotName: 'grantPrivilege', width: 70 },
-  { title: '状态', dataIndex: 'status', slotName: 'grantStatus', width: 100 },
-  { title: '有效期', dataIndex: 'expireAt', slotName: 'grantExpire', width: 150 },
+  { title: '状态', dataIndex: 'status', slotName: 'grantStatus', width: 130 },
   { title: '申请时间', dataIndex: 'appliedAt', slotName: 'grantApplied', width: 150 },
   { title: '操作', dataIndex: 'operations', slotName: 'grantOps', width: 160 }
 ]
 
-/* ── 申请 / 续期 / 释放 ───────────────── */
+/* ── 申请 / 释放 ───────────────── */
 const purposeOptions = ACCOUNT_PURPOSE_OPTIONS.map(p => ({ label: p, value: p }))
 
 const applyVisible = ref(false)
 const submitting = ref(false)
+// 自助申请不含权限级别字段:固定只读,由 store 落库时统一写入
 const applyForm = reactive<{
   datasource: DataSourceKey
   databases: string[]
-  privilege: DbPrivilegeLevel
-  validMonths: number
   purpose: string
 }>({
   datasource: 'doris',
   databases: [],
-  privilege: 'read',
-  validMonths: 12,
   purpose: ''
 })
 
@@ -365,45 +292,28 @@ watch(() => applyForm.datasource, () => {
 function openApply(ds: DataSourceKey = 'doris', grant: DbAccountGrant | null = null) {
   applyForm.datasource = ds
   applyForm.databases = grant ? [...grant.databases] : []
-  applyForm.privilege = grant?.privilege ?? 'read'
-  applyForm.validMonths = grant?.validMonths ?? 12
   applyForm.purpose = grant?.purpose ?? ''
   applyVisible.value = true
 }
 
 function submitApply() {
-  if (!applyForm.databases.length) return Message.warning('请至少选择一个授权库')
-  if (!applyForm.purpose.trim()) return Message.warning('请填写用途说明')
+  if (!applyForm.databases.length) {
+    return Message.warning('请至少选择一个授权库')
+  }
+  if (!applyForm.purpose.trim()) {
+    return Message.warning('请填写用途说明')
+  }
   submitting.value = true
   const record = store.applyGrant({
     datasource: applyForm.datasource,
     databases: [...applyForm.databases],
-    privilege: applyForm.privilege,
-    validMonths: applyForm.validMonths,
+    // 自助申请固定只读:读写 / 管理权限仅由 DBA 管理端授予
+    privilege: 'read',
     purpose: applyForm.purpose.trim()
   })
   submitting.value = false
   applyVisible.value = false
   Message.success(`申请单 ${record.id} 已提交,等待 DBA 审批`)
-}
-
-const extendVisible = ref(false)
-const extendTarget = ref<DbAccountGrant | null>(null)
-const extendForm = reactive({ validMonths: 12 })
-
-function openExtend(grant: DbAccountGrant) {
-  extendTarget.value = grant
-  extendForm.validMonths = grant.validMonths
-  extendVisible.value = true
-}
-
-function submitExtend() {
-  if (!extendTarget.value) return
-  submitting.value = true
-  store.extendGrant(extendTarget.value.id, extendForm.validMonths)
-  submitting.value = false
-  extendVisible.value = false
-  Message.success('续期申请已提交,审批通过后有效期自动顺延')
 }
 
 function confirmRevoke(grant: DbAccountGrant) {
@@ -433,63 +343,30 @@ defineExpose({ openApply })
 </script>
 
 <style lang="scss" scoped>
-.ds-row {
-  margin: 4px 0 16px;
-}
-
-.ds-card {
+.status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+  padding: 10px 14px;
+  margin: 4px 0 14px;
   border: 1px solid var(--color-border-2);
   border-radius: 8px;
-  padding: 14px 16px;
-  height: 100%;
   background: var(--color-bg-2);
-
-  &.is-active { border-left: 3px solid rgb(var(--success-6)); }
-  &.is-applying { border-left: 3px solid rgb(var(--warning-6)); }
-  &.is-rejected { border-left: 3px solid rgb(var(--danger-6)); }
-  &.is-expired,
-  &.is-revoked,
-  &.is-none { border-left: 3px solid var(--color-fill-3); }
 }
 
-.ds-card__head {
+.status-item {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.ds-card__icon {
-  color: rgb(var(--primary-6));
-}
-
-.ds-card__name {
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.ds-card__cluster {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--color-text-3);
-}
-
-.ds-card__body {
-  margin-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.ds-kv {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
   font-size: 13px;
 
-  &__label {
-    flex: none;
-    width: 66px;
-    color: var(--color-text-3);
+  &__icon {
+    color: rgb(var(--primary-6));
+  }
+
+  &__name {
+    font-weight: 600;
   }
 
   &__code {
@@ -499,25 +376,10 @@ defineExpose({ openApply })
     padding: 1px 6px;
     border-radius: 3px;
   }
-}
 
-.ds-card__foot {
-  margin-top: 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.ds-card__hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: rgb(var(--warning-6));
-
-  &.is-danger {
-    color: rgb(var(--danger-6));
+  &__scope {
+    font-size: 12px;
+    color: var(--color-text-3);
   }
 }
 
@@ -560,14 +422,6 @@ defineExpose({ openApply })
   vertical-align: middle;
 }
 
-.cell-loading {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: rgb(var(--warning-6));
-}
-
 .cell-sub {
   margin-top: 2px;
   font-size: 12px;
@@ -586,10 +440,6 @@ defineExpose({ openApply })
   margin-left: 8px;
   font-size: 12px;
   color: var(--color-text-3);
-}
-
-.extend-desc {
-  margin-bottom: 12px;
 }
 
 .drawer-alert {

@@ -201,7 +201,7 @@
                 </span>
               </template>
               <a-tab-pane key="result" title="结果">
-                <ResultTable :result="result" :loading="running" :status="status" :datasource="datasource" />
+                <ResultTable :result="result" :loading="running" :status="status" :datasource="datasource" :sql="executedSql" />
               </a-tab-pane>
               <a-tab-pane key="log" title="日志">
                 <LogViewer :logs="logs" />
@@ -416,6 +416,8 @@ const taskStore = useUqTaskStore()
 const editorRef = shallowRef<InstanceType<typeof SqlEditor> | null>(null)
 const status = ref<ExecStatus>('idle')
 const result = ref<QueryResult | null>(null)
+/** 实际执行的 SQL(与编辑器内容解耦),导出时用于判定 DDL / 结构查询 */
+const executedSql = ref('')
 const logs = ref<LogEntry[]>([])
 const panel = ref<'result' | 'log'>('result')
 const selection = ref('')
@@ -545,6 +547,7 @@ function insertTableSql() {
 watch(activeKey, () => {
   status.value = 'idle'
   result.value = null
+  executedSql.value = ''
   logs.value = []
   selection.value = ''
   lastTip.value = ''
@@ -587,6 +590,7 @@ async function runSql(override?: string) {
 
   status.value = 'running'
   result.value = null
+  executedSql.value = target
   logs.value = []
   panel.value = 'result'
   job = createQueryJob(target, datasource.value)

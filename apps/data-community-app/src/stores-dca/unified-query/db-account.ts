@@ -48,14 +48,6 @@ function nowParts(): { stamp: string; dateKey: string } {
   return { stamp, dateKey }
 }
 
-/** 当前时间 + n 个月,返回 YYYY-MM-DD */
-function addMonths(months: number): string {
-  const d = new Date()
-  d.setMonth(d.getMonth() + months)
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
-
 /** 当前时间 + n 天,返回 YYYY-MM-DD */
 function addDays(days: number): string {
   const d = new Date()
@@ -108,29 +100,39 @@ export const useUqDbAccountStore = defineStore('uqDbAccount', () => {
   const getGrantById = (id: string) => grants.value.find(g => g.id === id) ?? null
   const getKeyById = (id: string) => keys.value.find(k => k.id === id) ?? null
 
-  /** 审批通过:写入开通信息 + 流转记录 */
-  function approve(grant: DbAccountGrant, validMonths: number, action: string) {
+  /** 生成不与现有记录冲突的编号:种子数据已占用同日序号 */
+  function uniqueId(prefix: 'DB' | 'AK', dateKey: string): string {
+    const exists = (id: string) =>
+      prefix === 'DB' ? getGrantById(id) !== null : getKeyById(id) !== null
+    let id = nextId(prefix, dateKey)
+    while (exists(id)) id = nextId(prefix, dateKey)
+    return id
+  }
+
+  /** 审批通过:写入开通信息 + 流转记录(账号长期有效,无到期日) */
+  function approve(grant: DbAccountGrant, action: string) {
     const { stamp } = nowParts()
     grant.status = 'active'
     grant.approvedAt = stamp
     grant.approver = '王工(DBA)'
-    grant.expireAt = addMonths(validMonths)
     grant.history.push({
       ts: stamp,
       action,
       actor: '王工(DBA)',
       from: 'applying',
       to: 'active',
-      comment: `账号 ${grant.accountName} 已生效,有效期至 ${grant.expireAt}`
+      comment: `账号 ${grant.accountName} 已生效,长期有效`
     })
   }
 
   /** 模拟审批推进:applying → active */
-  function simulateApproval(grant: DbAccountGrant, validMonths: number, action: string) {
+  function simulateApproval(grantId: string, action: string) {
     setTimeout(() => {
+      // 定时器内按 id 取响应式实例,直接改裸对象不会触发视图更新
+      const grant = getGrantById(grantId)
       // 期间被释放则不再回写
-      if (grant.status !== 'applying') return
-      approve(grant, validMonths, action)
+      if (!grant || grant.status !== 'applying') return
+      approve(grant, action)
     }, APPROVAL_DELAY)
   }
 
@@ -139,21 +141,20 @@ export const useUqDbAccountStore = defineStore('uqDbAccount', () => {
     datasource: DataSourceKey
     databases: string[]
     privilege: DbPrivilegeLevel
-    validMonths: number
     purpose: string
   }): DbAccountGrant {
     const { stamp, dateKey } = nowParts()
     const cluster = GRANT_SCOPE_OPTIONS[payload.datasource].cluster
     const previous = latestGrant(payload.datasource)
     const record: DbAccountGrant = {
-      id: nextId('DB', dateKey),
+      id: uniqueId('DB', dateKey),
       datasource: payload.datasource,
       accountName: previous?.accountName ?? buildAccountName(payload.datasource),
       cluster,
       databases: [...payload.databases],
-      privilege: payload.privilege,
+      // 自助申请固定只读:读写 / 管理权限仅由 DBA 管理端授予
+      privilege: 'read',
       status: 'applying',
-      validMonths: payload.validMonths,
       appliedAt: stamp,
       purpose: payload.purpose,
       history: [
@@ -162,31 +163,13 @@ export const useUqDbAccountStore = defineStore('uqDbAccount', () => {
           ts: stamp,
           action: '进入 DBA 审批队列',
           actor: '权限平台',
-          comment: `${payload.privilege === 'read' ? '只读' : '读写'}权限 · ${payload.databases.join('、')} 库`
+          comment: `只读权限 · ${payload.databases.join('、')} 库`
         }
       ]
     }
     grants.value.unshift(record)
-    simulateApproval(record, payload.validMonths, 'DBA 审批通过并完成授权')
+    simulateApproval(record.id, 'DBA 审批通过并完成授权')
     return record
-  }
-
-  /** 续期:重新走一次审批,通过后从当前时间起算有效期 */
-  function extendGrant(id: string, validMonths: number): DbAccountGrant | null {
-    const grant = getGrantById(id)
-    if (!grant) return null
-    const { stamp } = nowParts()
-    grant.status = 'applying'
-    grant.validMonths = validMonths
-    grant.history.push({
-      ts: stamp,
-      action: `提交续期申请(${validMonths} 个月)`,
-      actor: ACCOUNT_OWNER.name,
-      from: 'active',
-      to: 'applying'
-    })
-    simulateApproval(grant, validMonths, 'DBA 续期审批通过')
-    return grant
   }
 
   /** 释放账号:立即失效,不可恢复(演示态) */
@@ -216,7 +199,7 @@ export const useUqDbAccountStore = defineStore('uqDbAccount', () => {
   }): AccessKeyRecord {
     const { stamp, dateKey } = nowParts()
     const record: AccessKeyRecord = {
-      id: nextId('AK', dateKey),
+      id: uniqueId('AK', dateKey),
       name: payload.name,
       accessKeyId: randomAccessKeyId(),
       secretKey: randomSecretKey(),
@@ -269,7 +252,6 @@ export const useUqDbAccountStore = defineStore('uqDbAccount', () => {
     getGrantById,
     getKeyById,
     applyGrant,
-    extendGrant,
     revokeGrant,
     createKey,
     toggleKey,

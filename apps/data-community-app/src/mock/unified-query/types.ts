@@ -237,6 +237,12 @@ export interface TaskExecHistory {
 /** 导出方式:保存到平台 / 下载到本地 */
 export type ExportMethod = 'platform' | 'local'
 
+/** 导出模式:前端快速导出 / 后端导出任务 */
+export type ExportMode = 'quick' | 'backend'
+
+/** SQL 语句类别:DDL / 结构查询(SHOW、DESC、EXPLAIN)/ 查询 / 未知 */
+export type StatementKind = 'ddl' | 'metadata' | 'query' | 'unknown'
+
 /** 导出任务状态:排队中 / 导出中 / 成功 / 失败 / 已过期 */
 export type ExportStatus = 'queued' | 'exporting' | 'success' | 'failed' | 'expired'
 
@@ -334,8 +340,8 @@ export interface QueryHistory {
 
 /** ─────────── 数据库账号管理(DBA 自助服务) ─────────── */
 
-/** 数据库账号申请状态:已开通 / 审批中 / 已驳回 / 已过期 / 已释放 */
-export type DbAccountStatus = 'active' | 'applying' | 'rejected' | 'expired' | 'revoked'
+/** 数据库账号申请状态:已开通 / 审批中 / 已驳回 / 已释放 */
+export type DbAccountStatus = 'active' | 'applying' | 'rejected' | 'revoked'
 
 /** 账号权限级别:只读 / 读写 / 管理 */
 export type DbPrivilegeLevel = 'read' | 'write' | 'admin'
@@ -366,12 +372,8 @@ export interface DbAccountGrant {
   databases: string[]
   privilege: DbPrivilegeLevel
   status: DbAccountStatus
-  /** 有效期(月) */
-  validMonths: number
   appliedAt: string
   approvedAt?: string
-  /** 到期时间,审批中为空 */
-  expireAt?: string
   approver?: string
   purpose: string
   /** 驳回原因 */
@@ -436,7 +438,6 @@ export interface DbAccount {
   /** 密码有效期(天),超出即强制重置 */
   passwordValidDays: number
   createdAt: string
-  expireAt: string
   lastLoginAt: string | null
   /** 关联访问 Key 数量 */
   keyCount: number

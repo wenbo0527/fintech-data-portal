@@ -66,7 +66,6 @@ export const SEED_DB_ACCOUNTS: DbAccount[] = [
     passwordUpdatedAt: '2026-09-02 10:15:00',
     passwordValidDays: 90,
     createdAt: '2026-03-01 11:05:00',
-    expireAt: '2027-03-01',
     lastLoginAt: '2026-11-05 09:12:00',
     keyCount: 2,
     source: 'self-service'
@@ -86,7 +85,6 @@ export const SEED_DB_ACCOUNTS: DbAccount[] = [
     passwordUpdatedAt: '2026-06-15 14:20:00',
     passwordValidDays: 90,
     createdAt: '2026-01-18 09:40:00',
-    expireAt: '2027-01-20',
     lastLoginAt: '2026-11-06 08:40:00',
     keyCount: 1,
     source: 'self-service'
@@ -106,7 +104,6 @@ export const SEED_DB_ACCOUNTS: DbAccount[] = [
     passwordUpdatedAt: '2026-08-01 16:50:00',
     passwordValidDays: 90,
     createdAt: '2026-01-18 09:42:00',
-    expireAt: '2026-12-31',
     lastLoginAt: '2026-09-28 17:22:00',
     keyCount: 0,
     source: 'self-service',
@@ -127,7 +124,6 @@ export const SEED_DB_ACCOUNTS: DbAccount[] = [
     passwordUpdatedAt: '2026-10-08 09:05:00',
     passwordValidDays: 90,
     createdAt: '2025-11-20 10:30:00',
-    expireAt: '2027-06-30',
     lastLoginAt: '2026-11-06 09:03:00',
     keyCount: 1,
     source: 'admin'
@@ -147,7 +143,6 @@ export const SEED_DB_ACCOUNTS: DbAccount[] = [
     passwordUpdatedAt: '2026-04-12 11:30:00',
     passwordValidDays: 90,
     createdAt: '2026-02-08 15:12:00',
-    expireAt: '2027-02-28',
     lastLoginAt: '2026-10-31 16:18:00',
     keyCount: 1,
     source: 'self-service'
@@ -167,7 +162,6 @@ export const SEED_DB_ACCOUNTS: DbAccount[] = [
     passwordUpdatedAt: '2026-09-20 10:00:00',
     passwordValidDays: 90,
     createdAt: '2026-04-11 14:00:00',
-    expireAt: '2026-11-30',
     lastLoginAt: '2026-10-12 11:05:00',
     keyCount: 0,
     source: 'self-service',
@@ -188,7 +182,6 @@ export const SEED_DB_ACCOUNTS: DbAccount[] = [
     passwordUpdatedAt: '2026-11-01 09:30:00',
     passwordValidDays: 90,
     createdAt: '2025-06-01 09:00:00',
-    expireAt: '2027-12-31',
     lastLoginAt: '2026-11-06 09:55:00',
     keyCount: 0,
     source: 'admin'
@@ -208,7 +201,6 @@ export const SEED_DB_ACCOUNTS: DbAccount[] = [
     passwordUpdatedAt: '2026-11-01 09:32:00',
     passwordValidDays: 90,
     createdAt: '2025-06-01 09:05:00',
-    expireAt: '2027-12-31',
     lastLoginAt: '2026-11-05 20:12:00',
     keyCount: 1,
     source: 'admin'
@@ -320,7 +312,7 @@ export const SEED_ADMIN_AUDITS: DbAdminAuditEntry[] = [
     target: 'dq_zhangsan_hc_old',
     targetUser: '张三',
     operator: ADMIN_OPERATOR,
-    detail: '授权到期自动回收,库内账号与残留会话已清理',
+    detail: '申请人已结束临时排查,释放后库内账号与残留会话已清理',
     level: 'danger'
   }
 ]

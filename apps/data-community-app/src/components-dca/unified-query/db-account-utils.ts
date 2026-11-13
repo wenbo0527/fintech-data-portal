@@ -23,26 +23,6 @@ export function daysLeft(date: string): number {
   return Math.round((target - today.getTime()) / 86400000)
 }
 
-/** 有效期展示:日期 + 剩余天数 / 已过期 / 已释放 */
-export function expireText(grant: DbAccountGrant | null): string {
-  if (!grant) return '—'
-  if (!grant.expireAt) return grant.status === 'applying' ? '审批通过后生成' : '—'
-  if (grant.status === 'expired') return `${grant.expireAt}(已过期)`
-  if (grant.status === 'revoked') return `${grant.expireAt}(已释放)`
-  const left = daysLeft(grant.expireAt)
-  return left >= 0 ? `${grant.expireAt}(剩余 ${left} 天)` : `${grant.expireAt}(已过期)`
-}
-
-/** 有效期副文案:剩余天数 / 已过期 / 已释放 / 审批通过后生成 */
-export function expireHint(grant: DbAccountGrant | null): string {
-  if (!grant) return ''
-  if (!grant.expireAt) return grant.status === 'applying' ? '审批通过后生成' : ''
-  if (grant.status === 'expired') return '已过期'
-  if (grant.status === 'revoked') return '已释放'
-  const left = daysLeft(grant.expireAt)
-  return left >= 0 ? `剩余 ${left} 天` : '已过期'
-}
-
 /** SecretKey 掩码:dcs_•••••••• + 末 4 位 */
 export function maskSecret(secret: string): string {
   return `dcs_${'•'.repeat(8)}${secret.slice(-4)}`
@@ -60,9 +40,9 @@ export function timeOf(datetime: string | undefined): string {
   return datetime.split(' ')[1] ?? ''
 }
 
-/** 已驳回 / 已过期 / 已释放 / 未开通 可重新申请 */
+/** 已驳回 / 已释放 / 未开通 可重新申请 */
 export function canApply(grant: DbAccountGrant | null): boolean {
-  return !grant || ['rejected', 'expired', 'revoked'].includes(grant.status)
+  return !grant || ['rejected', 'revoked'].includes(grant.status)
 }
 
 /** 概览卡片色调 */

@@ -226,9 +226,6 @@
               </a-checkbox>
             </a-checkbox-group>
           </a-form-item>
-          <a-form-item label="有效期">
-            <a-select v-model="grantForm.extendMonths" :options="extendOptions" />
-          </a-form-item>
           <a-form-item label="变更说明" required>
             <a-select v-model="grantForm.reason" :options="changeReasonOptions" />
           </a-form-item>
@@ -276,9 +273,8 @@
           <a-descriptions-item label="密码更新">{{ detail.passwordUpdatedAt }}</a-descriptions-item>
           <a-descriptions-item label="密码状态">
             <span :class="`is-${passwordState(detail)}`">{{ passwordHint(detail) }}</span>
-            <span class="detail-remark">有效期 {{ detail.passwordValidDays }} 天</span>
+            <span class="detail-remark">密码有效期 {{ detail.passwordValidDays }} 天</span>
           </a-descriptions-item>
-          <a-descriptions-item label="账号有效期">{{ detail.expireAt }}</a-descriptions-item>
           <a-descriptions-item label="最近登录">{{ detail.lastLoginAt ?? '从未登录' }}</a-descriptions-item>
           <a-descriptions-item label="关联访问 Key">{{ detail.keyCount }} 个</a-descriptions-item>
         </a-descriptions>
@@ -473,19 +469,10 @@ const grantTarget = ref<DbAccount | null>(null)
 const grantForm = reactive({
   privilege: 'read' as DbPrivilegeLevel,
   databases: [] as string[],
-  extendMonths: 0,
   reason: PRIVILEGE_CHANGE_REASONS[0]
 })
 
 const changeReasonOptions = PRIVILEGE_CHANGE_REASONS.map(r => ({ label: r, value: r }))
-
-const extendOptions = [
-  { label: '保持不变', value: 0 },
-  { label: '延长 3 个月', value: 3 },
-  { label: '延长 6 个月', value: 6 },
-  { label: '延长 12 个月', value: 12 },
-  { label: '延长 24 个月', value: 24 }
-]
 
 const dbOptions = computed(() => {
   const ds = grantTarget.value?.datasource
@@ -496,7 +483,6 @@ function openEditGrant(account: DbAccount) {
   grantTarget.value = account
   grantForm.privilege = account.privilege
   grantForm.databases = [...account.databases]
-  grantForm.extendMonths = 0
   grantForm.reason = PRIVILEGE_CHANGE_REASONS[0]
   grantVisible.value = true
 }
@@ -508,23 +494,13 @@ function submitGrant() {
     Message.warning('请至少保留一个授权库')
     return
   }
-  const expireAt = grantForm.extendMonths > 0 ? addMonths(grantForm.extendMonths) : undefined
   admin.updateAccountGrant(account.id, {
     privilege: grantForm.privilege,
     databases: grantForm.databases,
-    expireAt,
     reason: grantForm.reason
   })
   grantVisible.value = false
   Message.success(`账号「${account.accountName}」权限已更新`)
-}
-
-/** 当前时间 + n 个月,返回 YYYY-MM-DD */
-function addMonths(months: number): string {
-  const d = new Date()
-  d.setMonth(d.getMonth() + months)
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
 /* ── 更多操作 ─────────────────────────── */

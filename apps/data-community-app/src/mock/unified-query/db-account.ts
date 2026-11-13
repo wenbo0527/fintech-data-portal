@@ -2,7 +2,7 @@
  * 统一查询 · 数据库账号管理 Mock
  *
  * 覆盖两类自助申请:
- *   1. 数据源权限 — 按用户开通 Doris / Hive 账号(库级授权 + 只读/读写)
+ *   1. 数据源权限 — 按用户开通 Doris / Hive 只读账号(库级授权;读写 / 管理权限仅由 DBA 管理端授予)
  *   2. 访问 Key  — 供 Python / R 客户端连接时使用的 AccessKeyId + SecretKey
  *
  * 全部为前端 Mock,不发起任何 HTTP 请求。
@@ -53,7 +53,6 @@ export const DB_ACCOUNT_STATUS_META: Record<DbAccountStatus, { text: string; tag
   active: { text: '已开通', tag: 'green', dot: '#00b42a' },
   applying: { text: '审批中', tag: 'orange', dot: '#ff7d10' },
   rejected: { text: '已驳回', tag: 'red', dot: '#f53f3f' },
-  expired: { text: '已过期', tag: 'gray', dot: '#c9cdd4' },
   revoked: { text: '已释放', tag: 'gray', dot: '#c9cdd4' }
 }
 
@@ -93,9 +92,6 @@ export function extendExpireAt(expireAt: string, days: number): string {
   return `${from.getFullYear()}-${pad(from.getMonth() + 1)}-${pad(from.getDate())}`
 }
 
-/** 账号申请有效期选项(月) */
-export const GRANT_VALID_MONTHS_OPTIONS = [3, 6, 12, 24]
-
 /** 用途选项(申请表单下拉,可自由输入) */
 export const ACCOUNT_PURPOSE_OPTIONS = [
   '日常取数与报表核对',
@@ -111,7 +107,7 @@ export const CONNECTION_ENDPOINT: Record<DataSourceKey, { host: string; port: nu
   hive: { host: 'hive-gateway.data-platform.internal', port: 10000, note: 'HiveServer2' }
 }
 
-/** 账号权限种子数据(覆盖已开通 / 审批中 / 已过期 / 已驳回) */
+/** 账号权限种子数据(覆盖已开通 / 审批中 / 已释放 / 已驳回) */
 export const SEED_DB_ACCOUNT_GRANTS: DbAccountGrant[] = [
   {
     id: 'DB20260301-001',
@@ -121,17 +117,15 @@ export const SEED_DB_ACCOUNT_GRANTS: DbAccountGrant[] = [
     databases: ['ADM'],
     privilege: 'read',
     status: 'active',
-    validMonths: 12,
     appliedAt: '2026-03-01 09:20:00',
     approvedAt: '2026-03-01 11:05:00',
-    expireAt: '2027-03-01',
     approver: '王工(DBA)',
     purpose: '日常取数与报表核对',
     lastLoginAt: '2026-11-05 09:12:00',
     history: [
       { ts: '2026-03-01 09:20:00', action: '提交账号开通申请', actor: '张三', to: 'applying' },
       { ts: '2026-03-01 10:12:00', action: '直属主管审批通过', actor: '李敏(主管)', comment: '用途明确,同意开通只读权限' },
-      { ts: '2026-03-01 11:05:00', action: 'DBA 开通账号并授权 ADM 库', actor: '王工(DBA)', from: 'applying', to: 'active', comment: '账号 dq_zhangsan_dr 已生效,有效期 12 个月' }
+      { ts: '2026-03-01 11:05:00', action: 'DBA 开通账号并授权 ADM 库', actor: '王工(DBA)', from: 'applying', to: 'active', comment: '账号 dq_zhangsan_dr 已生效,长期有效' }
     ]
   },
   {
@@ -140,14 +134,13 @@ export const SEED_DB_ACCOUNT_GRANTS: DbAccountGrant[] = [
     accountName: 'dq_zhangsan_hc',
     cluster: 'Inceptor',
     databases: ['default', 'risk_dw'],
-    privilege: 'write',
+    privilege: 'read',
     status: 'applying',
-    validMonths: 6,
     appliedAt: '2026-11-06 10:24:00',
-    purpose: '特征加工落表',
+    purpose: '特征加工前取数核对',
     history: [
       { ts: '2026-11-06 10:24:00', action: '提交账号开通申请', actor: '张三', to: 'applying' },
-      { ts: '2026-11-06 10:25:00', action: '进入 DBA 审批队列', actor: '权限平台', comment: '待确认 risk_dw 写入权限的数据 Owner 会签' }
+      { ts: '2026-11-06 10:25:00', action: '进入 DBA 审批队列', actor: '权限平台', comment: '待 DBA 确认 default、risk_dw 库只读授权' }
     ]
   },
   {
@@ -157,36 +150,33 @@ export const SEED_DB_ACCOUNT_GRANTS: DbAccountGrant[] = [
     cluster: 'Inceptor',
     databases: ['default'],
     privilege: 'read',
-    status: 'expired',
-    validMonths: 3,
+    status: 'revoked',
     appliedAt: '2026-05-10 14:02:00',
     approvedAt: '2026-05-10 16:30:00',
-    expireAt: '2026-08-10',
     approver: '王工(DBA)',
     purpose: '临时排查',
     lastLoginAt: '2026-08-08 17:41:00',
     history: [
       { ts: '2026-05-10 14:02:00', action: '提交账号开通申请', actor: '张三', to: 'applying' },
       { ts: '2026-05-10 16:30:00', action: 'DBA 开通账号并授权 default 库', actor: '王工(DBA)', from: 'applying', to: 'active' },
-      { ts: '2026-08-10 00:00:00', action: '授权到期自动回收', actor: '权限平台', from: 'active', to: 'expired' }
+      { ts: '2026-08-10 00:00:00', action: '临时排查结束,释放账号', actor: '张三', from: 'active', to: 'revoked', comment: '账号已回收,如需使用请重新申请' }
     ]
   },
   {
     id: 'DB20261021-004',
     datasource: 'hive',
-    accountName: 'dq_zhangsan_hc_rw',
+    accountName: 'dq_zhangsan_hc_tmp',
     cluster: 'Inceptor',
     databases: ['default', 'risk_dw'],
-    privilege: 'write',
+    privilege: 'read',
     status: 'rejected',
-    validMonths: 12,
     appliedAt: '2026-10-21 15:40:00',
     purpose: '数据同步落表',
-    rejectReason: '写入权限需数据 Owner 会签,请补充 risk_dw 库 Owner 的审批邮件后重新提交',
+    rejectReason: '用途说明过于笼统,请补充具体取数场景与库表范围后重新提交',
     approver: '王工(DBA)',
     history: [
       { ts: '2026-10-21 15:40:00', action: '提交账号开通申请', actor: '张三', to: 'applying' },
-      { ts: '2026-10-22 09:15:00', action: 'DBA 驳回申请', actor: '王工(DBA)', from: 'applying', to: 'rejected', comment: '写入权限需数据 Owner 会签,请补充审批邮件' }
+      { ts: '2026-10-22 09:15:00', action: 'DBA 驳回申请', actor: '王工(DBA)', from: 'applying', to: 'rejected', comment: '用途说明不充分,请补充取数场景后重新提交' }
     ]
   }
 ]

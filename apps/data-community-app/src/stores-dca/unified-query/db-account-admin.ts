@@ -166,10 +166,10 @@ export const useUqDbAccountAdminStore = defineStore('uqDbAccountAdmin', () => {
     return results
   }
 
-  /** 修改账号权限:权限级别 + 授权库,可同时延长有效期 */
+  /** 修改账号权限:权限级别 + 授权库(账号长期有效,不涉及到期日) */
   function updateAccountGrant(
     id: string,
-    payload: { privilege: DbPrivilegeLevel; databases: string[]; expireAt?: string; reason: string }
+    payload: { privilege: DbPrivilegeLevel; databases: string[]; reason: string }
   ): boolean {
     const account = getAccountById(id)
     if (!account) return false
@@ -177,12 +177,11 @@ export const useUqDbAccountAdminStore = defineStore('uqDbAccountAdmin', () => {
     const after = `${privilegeText(payload.privilege)} · ${payload.databases.join('、')}`
     account.privilege = payload.privilege
     account.databases = [...payload.databases]
-    if (payload.expireAt) account.expireAt = payload.expireAt
     writeAudit({
       action: '修改权限',
       target: account.accountName,
       targetUser: account.ownerName,
-      detail: `${before} → ${after}${payload.expireAt ? `;有效期延长至 ${payload.expireAt}` : ''};${payload.reason}`,
+      detail: `${before} → ${after};${payload.reason}`,
       level: 'warn'
     })
     return true
@@ -298,7 +297,6 @@ export const useUqDbAccountAdminStore = defineStore('uqDbAccountAdmin', () => {
         passwordUpdatedAt: stamp,
         passwordValidDays: 90,
         createdAt: stamp,
-        expireAt: grant.expireAt ?? '—',
         lastLoginAt: grant.lastLoginAt ?? null,
         keyCount: 0,
         source: 'self-service'

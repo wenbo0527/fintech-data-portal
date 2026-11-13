@@ -47,29 +47,56 @@
       </a-button>
     </div>
 
-    <!-- 导出弹窗:选择导出方式 / 编辑文件名 / 文件类型 CSV -->
+    <!-- 导出弹窗:按语句类型/行数推荐快速导出,也可切换为后端导出任务 -->
     <a-modal
       v-model:visible="exportVisible"
       title="导出查询结果"
-      :width="460"
+      :width="500"
       :mask-closable="false"
       ok-text="确定"
       @before-ok="submitExport"
     >
+      <a-alert v-if="quickEligible" type="success" show-icon class="uq-export__alert">
+        <template #title>已匹配「快速导出」· {{ STATEMENT_KIND_LABEL[statementKind] }}</template>
+        {{ quickReason }}。默认在浏览器直接生成 CSV,无需创建后端任务;如需留存或统一下载,可切换为「后端导出任务」。
+      </a-alert>
+      <a-alert v-else type="warning" show-icon class="uq-export__alert">
+        <template #title>将走后端导出任务</template>
+        结果共 {{ rowCount }} 行,超过快速导出上限({{ QUICK_EXPORT_ROW_LIMIT }} 行),已固定走后端导出流程。
+      </a-alert>
+
       <a-form :model="exportForm" layout="vertical">
-        <a-form-item label="导出方式" required>
-          <a-radio-group v-model="exportForm.method" type="button">
-            <a-radio value="platform">
-              <icon-save /> 保存到平台
-            </a-radio>
-            <a-radio value="local">
-              <icon-download /> 下载到本地
-            </a-radio>
-          </a-radio-group>
-          <div class="uq-export__hint">
-            {{ exportForm.method === 'platform'
-              ? '生成导出任务并保存到「我的导出」,可稍后统一下载。'
-              : '创建导出任务的同时,浏览器会立即下载一份 CSV 文件。' }}
+        <a-form-item label="导出模式" required>
+          <div class="uq-export__field">
+            <a-radio-group v-model="exportForm.mode" type="button">
+              <a-radio value="quick" :disabled="!quickEligible">快速导出</a-radio>
+              <a-radio value="backend">后端导出任务</a-radio>
+            </a-radio-group>
+            <div class="uq-export__hint">
+              <template v-if="exportForm.mode === 'quick'">
+                浏览器直接生成并下载 CSV(共 {{ rowCount }} 行),无需等待任务,不写入「我的导出」。
+              </template>
+              <template v-else>
+                生成导出任务并在「我的导出」查看进度,适合大数据量或需要留存文件的场景。
+              </template>
+            </div>
+          </div>
+        </a-form-item>
+        <a-form-item v-if="exportForm.mode === 'backend'" label="导出方式" required>
+          <div class="uq-export__field">
+            <a-radio-group v-model="exportForm.method" type="button">
+              <a-radio value="platform">
+                <icon-save /> 保存到平台
+              </a-radio>
+              <a-radio value="local">
+                <icon-download /> 下载到本地
+              </a-radio>
+            </a-radio-group>
+            <div class="uq-export__hint">
+              {{ exportForm.method === 'platform'
+                ? '生成导出任务并保存到「我的导出」,可稍后统一下载。'
+                : '创建导出任务的同时,浏览器会立即下载一份 CSV 文件。' }}
+            </div>
           </div>
         </a-form-item>
         <a-form-item label="文件名称" required>
@@ -78,7 +105,7 @@
           </a-input>
         </a-form-item>
         <a-form-item label="文件类型">
-          <a-input value="CSV(逗号分隔)" disabled />
+          <a-input model-value="CSV(逗号分隔)" disabled />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -96,8 +123,15 @@ import { computed, h, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
-import type { DataSourceKey, ExecStatus, ExportMethod, QueryResult, ResultColumn } from '@/mock/unified-query/types'
+import type { DataSourceKey, ExecStatus, ExportMethod, ExportMode, QueryResult, ResultColumn, StatementKind } from '@/mock/unified-query/types'
 import { DATASOURCE_LABEL } from '@/mock/unified-query/database'
+import {
+  detectStatementKind,
+  isQuickExportEligible,
+  quickExportReason,
+  QUICK_EXPORT_ROW_LIMIT,
+  STATEMENT_KIND_LABEL
+} from '@/mock/unified-query/statement'
 import { useUqExportStore } from '@/stores-dca/unified-query/export'
 
 const props = withDefaults(
@@ -106,8 +140,10 @@ const props = withDefaults(
     loading?: boolean;
     status: ExecStatus;
     datasource?: DataSourceKey;
+    /** 实际执行的 SQL,用于判定 DDL / 结构查询的导出模式 */
+    sql?: string;
   }>(),
-  { loading: false, datasource: 'doris' }
+  { loading: false, datasource: 'doris', sql: '' }
 )
 
 const router = useRouter()
@@ -119,6 +155,11 @@ const rows = computed<Record<string, string | number>[]>(() =>
 )
 const duration = computed(() => props.result?.duration ?? '')
 const rowCount = computed(() => props.result?.rowCount ?? 0)
+
+/* ── 导出模式判定:DDL / 结构查询,或行数低于阈值 ── */
+const statementKind = computed<StatementKind>(() => detectStatementKind(props.sql))
+const quickEligible = computed(() => isQuickExportEligible(statementKind.value, rowCount.value))
+const quickReason = computed(() => quickExportReason(statementKind.value, rowCount.value))
 
 const sortState = ref<{ key: string; order: 'ascend' | 'descend' | '' }>({ key: '', order: '' })
 
@@ -197,9 +238,10 @@ function downloadCsv(fileName: string, cols: ResultColumn[], data: Record<string
 
 /* ── 导出弹窗 ── */
 const exportVisible = ref(false)
-const exportForm = reactive<{ fileName: string; method: ExportMethod }>({
+const exportForm = reactive<{ fileName: string; method: ExportMethod; mode: ExportMode }>({
   fileName: '',
-  method: 'platform'
+  method: 'platform',
+  mode: 'backend'
 })
 
 /** 默认文件名:查询结果_YYYYMMDDHHmmss */
@@ -212,10 +254,11 @@ function defaultFileName(): string {
 function openExport() {
   exportForm.fileName = defaultFileName()
   exportForm.method = 'platform'
+  exportForm.mode = quickEligible.value ? 'quick' : 'backend'
   exportVisible.value = true
 }
 
-/** 点击确定:创建导出任务;下载到本地时额外触发浏览器下载 */
+/** 点击确定:快速导出直接下载;后端模式创建导出任务(下载到本地时额外触发浏览器下载) */
 function submitExport() {
   const name = exportForm.fileName.trim()
   if (!name) {
@@ -224,6 +267,14 @@ function submitExport() {
   }
   const cols = columns.value
   const data = sortedRows.value
+
+  // 快速导出:纯前端生成文件,不创建后端任务、不写入「我的导出」
+  if (exportForm.mode === 'quick') {
+    downloadCsv(name, cols, data)
+    Message.success(`已生成 CSV(${data.length} 行),开始下载`)
+    return true
+  }
+
   const dsLabel = DATASOURCE_LABEL[props.datasource]
 
   const task = exportStore.createTask({
@@ -311,5 +362,16 @@ function submitExport() {
   font-size: 12px;
   line-height: 1.5;
   color: var(--color-text-3);
+}
+
+.uq-export__field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.uq-export__alert {
+  margin-bottom: 16px;
 }
 </style>

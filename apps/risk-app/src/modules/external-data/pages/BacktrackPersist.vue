@@ -594,21 +594,17 @@
                 </a-option>
               </a-select>
             </div>
-            <a-button type="primary" :loading="validating" :disabled="!persistBatches.length" @click="runConsistencyCheck">
+            <a-button
+              type="primary"
+              :loading="validating"
+              :disabled="!consistencyExecutable || !persistBatches.length"
+              @click="runConsistencyCheck"
+            >
               <template #icon><icon-safe /></template>
               执行抽样一致性对比
             </a-button>
-            <a-button
-              v-if="!consistencyReady"
-              status="warning"
-              :disabled="!persistBatches.length"
-              @click="skipVisible = true"
-            >
-              <template #icon><icon-forward /></template>
-              跳过一致性校验
-            </a-button>
-            <a-tag v-if="consistencyChecked" color="green" size="medium">校验已完成，可推进 Hive</a-tag>
-            <a-tag v-else-if="consistencySkipped" color="orange" size="medium">已跳过校验，可推进 Hive</a-tag>
+            <span class="table-tip">本页不执行抽样对比，仅按下方条件生成 SQL，点「复制」到数据平台执行</span>
+            <a-tag v-if="consistencyReady" color="green" size="medium">比对 SQL 已生成，可推进 Hive</a-tag>
           </a-space>
 
           <!-- 关联与过滤条件：t1 为落库临时表，t2 为所选目标表；关联条件固定，WHERE 可编辑 -->
@@ -635,24 +631,19 @@
               placeholder="WHERE 过滤条件，例如：t2.create_time = '2026-09-30'"
               @input="onConsistencyWhereInput"
             />
-            <pre class="consistency-sql mono">{{ consistencySqlPreview }}</pre>
+            <SqlPreviewBlock :code="consistencySqlPreview" title="执行 SQL（t1 JOIN t2）" label="一致性校验 SQL" />
           </div>
           <div class="table-tip" style="margin-bottom: 12px">
             回溯值取自临时库 <span class="mono">{{ consistencyTempTable }}</span>（t1），线上值取自所选目标表（t2）；两表按
             <span class="mono">cert_no</span> + <span class="mono">create_time</span> 等值关联（
             <span class="mono">t1.cert_no = t2.cert_no AND t1.create_time = t2.create_time</span>），关联条件固定不可改。
-            上方 SQL 的结果列与下方明细一一对应：<span class="mono">cert_no</span>（客户号）、<span class="mono">create_time</span>（t1）、
+            SQL 结果列口径：<span class="mono">cert_no</span>（客户号）、<span class="mono">create_time</span>（t1）、
             <span class="mono">field</span>（对比字段）、<span class="mono">retro_value</span>（t1 回溯值）、<span class="mono">online_value</span>（t2 线上值）、
             <span class="mono">compare_result</span>（一致/不同）；回溯值与线上值相同记「一致」、不同记「不同」，不匹配项排在最前。
             WHERE 过滤条件可编辑，默认按回溯日期收敛 t2 的样本范围；抽样规模 50~100 条；页面不提供导出。
             <strong>要求目标表含与临时库同名的标准字段</strong>，否则需先补充 t1↔t2 的字段映射。
-            <strong>未上线产品无线上数据可对比时可跳过校验</strong>，跳过后仍可推进 Hive 标准库，验证报告中标注「未执行」。
+            <strong>本页不执行抽样对比</strong>：选好 t2 目标表并确认 WHERE 条件即生成比对 SQL，复制到数据平台核对通过后方可推进 Hive 标准库。
           </div>
-
-          <a-alert v-if="consistencySkipped" type="warning" style="margin-bottom: 12px">
-            <template #title>已跳过一致性抽样校验：{{ consistencySkipReason }}</template>
-            跳过后验证报告中一致性校验结果标注「未执行」。
-          </a-alert>
 
           <a-alert v-if="consistencySummary" :type="consistencySummary.inconsistentTotal ? 'warning' : 'success'" style="margin-bottom: 12px">
             <template #title>{{ consistencySummary.diffSummary }}</template>
@@ -702,11 +693,13 @@
                 <span v-if="!persistBatches.length" class="table-tip">上一步未落临时库，暂无源表</span>
               </a-space>
             </a-descriptions-item>
-            <a-descriptions-item label="目标表">
+            <a-descriptions-item label="目标表（可多选）">
               <a-select
-                v-model="hiveTable"
+                v-model="hiveTables"
+                multiple
                 allow-search
-                placeholder="在固定外数库中搜索并选择 Hive 表"
+                :max-tag-count="3"
+                placeholder="在固定外数库中搜索并选择 Hive 表，可同时选多张"
                 style="width: 420px"
                 :disabled="!persistBatches.length"
               >
@@ -716,6 +709,7 @@
               </a-select>
               <div class="table-tip">
                 当前未做数据档案，标准表无统一维护入口，落库目标表由用户在固定外数库中手动搜索选择，不支持新建。
+                多选时一批回溯数据同时写多张表，每张表单独按下方「字段匹配情况」的交集列写入。
               </div>
             </a-descriptions-item>
             <a-descriptions-item label="样本回溯时间（create_time）">
@@ -732,21 +726,58 @@
               </div>
             </a-descriptions-item>
             <a-descriptions-item label="字段匹配情况">
-              <a-space wrap :size="4">
-                <a-tag size="small" color="green">标准字段落表列 {{ mappedCount - nonStdCount + requiredPassedCount }}</a-tag>
-                <a-tag size="small" color="orange">非标 JSON 透传 {{ nonStdCount }}</a-tag>
-                <a-tag size="small" color="gray">
-                  映射总数 {{ mappedCount + requiredPassedCount }} / {{ fieldMappings.length + activeRequiredFieldMatch.length }}
-                </a-tag>
-                <a-tag size="small" color="cyan">映射版本 {{ mappingVersion }}</a-tag>
-                <a-tag v-for="c in requiredCipherSummary" :key="c.std" size="small" color="purple">
-                  {{ c.std }} 厂商 {{ c.algorithm }} → 落库 {{ STD_CIPHER_STORAGE }}
-                </a-tag>
-              </a-space>
-              <div class="table-tip">
-                非标准化字段统一序列化写入 extraParam 列（key 为外数出参字段名）；
-                临时库清理策略：进入下一步即清理 / 定时 1 小时清理；上传文件落库完成后 24 小时清理。
-              </div>
+              <!-- 逐表匹配口径全部入表：末行为合计，不再另加文字汇总与写入 SQL 预览 -->
+              <a-table
+                v-if="hiveTableMatchRows.length"
+                class="hive-match-table"
+                :data="hiveTableMatchRows"
+                :pagination="false"
+                size="small"
+                row-key="table"
+              >
+                <template #columns>
+                  <a-table-column title="目标表" :width="250">
+                    <template #cell="{ record }">
+                      <div class="mono" :class="{ 'hive-match-total': record.status === 'total' }">{{ record.table }}</div>
+                      <div v-if="record.description" class="table-tip">{{ record.description }}</div>
+                    </template>
+                  </a-table-column>
+                  <a-table-column title="匹配写入列" :width="120">
+                    <template #cell="{ record }">
+                      <span v-if="record.status === 'total'" class="hive-match-total">{{ record.matchedColumns.length }} 列次</span>
+                      <span v-else>{{ record.matchedColumns.length }} / {{ hiveMatchSummary.tmpColumnCount }}</span>
+                    </template>
+                  </a-table-column>
+                  <a-table-column title="本次写入字段">
+                    <template #cell="{ record }">
+                      <span v-if="record.status === 'total'" class="hive-match-total">多表按列次累加</span>
+                      <a-space v-else wrap :size="4">
+                        <a-tag v-for="c in record.matchedColumns.slice(0, 6)" :key="c" size="small" color="green">{{ c }}</a-tag>
+                        <a-tag v-if="record.matchedColumns.length > 6" size="small" color="gray">+{{ record.matchedColumns.length - 6 }}</a-tag>
+                      </a-space>
+                    </template>
+                  </a-table-column>
+                  <a-table-column title="跳过列（目标表无该列）" :width="210">
+                    <template #cell="{ record }">
+                      <span v-if="record.status === 'total'" class="hive-match-total">{{ record.skippedColumns.length }} 列次</span>
+                      <a-space v-else wrap :size="4">
+                        <a-tag v-for="c in record.skippedColumns.slice(0, 3)" :key="c" size="small" color="orange">{{ c }}</a-tag>
+                        <a-tag v-if="record.skippedColumns.length > 3" size="small" color="gray">+{{ record.skippedColumns.length - 3 }}</a-tag>
+                        <span v-if="!record.skippedColumns.length" class="table-tip">—</span>
+                      </a-space>
+                    </template>
+                  </a-table-column>
+                  <a-table-column title="状态" :width="150">
+                    <template #cell="{ record }">
+                      <span v-if="record.status === 'total'" class="hive-match-total">
+                        全匹配 {{ hiveMatchSummary.fullMatchCount }} / 部分 {{ hiveMatchSummary.partialCount }}
+                      </span>
+                      <a-tag v-else size="small" :color="hiveMatchStatusColor(record.status)">{{ hiveMatchStatusLabel(record.status) }}</a-tag>
+                    </template>
+                  </a-table-column>
+                </template>
+              </a-table>
+              <div v-else class="table-tip">未选择目标表，暂无逐表匹配结果。</div>
             </a-descriptions-item>
             <a-descriptions-item label="分区字段">
               <a-space wrap :size="4">
@@ -756,13 +787,19 @@
               </a-space>
               <div class="table-tip">标准表分区字段固定为 datax，按回溯日期按天分区。</div>
             </a-descriptions-item>
+            <a-descriptions-item label="清理策略">
+              <a-space wrap :size="4">
+                <a-tag size="small" color="gray">临时库：进入下一步即清理 / 定时 1 小时清理</a-tag>
+                <a-tag size="small" color="gray">上传文件：落库完成后 24 小时清理</a-tag>
+              </a-space>
+            </a-descriptions-item>
           </a-descriptions>
 
           <a-button
             type="primary"
             style="margin-top: 16px"
             :loading="writing"
-            :disabled="!persistBatches.length || !hiveTable || !partitionValue || !consistencyReady"
+            :disabled="!persistBatches.length || !hiveTables.length || hiveTableBlocked || !partitionValue || !consistencyReady"
             @click="writeHive"
           >
             <template #icon><icon-save /></template>
@@ -858,28 +895,6 @@
       </template>
     </a-modal>
 
-    <!-- 跳过一致性抽样校验弹窗（未上线产品无线上数据可对比） -->
-    <a-modal
-      v-model:visible="skipVisible"
-      title="跳过一致性校验"
-      :ok-loading="skipping"
-      @before-ok="confirmSkipConsistency"
-      @cancel="skipVisible = false"
-    >
-      <a-form :model="formModel" layout="vertical">
-        <a-form-item label="跳过原因">
-          <a-select v-model="skipReason" style="width: 100%">
-            <a-option value="未上线产品无线上数据可对比">未上线产品无线上数据可对比</a-option>
-            <a-option value="线上样本表暂不可用，暂无法比对">线上样本表暂不可用，暂无法比对</a-option>
-            <a-option value="本次回溯范围无需一致性比对">本次回溯范围无需一致性比对</a-option>
-          </a-select>
-        </a-form-item>
-        <a-alert type="warning">
-          跳过后不阻断落 Hive 标准库，验证报告与落库通知中一致性校验结果标注「未执行」，跳过后仍可重新执行校验。
-        </a-alert>
-      </a-form>
-    </a-modal>
-
     <!-- 临时库数据预览（R47） -->
     <a-modal v-model:visible="tempPreviewVisible" title="临时库数据查看" :width="900" :footer="false">
       <a-alert type="info" style="margin-bottom: 12px">
@@ -931,7 +946,19 @@
           <span v-else class="table-tip" style="margin-top: 0">本批次未登记密文类必选字段的加密方式</span>
         </a-descriptions-item>
         <a-descriptions-item label="Hive 目标表" :span="2">
-          <span class="mono">{{ persistRecord.storageInfo.hiveTable }}</span>
+          <a-space wrap :size="4">
+            <a-tag v-for="t in persistRecord.storageInfo.hiveTables" :key="t" size="small" color="arcoblue">{{ t }}</a-tag>
+          </a-space>
+          <!-- 多目标表时逐表留档写入了哪些列，事后排查缺列可直接看到 -->
+          <div v-if="persistRecord.storageInfo.tableWrites?.length" class="table-tip">
+            <div v-for="w in persistRecord.storageInfo.tableWrites" :key="w.table">
+              <span class="mono">{{ w.table }}</span> 写入 {{ w.matchedColumns.length }} 列
+              <template v-if="w.skippedColumns.length">
+                · 跳过 {{ w.skippedColumns.length }} 列（目标表无该列）：{{ w.skippedColumns.slice(0, 4).join('、') }}{{ w.skippedColumns.length > 4 ? ' 等' : '' }}
+              </template>
+              <template v-else>· 字段全部匹配</template>
+            </div>
+          </div>
         </a-descriptions-item>
         <a-descriptions-item label="临时库表">{{ persistRecord.storageInfo.tempTable }}</a-descriptions-item>
         <a-descriptions-item label="入库行数">{{ persistRecord.storageInfo.loadedRows.toLocaleString() }}</a-descriptions-item>
@@ -953,7 +980,7 @@
     <a-modal v-model:visible="successVisible" title="回溯落库完成" :footer="false">
       <a-result status="success" title="落库完成：已落 Hive 标准库">
         <template #subtitle>
-          状态流转：{{ PERSIST_STATUS_FLOW.join(' → ') }}。Hive 表 {{ hiveTable }}，需求方可取数。
+          状态流转：{{ PERSIST_STATUS_FLOW.join(' → ') }}。Hive 表 {{ hiveTables.join('、') }}，需求方可取数。
           行数验证与落库通知由后台任务自动执行并推送。
         </template>
         <template #extra>
@@ -976,8 +1003,9 @@ import { Message } from '@arco-design/web-vue'
 import {
   IconSearch, IconSave, IconUpload, IconSafe, IconFindReplace, IconRefresh,
   IconEye, IconFile, IconSend, IconStorage, IconCheckCircle, IconExclamationCircleFill,
-  IconFolder, IconArchive, IconLock, IconForward,
+  IconFolder, IconArchive, IconLock,
 } from '@arco-design/web-vue/es/icon'
+import SqlPreviewBlock from '../components/SqlPreviewBlock.vue'
 import { useBacktrackPersist } from '../composables/useBacktrackPersist'
 import { fetchAsyncTask } from '../api/backtrack'
 import { formatFileSize } from '../mock/retroFiles'
@@ -1031,22 +1059,23 @@ const {
   productOptions, mappingProduct, currentProduct, isCustomProduct, stdFieldOptions, fieldMappings,
   REQUIRED_FIELD_MATCH, activeRequiredFieldMatch, requiredSourceSelection, catalogSourceFields, sourceFieldComment,
   requiredMappingStatus, requiredAllPassed, requiredPassedCount,
-  cipherAlgorithmOptions, setRequiredCipher, requiredCipherSummary,
+  cipherAlgorithmOptions, setRequiredCipher,
   loadProducts, onMappingProductChange, onRequiredSourceChange,
   rematchFields, setMappingTarget,
   mappedCount, nonStdCount, nonStdFieldNames, inheritedCount,
   mappingPagination, pagedFieldMappings, onMappingPageChange, onMappingPageSizeChange,
   mappingVersion, buildMappingVersion, NON_STD_FIELD,
   outboundTasks, matchedTaskIds, loadOutboundTasks,
-  hiveTableOptions, hiveTable, loadHiveTables, reviewDate, partitionValue,
+  hiveTableOptions, hiveTables, hiveTableMatches, hiveTableMatchRows, hiveMatchSummary, hiveTableBlocked, loadHiveTables,
+  reviewDate, partitionValue,
   persistBatches, persisting, persistPercent, persistToTemp,
   tempPreviewVisible, openTempPreview, tempPreviewRows, tempPreviewColumns,
-  consistencyChecked, consistencySkipped, consistencySkipReason, consistencyReady,
+  consistencyReady,
   consistencyTargetOptions, consistencyTargetTable, consistencyDetails, consistencySummary,
   consistencyTempTable, consistencyJoinCondition, consistencyWhereCondition, consistencySqlPreview,
   consistencyCompareFields, onConsistencyWhereInput, resetConsistencyWhere,
   validating, consistencyPagination, pagedConsistencyDetails, onConsistencyPageChange,
-  loadConsistencyTables, runTripleRowCheck, runConsistencyCheck, skipConsistencyCheck,
+  loadConsistencyTables, runTripleRowCheck, runConsistencyCheck,
   notifyConfig, loadNotifyConfig, notifySent, sendNotify,
   persistRecord, recordVisible, buildPersistRecord, openPersistRecord,
   createdTasks, createPersistTask, finishPersistTask, restoreFromResumeContext, restoreFromBackid,
@@ -1085,6 +1114,14 @@ const consistencyRowKey = (record: { certNo: string; field: string }) => `${reco
 
 /** 写入总行数 */
 const totalWriteRows = computed(() => persistBatches.value.reduce((sum, b) => sum + b.rows, 0))
+
+/** 逐表匹配状态文案 */
+const hiveMatchStatusLabel = (status: string) =>
+  ({ pending: '列清单加载中', ok: '全部匹配', partial: '部分匹配', nokey: '缺主键列' })[status] || status
+
+/** 逐表匹配状态标签色 */
+const hiveMatchStatusColor = (status: string) =>
+  ({ pending: 'gray', ok: 'green', partial: 'orange', nokey: 'red' })[status] || 'gray'
 
 /** 状态标签色 */
 const statusColor = computed(() => {
@@ -1125,33 +1162,13 @@ const writing = ref(false)
 const hiveWritten = ref(false)
 const successVisible = ref(false)
 
-/* ---------- 跳过一致性校验 ---------- */
-/** 跳过一致性校验弹窗可见性 */
-const skipVisible = ref(false)
-/** 跳过一致性校验提交中 */
-const skipping = ref(false)
-/** 跳过原因（默认：未上线产品无线上数据可对比） */
-const skipReason = ref('未上线产品无线上数据可对比')
-
+/* ---------- 一致性校验（页面不执行） ---------- */
 /**
- * 确认跳过一致性抽样校验
- * 未上线产品无线上数据可对比时允许跳过，跳过后不阻断落 Hive 标准库，验证报告标注「未执行」
- * @returns 是否跳过成功（用于关闭弹窗）
+ * 一致性抽样对比是否可在页面执行
+ * 本次需求：不在页面执行，只生成 SQL 供复制到数据平台执行，因此「执行抽样一致性对比」常驻禁用；
+ * 后续要恢复页面执行，把该值改回 true 即可（runConsistencyCheck 链路保持不动）
  */
-const confirmSkipConsistency = async (): Promise<boolean> => {
-  if (!skipReason.value) {
-    Message.warning('请选择跳过原因')
-    return false
-  }
-  skipping.value = true
-  try {
-    await skipConsistencyCheck(skipReason.value)
-    skipVisible.value = false
-    return true
-  } finally {
-    skipping.value = false
-  }
-}
+const consistencyExecutable = false
 
 /** 落 Hive 标准库（R46 两阶段落库的第二阶段；落 Hive 即完成落库主流程） */
 const writeHive = async () => {
@@ -1160,13 +1177,19 @@ const writeHive = async () => {
     Message.warning('请先落临时库生成 backid 批次')
     return
   }
-  // 落 Hive 标准库前的准入门槛：一致性抽样校验需已完成或已跳过，避免异常数据进入正式库
+  // 落 Hive 标准库前的准入门槛：3.2 比对 SQL 已生成（选定 t2 且 WHERE 非空），避免异常数据进入正式库
   if (!consistencyReady.value) {
-    Message.warning('请先执行 3.2 抽样一致性对比，或在无对比数据时选择跳过')
+    Message.warning('请先在 3.2 选择一致性校验目标表（t2）并确认 WHERE 条件')
     return
   }
-  if (!hiveTable.value) {
-    Message.warning('请选择落库目标 Hive 表')
+  if (!hiveTables.value.length) {
+    Message.warning('请选择落库目标 Hive 表（可多选）')
+    return
+  }
+  // 多选目标表逐表匹配：任一表缺主键列（cert_no + create_time）都无法按覆盖策略写入
+  const noKeyTables = hiveTableMatches.value.filter((m) => m.status === 'nokey')
+  if (noKeyTables.length) {
+    Message.warning(`目标表缺主键列，无法落库：${noKeyTables.map((m) => m.table).join('、')}`)
     return
   }
   if (!partitionValue.value) {
@@ -1179,10 +1202,28 @@ const writeHive = async () => {
   await new Promise((r) => setTimeout(r, 1200))
   writing.value = false
   hiveWritten.value = true
+  const targetText = hiveTables.value.join('、')
+  // 逐表只写与 TMP 匹配的列，有跳过列的表在任务与提示里留下口径
+  const skippedTables = hiveTableMatches.value.filter((m) => m.skippedColumns.length)
   // 落 Hive 即为流程终点；任务置为成功后状态由批次任务推导为「Hive已落库」
-  await finishPersistTask(task.taskId, '成功', `已落 Hive 标准库 ${hiveTable.value}，分区 datax=${partitionValue.value}`)
+  await finishPersistTask(
+    task.taskId,
+    '成功',
+    `已落 Hive 标准库 ${targetText}，分区 datax=${partitionValue.value}；` +
+      `逐表写入列次 ${hiveMatchSummary.value.writeColumnTotal}，` +
+      (skippedTables.length
+        ? `${skippedTables.length} 张表有跳过列：${skippedTables.map((m) => `${m.table} 跳过 ${m.skippedColumns.length} 列`).join('；')}`
+        : '各表字段全部匹配')
+  )
   await buildPersistRecord()
-  Message.success(`已落 Hive 标准库 ${hiveTable.value}，分区 datax=${partitionValue.value}`)
+  Message.success(`已落 Hive 标准库 ${targetText}，分区 datax=${partitionValue.value}`)
+  if (skippedTables.length) {
+    Message.warning(
+      `${skippedTables.map((m) => m.table.split('.').pop()).join('、')} 目标表缺列，对应字段本次已跳过：` +
+        skippedTables.flatMap((m) => m.skippedColumns).slice(0, 6).join('、') +
+        (skippedTables.reduce((s, m) => s + m.skippedColumns.length, 0) > 6 ? ' 等' : '')
+    )
+  }
   // 行数验证与落库通知交由后台任务自动执行，页面不需手工触发
   await triggerBackgroundTasks()
 }
@@ -1265,13 +1306,13 @@ const nextStep = async () => {
       Message.warning('请先「落临时库并生成 backid」')
       return
     }
-    // 一致性抽样校验为推进 Hive 标准库前的准入门槛（已执行或已跳过均放行）
+    // 一致性抽样校验为推进 Hive 标准库前的准入门槛（比对 SQL 已生成即放行）
     if (!consistencyReady.value) {
-      Message.warning('请先执行 3.2 抽样一致性对比，或在无对比数据时选择跳过')
+      Message.warning('请先在 3.2 选择一致性校验目标表（t2）并确认 WHERE 条件')
       return
     }
-    if (!hiveTable.value) {
-      Message.warning('请选择落库目标 Hive 表')
+    if (!hiveTables.value.length) {
+      Message.warning('请选择落库目标 Hive 表（可多选）')
       return
     }
     if (!partitionValue.value) {
@@ -1303,10 +1344,10 @@ const goTaskList = () => {
   router.push({ name: 'RiskExternalDataTaskList' })
 }
 
-/** 落库完成后去特征台账登记新特征：带着落库表名过去，台账侧直接弹注册抽屉 */
+/** 落库完成后去特征台账登记新特征：带着落库表名过去，台账侧直接弹注册抽屉（多表先带入第一张） */
 const goLedgerRegister = () => {
   successVisible.value = false
-  router.push({ path: '/variable-management', query: { action: 'register_from_external', table: hiveTable.value || '' } })
+  router.push({ path: '/variable-management', query: { action: 'register_from_external', table: hiveTables.value[0] ?? '' } })
 }
 
 onMounted(async () => {
@@ -1674,14 +1715,13 @@ const applyBatchFromRoute = async (backid: string) => {
   color: var(--color-text-2);
 }
 
-.consistency-sql {
-  margin: 0;
-  padding: 8px 10px;
-  border-radius: 4px;
-  background: var(--color-fill-2);
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-all;
+/* 逐表字段匹配结果：多选目标表时每行一张表，末行为合计 */
+.hive-match-table {
+  margin-top: 4px;
+}
+
+.hive-match-total {
+  font-weight: 600;
 }
 
 .match-file-head {

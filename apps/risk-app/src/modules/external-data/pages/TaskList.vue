@@ -137,7 +137,7 @@
             <a-descriptions v-if="detailTask.resumeContext" :column="2" bordered size="small" title="续做信息">
               <a-descriptions-item label="外数产品">{{ detailTask.resumeContext.product || '—' }}</a-descriptions-item>
               <a-descriptions-item label="接口号">{{ detailTask.resumeContext.interfaceId || '—' }}</a-descriptions-item>
-              <a-descriptions-item label="Hive目标表">{{ detailTask.resumeContext.hiveTable || '—' }}</a-descriptions-item>
+              <a-descriptions-item label="Hive目标表">{{ detailTask.resumeContext.hiveTables?.join('、') || '—' }}</a-descriptions-item>
               <a-descriptions-item label="分区值">{{ detailTask.resumeContext.partitionValue || '—' }}</a-descriptions-item>
               <a-descriptions-item label="回溯日期">{{ detailTask.resumeContext.reviewDate || '—' }}</a-descriptions-item>
               <a-descriptions-item label="一致性校验目标表">{{ detailTask.resumeContext.consistencyTargetTable || '—' }}</a-descriptions-item>
@@ -194,7 +194,15 @@
               </a-descriptions-item>
               <a-descriptions-item label="继承档案映射">{{ persistRecord.mappingInfo.inheritedFieldCount || 0 }} 行</a-descriptions-item>
               <a-descriptions-item label="Hive 目标表" :span="2">
-                <span class="mono">{{ persistRecord.storageInfo.hiveTable }}</span>
+                <!-- 目标表可多选：逐表只写与 TMP 字段匹配的列，旧记录未登记写入明细时仅展示表名 -->
+                <a-space wrap :size="4">
+                  <a-tag v-for="t in persistRecord.storageInfo.hiveTables" :key="t" size="small" color="arcoblue">{{ t }}</a-tag>
+                </a-space>
+                <div v-if="persistRecord.storageInfo.tableWrites?.length" style="margin-top: 4px">
+                  <div v-for="w in persistRecord.storageInfo.tableWrites" :key="w.table" class="mono">
+                    {{ w.table }}：写入 {{ w.matchedColumns.length }} 列{{ w.skippedColumns.length ? `，跳过 ${w.skippedColumns.length} 列（目标表无该列）` : '（字段全部匹配）' }}
+                  </div>
+                </div>
               </a-descriptions-item>
               <a-descriptions-item label="临时库表">{{ persistRecord.storageInfo.tempTable }}</a-descriptions-item>
               <a-descriptions-item label="入库行数">{{ persistRecord.storageInfo.loadedRows.toLocaleString() }}</a-descriptions-item>
@@ -239,13 +247,6 @@
                   差值 {{ validationReport.rowCount.diff }}
                 </template>
               </a-result>
-              <a-alert
-                v-if="validationReport.consistencySkipped"
-                type="warning"
-                style="margin-top: 16px"
-              >
-                一致性校验未执行{{ validationReport.consistencySkipReason ? `（${validationReport.consistencySkipReason}）` : '' }}
-              </a-alert>
               <a-descriptions v-if="validationReport.consistency" :column="2" bordered size="small" title="一致性校验结果">
                 <a-descriptions-item label="对比目标表" :span="2">
                   <span class="mono">{{ validationReport.consistency.targetTable }}</span>
@@ -431,12 +432,6 @@ const buildValidationReport = (record: AsyncTask, rec: PersistRecord | null): Va
   if (record.taskType === '一致性校验') {
     const targetTable = record.resumeContext?.consistencyTargetTable || 'dw_ods.ods_ext_retro_online_std'
     const reviewDate = record.resumeContext?.reviewDate || '2026-09-30'
-    // 跳过的校验任务不产出抽样结果，验证报告标注「未执行」
-    if (record.skipped) {
-      report.consistencySkipped = true
-      report.consistencySkipReason = '未上线产品无线上数据可对比'
-      return report
-    }
     // 明细的 create_time 取落库临时表（t1）的回溯时间
     const details = buildConsistencyDetails(100, { createTime: reviewDate })
     report.consistency = summarizeConsistency(details, targetTable)

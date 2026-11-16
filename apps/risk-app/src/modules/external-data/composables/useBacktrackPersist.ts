@@ -13,6 +13,7 @@ import {
   fetchBacktrackProducts,
   fetchStdFieldNames,
   fetchRetroStdTables,
+  fetchHiveTableColumns,
   fetchOnlineSampleTables,
   fetchConsistencyDetails,
   fetchConsistencySummary,
@@ -39,6 +40,8 @@ import type { ValidationDetail, ConsistencySummary, TripleRowCheck } from '../mo
 import type { NotifyConfig, NotifyContent } from '../mock/notify'
 import type { PersistRecord, PersistStatus, AsyncTask, AsyncTaskType, TaskResumeContext, BatchStage, RequiredCipherEntry } from '../mock/backtrackPersist'
 import { PERSIST_STATUS_FLOW, resolveStatusFromTasks } from '../mock/backtrackPersist'
+// 非标透传列名与标准底表列同源，TMP 待落字段需把该列一并纳入逐表匹配
+import { EXTRA_PARAM_COLUMN } from '../mock/stdTableSchema'
 // 加密方式字典与密文长度口径沿用样本校验那一份（R02：主流 SM3 / SHA256，MD5 仅存量兼容），向导不再自带算法列表
 import { ENCRYPTION_ALGORITHMS, getEncryptionAlgorithm, type EncryptionAlgorithm } from '../mock/encryptionAlgorithm'
 // 映射的分层继承与回写统一取自映射模块，向导不再自带碰撞字典、占位符或“先继承后碰撞”的两套写法
@@ -73,6 +76,25 @@ export interface FieldMapping {
   matchedBy: 'inherit' | 'auto' | 'manual' | 'default'
   /** 匹配类型中文说明 */
   matchedLabel: string
+}
+
+/**
+ * 单张落库目标表的字段匹配结果
+ * 目标表多选时逐表计算：TMP 待落字段与该表列取交集，只写交集列，缺列跳过
+ */
+export interface HiveTableMatch {
+  /** 目标表全限定名 */
+  table: string
+  /** 表描述 */
+  description: string
+  /** 目标表列数 */
+  tableColumnCount: number
+  /** 本次实际写入的列（TMP 待落字段 ∩ 目标表列） */
+  matchedColumns: string[]
+  /** 目标表缺列被跳过的列（保留表内原值） */
+  skippedColumns: string[]
+  /** 状态：pending 列清单未加载 / ok 全部匹配 / partial 部分匹配 / nokey 缺主键列不可落 / total 合计行（仅展示用） */
+  status: 'pending' | 'ok' | 'partial' | 'nokey' | 'total'
 }
 
 /** 必填映射规则项 */
@@ -956,14 +978,114 @@ export function useBacktrackPersist() {
 
   /* ---------- B3 解析落库 ---------- */
   const hiveTableOptions = ref<HiveTableItem[]>([])
-  const hiveTable = ref('')
+  /** 落库目标 Hive 表（多选：一批可同时落多张标准表，逐表按 TMP 字段与该表列匹配后只写交集列） */
+  const hiveTables = ref<string[]>([])
+  /** 目标表列清单缓存（全限定名 → 列名），选中即按需拉取，是逐表匹配与写入 SQL 预览的数据源 */
+  const hiveTableColumnsMap = ref<Record<string, string[]>>({})
 
-  /** 加载固定外数库中的落库目标表（R41：手动搜索选择，不允许新建） */
+  /** 覆盖写入的主键列（R52：主键 cert_no + create_time 直接覆盖），目标表缺任一列即无法落库 */
+  const HIVE_WRITE_KEY_COLUMNS = ['cert_no', 'create_time']
+
+  /**
+   * TMP 临时表的待落字段（逐表匹配的源侧基准）
+   * = 必选区已绑定的标准列 + 字段映射后的标准列 + 非标透传列 extraParam（R38 有非标字段才存在）
+   */
+  const tmpPersistColumns = computed(() => {
+    const requiredCols = activeRequiredFieldMatch.value
+      .filter((r) => !!requiredSourceSelection[r.std])
+      .map((r) => r.std)
+    const mappedCols = fieldMappings.value
+      .filter((m) => m.targetField && m.targetField !== NON_STD_FIELD)
+      .map((m) => m.targetField)
+    const base = [...requiredCols, ...mappedCols, ...(nonStdCount.value ? [EXTRA_PARAM_COLUMN] : [])]
+    return Array.from(new Set(base))
+  })
+
+  /** 逐表匹配结果：多选场景下每张目标表各自与 TMP 字段求交集 */
+  const hiveTableMatches = computed<HiveTableMatch[]>(() =>
+    hiveTables.value.map((table) => {
+      const option = hiveTableOptions.value.find((t) => t.fullName === table)
+      const loaded = Object.prototype.hasOwnProperty.call(hiveTableColumnsMap.value, table)
+      const columns = hiveTableColumnsMap.value[table] ?? []
+      const matchedColumns = tmpPersistColumns.value.filter((c) => columns.includes(c))
+      const skippedColumns = tmpPersistColumns.value.filter((c) => !columns.includes(c))
+      const missingKey = HIVE_WRITE_KEY_COLUMNS.filter((k) => !columns.includes(k))
+      const status: HiveTableMatch['status'] = !loaded
+        ? 'pending'
+        : missingKey.length
+          ? 'nokey'
+          : skippedColumns.length
+            ? 'partial'
+            : 'ok'
+      return {
+        table,
+        description: option?.description ?? '',
+        tableColumnCount: loaded ? columns.length : 0,
+        matchedColumns,
+        skippedColumns,
+        status,
+      }
+    })
+  )
+
+  /** 存在缺主键列的目标表时不得推进落库（该表无法按主键覆盖写入） */
+  const hiveTableBlocked = computed(() => hiveTableMatches.value.some((m) => m.status === 'nokey'))
+
+  /** 多表落库汇总口径（供 3.3「字段匹配情况」展示） */
+  const hiveMatchSummary = computed(() => {
+    const list = hiveTableMatches.value
+    return {
+      /** 已选目标表数 */
+      tableCount: list.length,
+      /** TMP 待落字段数（源侧基准，各表共用） */
+      tmpColumnCount: tmpPersistColumns.value.length,
+      /** 全部匹配表数 */
+      fullMatchCount: list.filter((m) => m.status === 'ok').length,
+      /** 存在跳过列的表数 */
+      partialCount: list.filter((m) => m.status === 'partial').length,
+      /** 逐表写入列次合计（多表各自写一次的列数总和） */
+      writeColumnTotal: list.reduce((sum, m) => sum + m.matchedColumns.length, 0),
+    }
+  })
+
+  /**
+   * 「字段匹配情况」表格展示行：逐表明细 + 末尾合计行
+   * 合计行以 status = 'total' 标识，页面据此切换为汇总单元格，替代原先的文字标签汇总
+   */
+  const hiveTableMatchRows = computed<HiveTableMatch[]>(() => {
+    const list = hiveTableMatches.value
+    if (!list.length) return []
+    return [
+      ...list,
+      {
+        table: `合计 ${list.length} 张目标表`,
+        description: `TMP 待落字段 ${tmpPersistColumns.value.length} 列，多表按列次累加`,
+        tableColumnCount: 0,
+        matchedColumns: list.flatMap((m) => m.matchedColumns),
+        skippedColumns: list.flatMap((m) => m.skippedColumns),
+        status: 'total',
+      },
+    ]
+  })
+
+  /** 按需补拉目标表列清单（多选后逐表匹配的前提，已缓存的表不重复拉） */
+  const loadHiveTableColumns = async (tables: string[]) => {
+    const pending = tables.filter((t) => !Object.prototype.hasOwnProperty.call(hiveTableColumnsMap.value, t))
+    if (!pending.length) return
+    const entries = await Promise.all(pending.map(async (t) => [t, await fetchHiveTableColumns(t)] as const))
+    hiveTableColumnsMap.value = { ...hiveTableColumnsMap.value, ...Object.fromEntries(entries) }
+  }
+
+  /** 选中目标表变化时补拉列清单（取消选中无需清理，缓存只增不减，回到该表时免重复拉取） */
+  watch(hiveTables, (tables) => {
+    void loadHiveTableColumns(tables)
+  }, { deep: true })
+
+  /** 加载固定外数库中的落库目标表（R41：手动搜索选择，不允许新建；支持多选） */
   const loadHiveTables = async () => {
     hiveTableOptions.value = await fetchRetroStdTables()
-    if (hiveTable.value && !hiveTableOptions.value.some((t) => t.fullName === hiveTable.value)) {
-      hiveTable.value = ''
-    }
+    hiveTables.value = hiveTables.value.filter((t) => hiveTableOptions.value.some((o) => o.fullName === t))
+    await loadHiveTableColumns(hiveTables.value)
   }
 
   /** 回溯日期（3.3 写入 datax 分区，R40）：由回溯文件名自动解析 */
@@ -1065,10 +1187,8 @@ export function useBacktrackPersist() {
         tempTable: 'tmp_ext_retro_raw',
       },
     ]
-    // 临时库数据已变更，需重新执行一致性校验后才可推进 Hive
+    // 临时库数据已变更，需重新确认一致性比对 SQL 后才可推进 Hive
     consistencyChecked.value = false
-    consistencySkipped.value = false
-    consistencySkipReason.value = ''
     consistencySummary.value = null
     consistencyDetails.value = []
     // 任务回填 backid 并置为成功，供任务列表查看明细与续做
@@ -1115,14 +1235,8 @@ export function useBacktrackPersist() {
   /** 三重行数验证结果（由后台任务产出，供落库通知取验证结论） */
   const tripleRowCheck = ref<TripleRowCheck | null>(null)
 
-  /** 一致性校验是否已完成（推进 Hive 标准库的前置门槛：先比对确认，再落正式库） */
+  /** 一致性校验是否已在页面执行完成（本页已不执行，仅保留给 runConsistencyCheck 链路） */
   const consistencyChecked = ref(false)
-
-  /** 一致性校验是否已被跳过（未上线产品无线上数据可对比，可跳过校验直接推进落库） */
-  const consistencySkipped = ref(false)
-
-  /** 一致性校验跳过原因 */
-  const consistencySkipReason = ref('')
 
   /** 回溯日期变更后需重新执行一致性校验，并同步默认 WHERE 条件（用户已改写时保留手写条件） */
   watch(reviewDate, (date) => {
@@ -1136,7 +1250,7 @@ export function useBacktrackPersist() {
   const consistencyTargetOptions = ref<HiveTableItem[]>([])
   const consistencyTargetTable = ref('')
 
-  /** 校验目标表变更后需重新执行一致性校验（比对对象变化）；已跳过态不受影响 */
+  /** 校验目标表变更后需重新执行一致性校验（比对对象变化） */
   watch(consistencyTargetTable, () => {
     consistencyChecked.value = false
   })
@@ -1210,8 +1324,12 @@ ${stackArgs}
  ORDER BY CASE WHEN f.retro_value <=> f.online_value THEN 1 ELSE 0 END`
   })
 
-  /** 一致性校验结论是否已就绪（已执行通过 或 已跳过；两者均不阻断落 Hive 标准库） */
-  const consistencyReady = computed(() => consistencyChecked.value || consistencySkipped.value)
+  /**
+   * 是否可推进 Hive 标准库
+   * 本页不执行抽样对比，故改为 SQL 就绪口径：已选 t2 目标表且 WHERE 非空（比对 SQL 已生成）即可推进
+   */
+  const consistencyReady = computed(() =>
+    Boolean(consistencyTargetTable.value && consistencyWhereCondition.value.trim()))
 
   /** 一致性校验明细 */
   const consistencyDetails = ref<ValidationDetail[]>([])
@@ -1307,8 +1425,6 @@ ${stackArgs}
       consistencyPagination.total = sortedConsistencyDetails.value.length
       consistencyPagination.current = 1
       consistencyChecked.value = true
-      consistencySkipped.value = false
-      consistencySkipReason.value = ''
       const s = consistencySummary.value
       await finishPersistTask(
         task.taskId,
@@ -1322,30 +1438,6 @@ ${stackArgs}
     } finally {
       validating.value = false
     }
-  }
-
-  /**
-   * 跳过一致性抽样校验
-   * 适用场景：未上线产品无线上数据可对比（需求文档「未上线产品跳过校验」），
-   * 跳过后不阻断落 Hive 标准库，验证报告中标注「未执行」
-   * @param reason 跳过原因
-   */
-  const skipConsistencyCheck = async (reason: string) => {
-    if (!persistBatches.value.length) {
-      Message.warning('请先「落临时库」生成 backid 批次')
-      return
-    }
-    // R86：跳过同样登记任务，保证任务列表可追溯
-    const task = await createPersistTask('一致性校验', persistBatches.value[0]?.backid ?? '', false, 2)
-    consistencyChecked.value = false
-    consistencySkipped.value = true
-    consistencySkipReason.value = reason
-    consistencySummary.value = null
-    consistencyDetails.value = []
-    consistencyPagination.total = 0
-    await finishPersistTask(task.taskId, '成功', `已跳过一致性抽样校验：${reason}（服务任务列表标注未执行）`)
-    await saveAsyncTask(task.taskId, { skipped: true })
-    Message.info(`已跳过一致性抽样校验：${reason}`)
   }
 
   /* ---------- B5 落库文件通知 ---------- */
@@ -1382,8 +1474,7 @@ ${stackArgs}
       exceptionSummary: tripleRowCheck.value?.matched
         ? '无异常行'
         : `入库 ${tripleRowCheck.value?.loadedRows ?? 0} 行，源文件 ${tripleRowCheck.value?.sourceFileRows ?? 0} 行，差值 ${(tripleRowCheck.value?.loadedRows ?? 0) - (tripleRowCheck.value?.sourceFileRows ?? 0)} 行`,
-      consistencySummary: consistencySummary.value?.diffSummary
-        ?? (consistencySkipped.value ? `未执行一致性校验（已跳过：${consistencySkipReason.value}）` : '未执行一致性校验'),
+      consistencySummary: consistencySummary.value?.diffSummary ?? '未页面执行一致性校验（仅生成比对 SQL）',
     })
     const records = await dispatchNotification(channels, content, receivers, notifyConfig.value.maskEnabled, notifyConfig.value.maxRetry)
     notifySent.value = true
@@ -1423,7 +1514,7 @@ ${stackArgs}
       backid,
       product: mappingProduct.value,
       interfaceId: currentProduct.value?.interfaceId ?? '',
-      hiveTable: hiveTable.value,
+      hiveTables: [...hiveTables.value],
       partitionValue: partitionValue.value,
       reviewDate: reviewDate.value,
       consistencyTargetTable: consistencyTargetTable.value,
@@ -1533,7 +1624,11 @@ ${stackArgs}
       await loadProductFields()
     }
     // 5. 落库目标与分区（分区值由回溯日期推导，只读 computed 不可直接赋值）
-    if (ctx.hiveTable) hiveTable.value = ctx.hiveTable
+    if (ctx.hiveTables?.length) {
+      hiveTables.value = [...ctx.hiveTables]
+      // 多选目标表的列清单需同步补拉，否则逐表匹配会停在 pending
+      await loadHiveTableColumns(hiveTables.value)
+    }
     if (ctx.reviewDate) reviewDate.value = ctx.reviewDate
     if (ctx.consistencyTargetTable) consistencyTargetTable.value = ctx.consistencyTargetTable
     // 续做时回填用户改写的 WHERE 条件；标记已改写，避免被回溯日期解析出的默认值覆盖
@@ -1605,7 +1700,13 @@ ${stackArgs}
       },
       storageInfo: {
         tempTable: persistBatches.value[0]?.tempTable ?? 'tmp_ext_retro_raw',
-        hiveTable: hiveTable.value,
+        hiveTables: [...hiveTables.value],
+        // 逐表写入列留档：多目标表时每张表只写与 TMP 匹配的列，事后排查缺列有据可查
+        tableWrites: hiveTableMatches.value.map((m) => ({
+          table: m.table,
+          matchedColumns: [...m.matchedColumns],
+          skippedColumns: [...m.skippedColumns],
+        })),
         partitionField: 'datax',
         partitionValue: partitionValue.value,
         loadedRows: persistBatches.value.reduce((s, b) => s + b.rows, 0),
@@ -1759,7 +1860,13 @@ ${stackArgs}
     loadOutboundTasks,
     // B3
     hiveTableOptions,
-    hiveTable,
+    hiveTables,
+    hiveTableColumnsMap,
+    tmpPersistColumns,
+    hiveTableMatches,
+    hiveTableMatchRows,
+    hiveMatchSummary,
+    hiveTableBlocked,
     loadHiveTables,
     reviewDate,
     partitionValue,
@@ -1773,8 +1880,6 @@ ${stackArgs}
     tempPreviewColumns,
     // B4
     consistencyChecked,
-    consistencySkipped,
-    consistencySkipReason,
     consistencyReady,
     consistencyTargetOptions,
     consistencyTargetTable,
@@ -1795,7 +1900,6 @@ ${stackArgs}
     loadConsistencyTables,
     runTripleRowCheck,
     runConsistencyCheck,
-    skipConsistencyCheck,
     // B5
     notifyConfig,
     loadNotifyConfig,

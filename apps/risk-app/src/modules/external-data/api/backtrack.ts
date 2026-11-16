@@ -1,4 +1,4 @@
-import { listRetroStdTables, listOnlineSampleTables, recommendRetroStdTable } from '../mock/hiveTables'
+import { listRetroStdTables, listOnlineSampleTables, recommendRetroStdTable, listHiveTableColumns } from '../mock/hiveTables'
 import type { HiveTableItem } from '../mock/hiveTables'
 import { listOutboundTasks, getOutboundTasksByIds } from '../mock/outboundTasks'
 import type { OutboundTask } from '../mock/outboundTasks'
@@ -59,6 +59,12 @@ export async function fetchOnlineSampleTables(keyword?: string): Promise<HiveTab
 export async function fetchRecommendedRetroStdTable(agencyCode: string): Promise<HiveTableItem | undefined> {
   if (useMock) return recommendRetroStdTable(agencyCode)
   return undefined
+}
+
+/** 查询目标 Hive 表的列清单（多选目标表时逐表与 TMP 字段匹配，只写交集列） */
+export async function fetchHiveTableColumns(fullName: string): Promise<string[]> {
+  if (useMock) return listHiveTableColumns(fullName)
+  return []
 }
 
 /** 按机构查询前置外发任务（R24/R25） */
@@ -127,7 +133,7 @@ export async function createAsyncTask(
 /** 更新任务状态与完成时间（R84 状态维护） */
 export async function saveAsyncTask(
   taskId: string,
-  patch: Partial<Pick<AsyncTask, 'status' | 'finishTime' | 'failReason' | 'skipped'>>
+  patch: Partial<Pick<AsyncTask, 'status' | 'finishTime' | 'failReason'>>
 ): Promise<AsyncTask | null> {
   if (useMock) return updateAsyncTask(taskId, patch)
   return null

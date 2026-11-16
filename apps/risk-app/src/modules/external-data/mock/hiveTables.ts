@@ -8,8 +8,13 @@
  *   2. 表级清单为本模块新增：storageClusters 只有库级 tableCount，无表名，
  *      故按外数回溯场景构造 dw_ods 下的回溯标准表与线上样本表；
  *   3. R41 要求「落库目标表由用户在固定外数库中手动搜索选择」，因此这里只提供候选，
- *      页面侧为下拉搜索而非 allow-create，不允许新建表。
+ *      页面侧为下拉搜索而非 allow-create，不允许新建表；
+ *   4. 目标表支持多选，落库时逐张表用 TMP 字段与该表列清单取交集（见 listHiveTableColumns），
+ *      列清单以 stdTableSchema.ts 的标准底表列全集为基准，按表记差异（omit / extra），
+ *      避免为 5 张同构标准表各抄一份列名而与底表 DDL 漂移。
  */
+
+import { EXTRA_PARAM_COLUMN, getStdTableColumnNames } from './stdTableSchema'
 
 export interface HiveTableItem {
   /** 库名 */
@@ -24,7 +29,7 @@ export interface HiveTableItem {
   description: string
   /** 分区字段，标准表固定为 datax（R40） */
   partitionField: string
-  /** 字段数 */
+  /** 表列总数（含 TMP 不写入的历史列，口径见列清单注释） */
   columnCount: number
   /** 最近更新时间 */
   updatedAt: string
@@ -168,4 +173,50 @@ export function recommendRetroStdTable(agencyCode: string): HiveTableItem | unde
   }
   const table = map[agencyCode]
   return table ? hiveTablesMock.find((t) => t.table === table) : undefined
+}
+
+/**
+ * 落库批次公共列：所有标准表都有，但不来自字段映射（由落库任务按批次写入）
+ * 参与匹配仅用于说明目标表结构，TMP 侧不会从字段映射拿到这些列
+ */
+export const RETRO_STD_META_COLUMNS = [EXTRA_PARAM_COLUMN, 'backid', 'source_product', 'interface_id', 'load_time']
+
+/** 目标表列差异：omit = 该表尚未补列（TMP 有值也不写入）；extra = 该表特有列（TMP 无来源） */
+const RETRO_STD_COLUMN_DIFF: Record<string, { omit: string[]; extra: string[] }> = {
+  'dw_ods.ods_ext_bh_retro_std': { omit: [], extra: ['ext_score_v2', 'ext_tag_list'] },
+  'dw_ods.ods_ext_pd_retro_std': {
+    omit: ['std_guarantee_cnt_12m', 'std_reject_cnt_12m', 'std_limit_amt_total', 'std_risk_score_v3', 'std_multiloan_idx'],
+    extra: ['ext_ovd_level'],
+  },
+  'dw_ods.ods_ext_qt_retro_std': {
+    omit: [
+      'std_overdue_amt_max',
+      'std_overdue_cnt_24m',
+      'std_overdue_days_max',
+      'std_credit_card_overdue_cnt_6m',
+      'std_guarantee_cnt_12m',
+      'std_reject_cnt_12m',
+      'std_inquiry_org_cnt_3m',
+      'std_limit_amt_total',
+      'std_multiloan_idx',
+    ],
+    extra: [],
+  },
+  'dw_ods.ods_ext_pbcc_retro_std': { omit: [], extra: ['pbcc_acct_cnt', 'pbcc_query_cnt_24m'] },
+  'dw_ods.ods_ext_shgj_retro_std': {
+    omit: ['std_credit_score', 'std_risk_level_code', 'std_risk_score_v3', 'std_multiloan_idx', 'std_card_cnt'],
+    extra: ['legal_case_cnt', 'q_id'],
+  },
+}
+
+/**
+ * 取目标表列清单（TMP 字段与目标表逐表匹配的基准）
+ * 标准表按差异表派生；线上样本表与其他未登记差异的表返回标准列全集 + 公共列，
+ * 保证一致性校验等消费方即使不传具体表名也不会拿到空列。
+ * @param fullName 表全限定名（如 dw_ods.ods_ext_bh_retro_std）
+ */
+export function listHiveTableColumns(fullName: string): string[] {
+  const diff = RETRO_STD_COLUMN_DIFF[fullName]
+  const metricColumns = diff ? getStdTableColumnNames().filter((c) => !diff.omit.includes(c)) : getStdTableColumnNames()
+  return Array.from(new Set([...metricColumns, ...(diff?.extra ?? []), ...RETRO_STD_META_COLUMNS]))
 }

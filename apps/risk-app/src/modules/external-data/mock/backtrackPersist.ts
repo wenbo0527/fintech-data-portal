@@ -145,6 +145,19 @@ export interface RequiredCipherEntry {
   digestLength: number
 }
 
+/**
+ * 逐表写入明细（目标表多选时，TMP 字段只与当前表列取交集写入）
+ * matchedColumns = TMP 待落字段 ∩ 目标表列；skippedColumns = TMP 有值但目标表无该列，本次不写入
+ */
+export interface HiveTableWriteEntry {
+  /** 目标表全限定名 */
+  table: string
+  /** 本次实际写入的列 */
+  matchedColumns: string[]
+  /** 因目标表缺列而跳过的列 */
+  skippedColumns: string[]
+}
+
 /** 落库记录（R54） */
 export interface PersistRecord {
   /** backid 批次标识（R51 落临时库阶段生成） */
@@ -211,8 +224,10 @@ export interface PersistRecord {
   storageInfo: {
     /** 临时库表 */
     tempTable: string
-    /** Hive 目标表 */
-    hiveTable: string
+    /** Hive 目标表（支持多选，一批可同时落多张标准表） */
+    hiveTables: string[]
+    /** 逐表写入明细（旧记录未登记时为空，页面仅按表名展示） */
+    tableWrites?: HiveTableWriteEntry[]
     /** 分区字段（R40 固定 datax） */
     partitionField: string
     /** 分区值 */
@@ -274,10 +289,6 @@ export interface ValidationReport {
     /** 差异摘要 */
     diffSummary: string
   }
-  /** 一致性校验是否已跳过（未上线产品无线上数据可对比，跳过后标注「未执行」） */
-  consistencySkipped?: boolean
-  /** 一致性校验跳过原因 */
-  consistencySkipReason?: string
   /** 明细（分页由前端 mock 模拟后端分页 R71） */
   details: ValidationDetail[]
 }
@@ -332,8 +343,8 @@ export interface TaskResumeContext {
   product: string
   /** 接口号 */
   interfaceId: string
-  /** Hive 目标表 */
-  hiveTable: string
+  /** Hive 目标表（多选，逐表与 TMP 字段匹配后写入） */
+  hiveTables: string[]
   /** 分区值 */
   partitionValue: string
   /** 回溯日期 */
@@ -376,8 +387,6 @@ export interface AsyncTask {
   writeOperation: boolean
   /** 疑似卡死阈值（R91） */
   stuckThresholdMinutes: number
-  /** 是否为跳过执行（一致性校验可跳过，跳过后验证报告标注「未执行」） */
-  skipped?: boolean
   /** 执行日志（R88：任务明细展示执行轨迹） */
   logs?: TaskLogEntry[]
   /** 续做上下文（支撑从任务列表回到落库流程继续下一步） */
@@ -402,7 +411,7 @@ export const persistRecordsMock: PersistRecord[] = [
     fileInfo: { fileName: 'BH_RETRO_20260922_01.csv', acquireMode: 'SFTP拉取', fileSize: 64159744, fileRows: 96210, encoding: 'UTF-8', delimiter: '逗号', encrypted: false, outboundTaskIds: ['OUT20260905'] },
     // 百行「多头借贷汇总」未建档（档案 21 条里没有该产品），因此没有可继承的产品级默认映射
     mappingInfo: { product: '百行-多头借贷汇总 V4', interfaceId: 'BH1023', productCode: '', mappingVersion: 'v1.3', stdFieldCount: 8, nonStdFieldCount: 2, nonStdFields: ['ext_score_v2', 'ext_tag_list'], inheritedFieldCount: 0, requiredCiphers: [{ std: 'cert_no', sourceField: 'id_md5', algorithm: 'MD5', digestLength: 32 }, { std: 'mobile', sourceField: 'phone_md5', algorithm: 'MD5', digestLength: 32 }] },
-    storageInfo: { tempTable: 'tmp_ext_retro_raw', hiveTable: 'dw_ods.ods_ext_bh_retro_std', partitionField: 'datax', partitionValue: '2026-09-22', loadedRows: 96210, writeStrategy: '主键（cert_no + create_time）直接覆盖', tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理', uploadFileCleanup: '落库完成后 24 小时清理' },
+    storageInfo: { tempTable: 'tmp_ext_retro_raw', hiveTables: ['dw_ods.ods_ext_bh_retro_std'], partitionField: 'datax', partitionValue: '2026-09-22', loadedRows: 96210, writeStrategy: '主键（cert_no + create_time）直接覆盖', tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理', uploadFileCleanup: '落库完成后 24 小时清理' },
     billing: { billingSubject: '风控策略组', billingType: '按条数', billingRows: 96210, billingFieldCount: 10, unitPrice: 0.35, estimatedAmount: 33673.5, billingStatus: '未计费' },
   },
   {
@@ -413,7 +422,7 @@ export const persistRecordsMock: PersistRecord[] = [
     fileInfo: { fileName: 'PD_BACK_0929_2.csv', acquireMode: 'SFTP拉取', fileSize: 47915008, fileRows: 45320, encoding: 'UTF-8', delimiter: '逗号', encrypted: false, outboundTaskIds: ['OUT20260912'] },
     // 朴道「历史逾期明细」同样未建档，本批次字段结论全部来自自动碰撞与人工选择
     mappingInfo: { product: '朴道-历史逾期明细', interfaceId: 'PD2048', productCode: '', mappingVersion: 'v1.1', stdFieldCount: 6, nonStdFieldCount: 1, nonStdFields: ['ext_ovd_level'], inheritedFieldCount: 0, requiredCiphers: [{ std: 'cert_no', sourceField: 'id_md5', algorithm: 'SHA256', digestLength: 64 }, { std: 'mobile', sourceField: 'phone_md5', algorithm: 'SHA256', digestLength: 64 }] },
-    storageInfo: { tempTable: 'tmp_ext_retro_raw', hiveTable: 'dw_ods.ods_ext_pd_retro_std', partitionField: 'datax', partitionValue: '2026-09-29', loadedRows: 45320, writeStrategy: '主键（cert_no + create_time）直接覆盖', tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理', uploadFileCleanup: '落库完成后 24 小时清理' },
+    storageInfo: { tempTable: 'tmp_ext_retro_raw', hiveTables: ['dw_ods.ods_ext_pd_retro_std'], partitionField: 'datax', partitionValue: '2026-09-29', loadedRows: 45320, writeStrategy: '主键（cert_no + create_time）直接覆盖', tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理', uploadFileCleanup: '落库完成后 24 小时清理' },
     billing: { billingSubject: '贷中管理团队', billingType: '按条数', billingRows: 45320, billingFieldCount: 7, unitPrice: 0.4, estimatedAmount: 18128, billingStatus: '未计费' },
   },
   {
@@ -425,7 +434,7 @@ export const persistRecordsMock: PersistRecord[] = [
     // 上海数据集团批次：映射的 5 行结论直接继承档案 SHGJ_ENTERPRISE_JUDICIAL 的产品级默认映射，
     // 其中 legal_case_cnt 按 R61 原样透传（底表无语义对应的涉诉列），q_id 是本批次新增的非标列
     mappingInfo: { product: '上海数据集团-工商司法信息回溯', interfaceId: 'SHGJ2006', productCode: 'SHGJ_ENTERPRISE_JUDICIAL', mappingVersion: 'v1.0', stdFieldCount: 4, nonStdFieldCount: 2, nonStdFields: ['legal_case_cnt', 'q_id'], inheritedFieldCount: 5, requiredCiphers: [{ std: 'cert_no', sourceField: 'id_md5', algorithm: 'SM3', digestLength: 64 }] },
-    storageInfo: { tempTable: 'tmp_ext_retro_raw', hiveTable: 'dw_ods.ods_ext_shgj_retro_std', partitionField: 'datax', partitionValue: '2026-10-20', loadedRows: 38000, writeStrategy: '主键（cert_no + create_time）直接覆盖', tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理', uploadFileCleanup: '落库完成后 24 小时清理' },
+    storageInfo: { tempTable: 'tmp_ext_retro_raw', hiveTables: ['dw_ods.ods_ext_shgj_retro_std'], partitionField: 'datax', partitionValue: '2026-10-20', loadedRows: 38000, writeStrategy: '主键（cert_no + create_time）直接覆盖', tempTableCleanup: '进入下一步即清理 / 定时 1 小时清理', uploadFileCleanup: '落库完成后 24 小时清理' },
     billing: { billingSubject: '贷中管理团队', billingType: '按条数', billingRows: 38000, billingFieldCount: 6, unitPrice: 0.5, estimatedAmount: 19000, billingStatus: '未计费' },
   },
 ]
@@ -447,7 +456,7 @@ const RESUME_BASE_BH: TaskResumeContext = {
   backid: 'BACK20260924017',
   product: '百行-多头借贷汇总 V4',
   interfaceId: 'BH1023',
-  hiveTable: 'dw_ods.ods_ext_bh_retro_std',
+  hiveTables: ['dw_ods.ods_ext_bh_retro_std'],
   partitionValue: '2026-09-22',
   reviewDate: '2026-09-22',
   consistencyTargetTable: 'dw_ods.ods_ext_retro_online_std',
@@ -464,7 +473,7 @@ const RESUME_BASE_PD: TaskResumeContext = {
   backid: 'BACK20260930003',
   product: '朴道-历史逾期明细',
   interfaceId: 'PD2048',
-  hiveTable: 'dw_ods.ods_ext_pd_retro_std',
+  hiveTables: ['dw_ods.ods_ext_pd_retro_std'],
   partitionValue: '2026-09-29',
   reviewDate: '2026-09-29',
   consistencyTargetTable: 'dw_ods.ods_ext_retro_online_std',
@@ -481,7 +490,7 @@ const RESUME_BASE_QT: TaskResumeContext = {
   backid: 'BACK20261021001',
   product: '钱塘-授信评分回溯',
   interfaceId: 'QT3015',
-  hiveTable: 'dw_ods.ods_ext_qt_retro_std',
+  hiveTables: ['dw_ods.ods_ext_qt_retro_std'],
   partitionValue: '2026-10-20',
   reviewDate: '2026-10-20',
   consistencyTargetTable: 'dw_ods.ods_ext_retro_online_std',
@@ -498,7 +507,7 @@ const RESUME_BASE_PBC: TaskResumeContext = {
   backid: 'BACK20261021003',
   product: '人行征信-公共基础信息回溯',
   interfaceId: 'PBC1001',
-  hiveTable: 'dw_ods.ods_ext_pbcc_retro_std',
+  hiveTables: ['dw_ods.ods_ext_pbcc_retro_std'],
   partitionValue: '2026-10-20',
   reviewDate: '2026-10-20',
   consistencyTargetTable: 'dw_ods.ods_ext_retro_online_std',
@@ -515,7 +524,7 @@ const RESUME_BASE_SHGJ: TaskResumeContext = {
   backid: 'BACK20261021002',
   product: '上海数据集团-工商司法信息回溯',
   interfaceId: 'SHGJ2006',
-  hiveTable: 'dw_ods.ods_ext_shgj_retro_std',
+  hiveTables: ['dw_ods.ods_ext_shgj_retro_std'],
   partitionValue: '2026-10-20',
   reviewDate: '2026-10-20',
   consistencyTargetTable: 'dw_ods.ods_ext_retro_online_std',
@@ -781,7 +790,7 @@ export async function appendAsyncTask(task: Omit<AsyncTask, 'taskId'> & { taskId
  */
 export async function updateAsyncTask(
   taskId: string,
-  patch: Partial<Pick<AsyncTask, 'status' | 'finishTime' | 'failReason' | 'skipped'>>
+  patch: Partial<Pick<AsyncTask, 'status' | 'finishTime' | 'failReason'>>
 ): Promise<AsyncTask | null> {
   const task = asyncTasksMock.find((t) => t.taskId === taskId)
   if (!task) return null

@@ -136,9 +136,9 @@
                   <template #icon><IconEdit /></template>
                   编辑
                 </a-button>
-                <a-button type="text" size="small" @click="handleTest(record)">
+                <a-button type="text" size="small" @click="handleStats(record)">
                   <template #icon><IconPlayCircle /></template>
-                  测试
+                  统计
                 </a-button>
                 <a-popconfirm
                   v-if="record.status === '草稿'"
@@ -263,7 +263,7 @@ const handleEdit = (record) => {
   router.push({ path: '/customer/event-create', query: { id: record.id } })
 }
 
-const handleTest = (record) => {
+const handleStats = (record) => {
   // 跳转到样本统计页面 (TASK-20260714-FCA1BD2D 修复: 路径对齐 router/modules/customer.ts L57 'customer/sample-stats')
   router.push({
     path: '/customer/sample-stats',

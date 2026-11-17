@@ -81,7 +81,9 @@
         </template>
         <div class="rules-config-section">
           <CDPRuleBuilderForm
-            v-model="audienceForm.cdpRule"
+            ref="cdpRuleRef"
+            :model-value="null"
+            @update:model-value="(v) => (cdpRuleExposed = v)"
           />
         </div>
       </a-card>
@@ -158,6 +160,8 @@ const showPreviewResult = ref(false)
 const createMode = ref<'rule' | 'import'>('rule')
 
 // 人群表单数据
+// 架构调整：basic 字段由父级管理；cdpRule 由子组件 CDPRuleBuilderForm 完全自治，父级只在需要时通过 ref + getRuleData() 读取。
+// 早期 v-model 实现导致 arco 内部 watch + 子组件 watch 产生 Maximum recursive updates，已移除 v-model。
 const audienceForm = reactive({
   basic: {
     name: '',
@@ -165,13 +169,10 @@ const audienceForm = reactive({
     expireDate: null,
     description: ''
   },
-  cdpRule: {
-    ruleGroups: [],
-    excludeGroups: [],
-    crossGroupOperator: 'AND',
-    crossExcludeGroupOperator: 'OR',
-  }
 })
+
+// 子组件 ref：用于读取其内部当前规则数据
+const cdpRuleRef = ref<InstanceType<typeof CDPRuleBuilderForm> | null>(null)
 
 // 预览统计数据
 const previewStats = reactive({
@@ -197,17 +198,18 @@ const getPageDescription = () => {
 }
 
 // 计算属性：是否可以进行预计算
+// 改为依赖 cdpRuleRef（由子组件 expose 的快照）：仅在子组件变更时重算（通过 cdpRuleExposed 这条线）
+const cdpRuleExposed = ref<any>(null) // 子组件每次 emit 时同步过来的快照
+
+// 基本信息必须填写人群名称 + 规则模式至少有一个条件（用 emitted 快照检查）
 const canPreCalculate = computed(() => {
-  // 基本信息必须填写人群名称
   if (!audienceForm.basic.name) {
     return false
   }
-
-  // 规则创建模式需要至少一个有效条件
-  if (createMode.value === 'rule' && audienceForm.cdpRule.ruleGroups.length === 0) {
-    return false
+  const rules = cdpRuleExposed.value
+  if (createMode.value === 'rule') {
+    if (!rules || !rules.ruleGroups || rules.ruleGroups.length === 0) return false
   }
-
   return true
 })
 
@@ -221,7 +223,7 @@ const preCalculate = async () => {
     
     // 更新预览统计
     previewStats.totalCount = Math.floor(Math.random() * 100000) + 10000
-    previewStats.ruleCount = audienceForm.cdpRule.ruleGroups.length
+    previewStats.ruleCount = (cdpRuleExposed.value?.ruleGroups?.length) ?? 0
     previewStats.coverage = Math.floor(Math.random() * 30) + 70
     previewStats.estimatedTime = Math.floor(Math.random() * 10) + 1
     
@@ -251,11 +253,11 @@ const saveAudience = async () => {
     // 生成人群ID（如果是新建模式）
     const audienceId = isEditMode.value ? route.params.id : `AUD_${Date.now()}_${Math.random().toString(36).substr(2, 6).toUpperCase()}`
     
-    // 构建完整的人群数据
+    // 构建完整的人群数据（cdpRule 从子组件 ref 取最新快照）
     const audienceData = {
       id: audienceId,
       ...audienceForm.basic,
-      cdpRule: audienceForm.cdpRule,
+      cdpRule: cdpRuleExposed.value || cdpRuleRef.value?.getRuleData?.() || null,
       createUser: '当前用户',
       createTime: new Date().toISOString(),
       updateTime: new Date().toISOString(),

@@ -48,7 +48,14 @@
         </div>
         <div class="button-area">
           <!-- P1#2 虚拟事件组合创建 - 2026-08-02: 改为 dropdown 含 2 个 menu item -->
-          <a-dropdown>
+          <!-- rebase 解冲突（本块为合成解）：
+               1) 保留 main 侧的 a-menu + handleCreateMenu —— 组合入口在 main 已是现行交付
+                  （main 已有配套页面 virtual-event-combine.vue + 路由 customer/virtual-event-combine
+                   + route name VirtualEventCombine），且 Arco 用 a-menu/a-menu-item + Button #suffix 更规范；
+               2) 不引入分支侧的 a-doption + handleCreate/handleCreateCombine —— 与 handleCreateMenu
+                  功能完全等价（同一对路由名 VirtualEventCreate / VirtualEventCombine），并行引入会造双实现死代码；
+               3) 保留分支侧的 trigger="click"（hover→click）—— 分支独有的交互修正，main 未含。 -->
+          <a-dropdown trigger="click">
             <a-button type="primary">
               <template #icon><IconPlus /></template>
               创建虚拟事件
@@ -155,9 +162,9 @@
                   <template #icon><IconEdit /></template>
                   编辑
                 </a-button>
-                <a-button type="text" size="small" @click="handleTest(record)">
+                <a-button type="text" size="small" @click="handleStats(record)">
                   <template #icon><IconPlayCircle /></template>
-                  测试
+                  统计
                 </a-button>
                 <a-button v-if="record.status !== '已下线'" type="text" size="small" @click="handleOffline(record)" status="danger">
                   下线
@@ -305,8 +312,8 @@ const handleEdit = (record) => {
   })
 }
 
-const handleTest = (record) => {
-  // 跳转到样本统计页面（mkt-app convention: /customer/<page>）
+// 跳转样本统计（mkt-app convention: /customer/<page>）
+const handleStats = (record) => {
   router.push({
     path: '/customer/sample-stats',
     query: {

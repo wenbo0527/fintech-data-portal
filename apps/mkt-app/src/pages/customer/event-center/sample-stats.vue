@@ -64,7 +64,7 @@
             </div>
             <div class="anomaly-list">
               <div
-                v-for="anomaly in (sampleStats.value.anomalies || [])"
+                v-for="anomaly in (sampleStats.anomalies || [])"
                 :key="anomaly.id"
                 class="anomaly-item"
                 :class="`severity-${anomaly.severity}`"
@@ -83,7 +83,7 @@
                 </div>
                 <div class="anomaly-time">{{ DateUtils.formatDateTime(anomaly.detectedAt) }}</div>
               </div>
-              <div v-if="!sampleStats.value.anomalies || sampleStats.value.anomalies.length === 0" class="no-anomaly">
+              <div v-if="!sampleStats.anomalies || sampleStats.anomalies.length === 0" class="no-anomaly">
                 <IconCheckCircle class="no-anomaly-icon" />
                 <div class="no-anomaly-text">暂无异常检测</div>
               </div>
@@ -123,6 +123,7 @@
             :data="filteredMessages"
             :loading="tableLoading"
             :pagination="tablePagination"
+            :scroll="{ x: 980 }"
             @page-change="handleTablePageChange"
           >
             <template #columns>
@@ -135,6 +136,21 @@
               <a-table-column title="客户号" width="120">
                 <template #cell="{ record }">
                   {{ extractCustomerId(record) }}
+                </template>
+              </a-table-column>
+
+              <!-- 触发事件：消息触发的虚拟事件（VIRT***）。空时显示占位 -->
+              <a-table-column title="触发事件" width="180">
+                <template #cell="{ record }">
+                  <a-tag
+                    v-if="record.triggeredVirtualEvent && record.triggeredVirtualEvent.id"
+                    color="arcoblue"
+                    size="small"
+                  >
+                    {{ record.triggeredVirtualEvent.name || record.triggeredVirtualEvent.id }}
+                    <span v-if="record.triggeredVirtualEvent.name" class="virt-event-id">({{ record.triggeredVirtualEvent.id }})</span>
+                  </a-tag>
+                  <span v-else class="no-trigger">—</span>
                 </template>
               </a-table-column>
 
@@ -602,24 +618,34 @@ watch([chartType], () => {
 
 // 生命周期
 onMounted(async () => {
-  // 获取路由参数
+  // 获取路由参数（虚拟事件带 isVirtual=true）
   const eventId = route.query.eventId
-  const eventName = route.query.eventName
-  
+  const eventName = route.query.eventName || '测试事件'
+  const isVirtual = route.query.isVirtual === 'true'
+
   if (eventId) {
     // 模拟获取事件数据
     currentEvent.value = {
       id: eventId,
-      eventName: eventName || '测试事件',
-      eventType: '系统事件'
+      eventName,
+      eventType: isVirtual ? '虚拟事件' : '系统事件'
     }
-    
+
     // 加载样本统计数据
-    await handleRefresh()
+    try {
+      await handleRefresh()
+    } catch (e) {
+      console.error('[sample-stats] handleRefresh failed:', e)
+      Message.error('数据加载失败，将显示空数据')
+    }
   }
-  
+
   nextTick(() => {
-    initTrendChart()
+    try {
+      initTrendChart()
+    } catch (e) {
+      console.error('[sample-stats] initTrendChart failed:', e)
+    }
   })
 })
 
@@ -1126,6 +1152,18 @@ onUnmounted(() => {
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* 触发事件列样式 */
+.no-trigger {
+  color: #c9cdd4;
+  font-size: 12px;
+}
+.virt-event-id {
+  margin-left: 4px;
+  color: #86909c;
+  font-size: 11px;
+  font-family: monospace;
 }
 
 /* 异常详情样式 */

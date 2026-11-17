@@ -389,23 +389,40 @@ const generateTopUsers = (): TopUser[] => {
 const generateMessageDetails = (eventId: string): MessageDetail[] => {
   const messageTypes = ['订单消息', '库存消息', '通知消息', '状态消息', '数据同步'];
   const formats: ('json' | 'xml' | 'text' | 'binary')[] = ['json', 'xml', 'text', 'binary'];
-  
+
+  // 该事件可能由这些虚拟事件触发（mock 数据）
+  const virtualEventPool = [
+    { id: 'VIRT288188', name: '虚拟原始军' },
+    { id: 'VIRT290012', name: '激活未复购' },
+    { id: 'VIRT290088', name: '高价值预警' },
+    { id: 'VIRT295001', name: '沉默用户唤醒' }
+  ];
+
   return Array.from({ length: 200 }, (_, i) => {
     const messageType = Mock.Random.pick(messageTypes);
     const format = Mock.Random.pick(formats);
     const size = Mock.Random.integer(512, 51200); // 512B-50KB
-    
+
     // 生成消息内容
     const content = generateMessageContent(messageType, format);
-    
-  return {
-    id: `msg_${eventId}_${Date.now()}_${i}`,
-    timestamp: new Date(Date.now() - Mock.Random.integer(0, 86400000)).toISOString(),
-    messageType,
-    size,
-    content,
-    format
-  };
+
+    // 模拟：70% 概率有虚拟事件触发（其中一半带名称）
+    const triggeredVirtualEvent = Mock.Random.boolean()
+      ? (() => {
+          const ev = Mock.Random.pick(virtualEventPool);
+          return { id: ev.id, name: Mock.Random.boolean() ? ev.name : '' };
+        })()
+      : null;
+
+    return {
+      id: `msg_${eventId}_${Date.now()}_${i}`,
+      timestamp: new Date(Date.now() - Mock.Random.integer(0, 86400000)).toISOString(),
+      messageType,
+      size,
+      content,
+      format,
+      triggeredVirtualEvent
+    };
   });
 };
 
@@ -820,6 +837,8 @@ const mockEventAPI = {
   },
 
   // P1#2 虚拟事件组合创建 - 2026-08-02 (从 commit 7cb2cadb cherry-pick)
+  // rebase 解冲突：取 main 侧。main 的 mock 实现即已上线版本（7cb2cadb cherry-pick），
+  // 分支侧为同一 API 的平行实现，两者功能等价；main 版的字段形状与合并后的 types/event.ts 一致。
   createCombineVirtualEvent: (params: {
     name: string;
     description?: string;

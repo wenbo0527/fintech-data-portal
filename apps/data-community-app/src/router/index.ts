@@ -538,6 +538,14 @@ const routes: RouteRecordRaw[] = [
         component: () => import('../pages/management/service/sync-tasks/records.vue'),
         meta: { title: '同步任务·执行记录' }
       },
+      // 2026-11 新增:数据任务服务 · 数据导入任务(任意分隔符文件 → Hive / Doris)
+      //   从「统一查询 · 数据任务服务」新建任务弹窗进入,保存即执行一次
+      {
+        path: 'management/service/import-tasks/create',
+        name: 'service-import-create',
+        component: () => import('../pages/management/service/import-tasks/create.vue'),
+        meta: { title: '新建数据导入任务' }
+      },
       {
         path: 'management/service/api-management',
         name: 'service-api-management',

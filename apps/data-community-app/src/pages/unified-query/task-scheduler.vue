@@ -38,6 +38,7 @@
             <a-radio value="all">全部</a-radio>
             <a-radio value="schedule">调度</a-radio>
             <a-radio value="sync">同步</a-radio>
+            <a-radio value="import">导入</a-radio>
           </a-radio-group>
           <a-input-search
             v-model="instanceStore.taskFilter.keyword"
@@ -64,6 +65,10 @@
             <a-link v-if="record.taskType === 'schedule'" @click="openTaskInstances(record)">
               {{ record.taskName }}
             </a-link>
+            <!-- 导入任务:点击进入导入详情(单次执行,无独立实例) -->
+            <a-link v-else-if="record.taskType === 'import'" @click="openImportDetail(record)">
+              {{ record.taskName }}
+            </a-link>
             <!-- 同步任务:点击进入同步详情(无实例概念) -->
             <a-link v-else @click="openSyncDetail(record)">
               {{ record.taskName }}
@@ -74,20 +79,28 @@
           </div>
         </template>
         <template #taskType="{ record }">
-          <a-tag size="small" :color="record.taskType === 'sync' ? 'arcoblue' : 'green'">
-            {{ record.taskType === 'sync' ? '同步' : '调度' }}
+          <a-tag size="small" :color="taskTypeMeta(record.taskType).color">
+            {{ taskTypeMeta(record.taskType).text }}
           </a-tag>
         </template>
-        <!-- 同步任务专属:同步方向 -->
+        <!-- 同步任务专属:同步方向;导入任务:分隔符 + 文件名 -->
         <template #detail="{ record }">
           <span v-if="record.taskType === 'sync'">
             <a-tag size="small" color="arcoblue">{{ record.direction }}</a-tag>
           </span>
+          <span v-else-if="record.taskType === 'import'">
+            <a-tag size="small" color="orange">{{ record.importDelimiter }}</a-tag>
+            <span class="uq-task-name__sub" style="margin-left: 4px">{{ record.importFileName }}</span>
+          </span>
           <span v-else class="text-gray">{{ record.schedule || '—' }}</span>
         </template>
-        <!-- 调度任务专属:下次执行;同步任务此处展示上一次同步的目标表 -->
+        <!-- 调度任务专属:下次执行;同步任务此处展示上一次同步的目标表;导入任务展示目标库表 -->
         <template #secondary="{ record }">
           <span v-if="record.taskType === 'schedule'">{{ record.nextRun || '—' }}</span>
+          <template v-else-if="record.taskType === 'import'">
+            <a-tag size="small" color="arcoblue" style="margin-right: 4px">{{ record.importDatasource }}</a-tag>
+            <code class="uq-task-code">{{ record.targetTable }}</code>
+          </template>
           <code v-else class="uq-task-code">{{ record.targetTable }}</code>
         </template>
         <template #status="{ record }">
@@ -99,8 +112,38 @@
             <a-link v-if="record.taskType === 'schedule'" @click="openTaskInstances(record)">实例</a-link>
             <!-- 同步任务:每次执行即一条记录本身,无独立实例,直接看记录详情 -->
             <a-link v-if="record.taskType === 'sync'" @click="openSyncDetail(record)">详情</a-link>
+            <!-- 导入任务:单次执行,直接看任务详情 -->
+            <a-link v-if="record.taskType === 'import'" @click="openImportDetail(record)">详情</a-link>
             <a-link v-if="record.taskType === 'schedule'" @click="editSchedule(record)">配置</a-link>
+            <!-- F32: 停止(仅运行中) -->
+            <a-popconfirm
+              v-if="record.taskType === 'schedule' && record.status === 'running'"
+              content="确定停止本次执行?停止后任务回到可调度状态"
+              type="warning"
+              @ok="handleStop(record)"
+            >
+              <a-link status="danger">停止</a-link>
+            </a-popconfirm>
+            <!-- F30: 停用(成功/失败 → 不再触发下次调度) -->
+            <a-popconfirm
+              v-if="record.taskType === 'schedule' && (record.status === 'success' || record.status === 'failed')"
+              content="确定停用该任务?停用后不再触发定时调度"
+              @ok="handleDisable(record)"
+            >
+              <a-link>停用</a-link>
+            </a-popconfirm>
+            <!-- F33: 启用(已停用 → 恢复调度) -->
+            <a-link
+              v-if="record.taskType === 'schedule' && record.status === 'disabled'"
+              @click="handleEnable(record)"
+            >启用</a-link>
+            <!-- F31: 重跑(非运行中/非停用) -->
+            <a-link
+              v-if="record.taskType === 'schedule' && (record.status === 'success' || record.status === 'failed')"
+              @click="handleRerun(record)"
+            >重跑</a-link>
             <a-link v-if="record.taskType === 'sync' && record.status === 'failed'" status="danger" @click="retrySync(record)">重跑</a-link>
+            <a-link v-if="record.taskType === 'import' && record.status === 'failed'" status="danger" @click="retryImport(record)">重跑</a-link>
           </a-space>
         </template>
       </a-table>
@@ -186,7 +229,7 @@
     <a-modal
       v-model:visible="typeChooseVisible"
       title="选择任务类型"
-      :width="520"
+      :width="640"
       :footer="false"
       unmount-on-close
     >
@@ -209,8 +252,116 @@
             基于统一查询脚本的定时/手动执行,支持重试、依赖、超时告警
           </div>
         </div>
+        <div class="uq-type-card uq-type-card--wide" @click="pickImport">
+          <div class="uq-type-card__icon uq-type-card__icon--import">
+            <icon-upload />
+          </div>
+          <div class="uq-type-card__body">
+            <div class="uq-type-card__title">数据导入任务</div>
+            <div class="uq-type-card__desc">
+              任意分隔符文件导入 Hive / Doris,支持写入已有表(字段映射)或新建表(从文件自动解析列结构),保存即执行一次
+            </div>
+          </div>
+        </div>
       </div>
     </a-modal>
+
+    <!-- 数据导入任务详情 drawer(单次执行:展示任务配置 + 历次导入 run) -->
+    <a-drawer
+      v-model:visible="importDetailVisible"
+      :title="importDetailRecord ? `数据导入任务 · ${importDetailRecord.id}` : '导入任务详情'"
+      :width="660"
+      unmount-on-close
+    >
+      <template v-if="importDetailRecord">
+        <a-alert
+          v-if="importDetailRecord.runStatus === 'failed'"
+          type="error"
+          show-icon
+          style="margin-bottom: 16px"
+        >
+          最近一次导入失败{{ importDetailRecord.errorMessage ? ':' + importDetailRecord.errorMessage : '' }}
+        </a-alert>
+        <a-descriptions :column="2" bordered size="small" title="任务配置">
+          <a-descriptions-item label="任务编号">{{ importDetailRecord.id }}</a-descriptions-item>
+          <a-descriptions-item label="任务名">{{ importDetailRecord.name }}</a-descriptions-item>
+          <a-descriptions-item label="执行状态">
+            <a-tag size="small" :color="runStatusColor(importDetailRecord.runStatus)">
+              {{ runStatusText(importDetailRecord.runStatus) }}
+            </a-tag>
+          </a-descriptions-item>
+          <a-descriptions-item label="发起人">{{ importDetailRecord.creator }}</a-descriptions-item>
+          <a-descriptions-item label="目标数据源">
+            <a-tag size="small" :color="importDetailRecord.targetDatasource === 'doris' ? 'arcoblue' : 'orange'">
+              {{ importDetailRecord.targetDatasource === 'doris' ? 'Doris' : 'Hive' }}
+            </a-tag>
+          </a-descriptions-item>
+          <a-descriptions-item label="目标表操作">
+            <a-tag size="small" :color="importDetailRecord.tableMode === 'new' ? 'green' : 'purple'">
+              {{ importDetailRecord.tableMode === 'new' ? '新建表' : '写入已有表' }}
+            </a-tag>
+          </a-descriptions-item>
+          <a-descriptions-item label="目标库表" :span="2">
+            <code>{{ importDetailRecord.targetDatabase }}.{{ importDetailRecord.targetTable }}</code>
+          </a-descriptions-item>
+          <a-descriptions-item label="源文件" :span="2">
+            <code>{{ importDetailRecord.fileName }}</code>
+            <span class="text-gray" style="margin-left: 8px">{{ formatSize(importDetailRecord.fileSize) }}</span>
+          </a-descriptions-item>
+          <a-descriptions-item label="分隔符">{{ importDetailRecord.delimiterLabel }}</a-descriptions-item>
+          <a-descriptions-item label="编码">{{ importDetailRecord.encoding.toUpperCase() }}</a-descriptions-item>
+          <a-descriptions-item label="首行表头">{{ importDetailRecord.hasHeader ? '是' : '否' }}</a-descriptions-item>
+          <a-descriptions-item v-if="importDetailRecord.tableMode === 'existing'" label="写入方式">
+            {{ importDetailRecord.writeMode === 'append' ? '追加' : '覆盖' }}
+            · {{ importDetailRecord.skipErrorRows ? '跳过错误行' : '遇错即止' }}
+          </a-descriptions-item>
+          <a-descriptions-item v-else label="错误行处理">
+            新建表 · 首次全量写入 · {{ importDetailRecord.skipErrorRows ? '跳过错误行' : '遇错即止' }}
+          </a-descriptions-item>
+        </a-descriptions>
+
+        <div style="margin-top: 16px">
+          <div class="block-title">列结构 / 字段映射({{ importDetailRecord.columns.length }} 列)</div>
+          <a-table
+            :columns="importColColumns"
+            :data="importDetailRecord.columns"
+            :pagination="false"
+            row-key="index"
+            size="small"
+          >
+            <template #enabled="{ record: c }">
+              <a-tag size="small" :color="c.enabled ? 'green' : 'gray'">{{ c.enabled ? '导入' : '丢弃' }}</a-tag>
+            </template>
+            <template #fileCol="{ record: c }"><code class="uq-task-code">{{ c.name }}</code></template>
+          </a-table>
+        </div>
+
+        <div style="margin-top: 16px">
+          <div class="block-title">执行历史({{ importDetailRuns.length }} 次)</div>
+          <a-table
+            :columns="importRunColumns"
+            :data="importDetailRuns"
+            :pagination="false"
+            row-key="id"
+            size="small"
+          >
+            <template #status="{ record: r }">
+              <a-tag size="small" :color="runStatusColor(r.status)">{{ runStatusText(r.status) }}</a-tag>
+            </template>
+            <template #rows="{ record: r }">
+              <span class="text-success">{{ r.rowsWritten.toLocaleString() }}</span>
+              / {{ r.rowsRead.toLocaleString() }}
+              <span v-if="r.rowsRejected" class="text-warn">(跳过 {{ r.rowsRejected.toLocaleString() }})</span>
+            </template>
+            <template #cost="{ record: r }">{{ formatCost(r.costMs) }}</template>
+            <template #startedAt="{ record: r }">
+              <div>{{ r.startedAt }}</div>
+              <div v-if="r.errorMessage" style="font-size: 12px; color: rgb(var(--danger-6))">{{ r.errorMessage }}</div>
+            </template>
+          </a-table>
+        </div>
+      </template>
+    </a-drawer>
   </PageContainer>
 </template>
 
@@ -229,15 +380,19 @@ import PageHeader from '@/components-dca/common/PageHeader.vue'
 import DetailDrawer from '@/components-dca/unified-query/DetailDrawer.vue'
 import { useUqTaskStore } from '@/stores-dca/unified-query/task'
 import { useSyncTaskStore } from '@/stores-dca/management/sync-task'
+import { useImportTaskStore } from '@/stores-dca/management/import-task'
 import { useTaskInstanceStore } from '@/stores-dca/unified-query/task-instance'
 import { TASK_TREND_7D } from '@/mock/unified-query/tasks'
+import { formatFileSize } from '@/mock/service/import-tasks'
 import type { TaskRecord } from '@/mock/unified-query/types'
 import type { TaskSummary } from '@/stores-dca/unified-query/task-instance'
 import type { SyncRecord, SyncRunStatus, SyncTaskStatus } from '@/mock/service/sync-tasks-types'
+import type { ImportRecord, ImportRunStatus } from '@/mock/service/import-tasks-types'
 
 const router = useRouter()
 const store = useUqTaskStore()
 const syncStore = useSyncTaskStore()
+const importStore = useImportTaskStore()
 const instanceStore = useTaskInstanceStore()
 const trend = TASK_TREND_7D
 
@@ -256,6 +411,17 @@ const mergedColumns = [
   { title: '最近执行', dataIndex: 'lastRunAt', width: 170 },
   { title: '操作', dataIndex: 'operations', slotName: 'operations', width: 200, fixed: 'right' }
 ]
+
+/** 任务类型标签文案 + 颜色(同步 / 调度 / 导入) */
+function taskTypeMeta(t: string): { text: string; color: string } {
+  return (
+    {
+      sync: { text: '同步', color: 'arcoblue' },
+      schedule: { text: '调度', color: 'green' },
+      import: { text: '导入', color: 'orange' }
+    }[t] ?? { text: t, color: 'gray' }
+  )
+}
 
 /** 行点击 → 跳到执行实例页(带 taskId query) */
 function openTaskInstances(row: TaskSummary) {
@@ -277,6 +443,65 @@ function retrySync(row: TaskSummary) {
   const r = syncStore.retry(row.taskId)
   if (r) Message.success(`任务「${r.id}」已重新加入执行队列`)
 }
+
+/* ─── 导入任务详情 drawer(单次执行,任务本身即一次导入) ─── */
+const importDetailVisible = ref(false)
+const importDetailRecord = ref<ImportRecord | null>(null)
+
+function openImportDetail(row: TaskSummary) {
+  if (row.taskType !== 'import') return
+  const r = importStore.getById(row.taskId)
+  if (!r) {
+    Message.warning('未找到该导入任务')
+    return
+  }
+  importDetailRecord.value = r
+  importDetailVisible.value = true
+}
+
+/** 当前 drawer 任务的历次导入 run */
+const importDetailRuns = computed(() => {
+  const t = importDetailRecord.value
+  return t ? importStore.getRunsByTaskId(t.id) : []
+})
+
+/** 导入失败任务:重跑 */
+function retryImport(row: TaskSummary) {
+  if (row.taskType !== 'import') return
+  const r = importStore.retry(row.taskId)
+  if (r) Message.success(`任务「${r.id}」已重新加入执行队列`)
+}
+
+/** 导入 run 状态 → 文案 / 颜色 */
+function runStatusText(s: ImportRunStatus): string {
+  return { pending: '待执行', running: '执行中', success: '成功', failed: '失败' }[s] || s
+}
+function runStatusColor(s: ImportRunStatus): string {
+  return { pending: 'gray', running: 'arcoblue', success: 'green', failed: 'red' }[s] || 'gray'
+}
+
+/** 文件大小格式化(复用 mock 解析工具) */
+function formatSize(bytes: number): string {
+  return formatFileSize(bytes)
+}
+
+/** 列结构 / 映射展示列 */
+const importColColumns = [
+  { title: '导入', dataIndex: 'enabled', slotName: 'enabled', width: 70 },
+  { title: '文件列', dataIndex: 'name', slotName: 'fileCol', width: 140 },
+  { title: '类型', dataIndex: 'type', width: 120 },
+  { title: '目标列', dataIndex: 'targetColumn' },
+  { title: '样例值', dataIndex: 'sample' }
+]
+
+/** 导入执行历史列 */
+const importRunColumns = [
+  { title: '运行编号', dataIndex: 'id', width: 180 },
+  { title: '状态', dataIndex: 'status', slotName: 'status', width: 90 },
+  { title: '写入/读取行', dataIndex: 'rows', slotName: 'rows', width: 180 },
+  { title: '耗时', dataIndex: 'cost', slotName: 'cost', width: 90 },
+  { title: '开始时间', dataIndex: 'startedAt', slotName: 'startedAt' }
+]
 
 /* ─── 同步任务详情 drawer(同步无独立实例,记录本身就是执行) ─── */
 const syncDetailVisible = ref(false)
@@ -367,6 +592,10 @@ function pickSchedule() {
   typeChooseVisible.value = false
   router.push({ name: 'unified-query-task-create' })
 }
+function pickImport() {
+  typeChooseVisible.value = false
+  router.push({ name: 'service-import-create' })
+}
 
 /** F22: 概览看板 4 张卡(总任务 / 成功 / 失败 / 运行中) */
 const cards = computed(() => {
@@ -388,36 +617,61 @@ function openDrawer(record: TaskRecord) {
   drawerVisible.value = true
 }
 
-/* ── F30-F33: 任务操作按钮 ── */
-const rerunningIds = ref<Set<string>>(new Set())
+/* ── F30-F33: 调度任务操作(列表行是 TaskSummary,store 侧按 taskId 取 TaskRecord) ── */
+
+/** 取调度任务原始记录,不存在时提醒并返回 null */
+function scheduleRecord(row: TaskSummary): TaskRecord | null {
+  const t = store.getById(row.taskId)
+  if (!t) {
+    Message.warning(`未找到调度任务「${row.taskName}」`)
+  }
+  return t
+}
 
 /** F30: 停用 */
-function handleDisable(record: TaskRecord) {
-  store.disable(record.id)
-  Message.success(`任务「${record.name}」已停用`)
+function handleDisable(row: TaskSummary) {
+  const t = scheduleRecord(row)
+  if (!t) {
+    return
+  }
+  store.disable(t.id)
+  Message.success(`任务「${t.name}」已停用`)
 }
 
 /** F33: 启用 */
-function handleEnable(record: TaskRecord) {
-  store.enable(record.id)
-  Message.success(`任务「${record.name}」已启用`)
+function handleEnable(row: TaskSummary) {
+  const t = scheduleRecord(row)
+  if (!t) {
+    return
+  }
+  store.enable(t.id)
+  Message.success(`任务「${t.name}」已启用,下次执行 ${t.nextRun ?? '—'}`)
 }
 
 /** F32: 停止运行中任务 */
-function handleStop(record: TaskRecord) {
-  store.stop(record.id)
-  Message.success(`任务「${record.name}」已停止`)
+function handleStop(row: TaskSummary) {
+  const t = scheduleRecord(row)
+  if (!t) {
+    return
+  }
+  store.stop(t.id)
+  Message.success(`任务「${t.name}」已停止`)
 }
 
-/** F31: 重跑 */
-async function handleRerun(record: TaskRecord) {
-  rerunningIds.value.add(record.id)
-  const status = await store.rerun(record.id)
-  rerunningIds.value.delete(record.id)
+/** F31: 重跑(被 F32 停止打断时 store 返回 cancelled,不再提示结果) */
+async function handleRerun(row: TaskSummary) {
+  const t = scheduleRecord(row)
+  if (!t) {
+    return
+  }
+  const status = await store.rerun(t.id)
+  if (status === 'cancelled') {
+    return
+  }
   if (status === 'success') {
-    Message.success(`任务「${record.name}」重跑成功`)
+    Message.success(`任务「${t.name}」重跑成功`)
   } else {
-    Message.error(`任务「${record.name}」重跑失败`)
+    Message.error(`任务「${t.name}」重跑失败`)
   }
 }
 
@@ -536,6 +790,23 @@ function viewScript(record: TaskRecord) {
     border-color: rgb(var(--primary-6));
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
   }
+  &--wide {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    .uq-type-card__icon {
+      margin-bottom: 0;
+      flex: none;
+    }
+    .uq-type-card__body {
+      flex: 1;
+    }
+  }
+  &__body {
+    display: flex;
+    flex-direction: column;
+  }
   &__icon {
     width: 44px;
     height: 44px;
@@ -553,6 +824,10 @@ function viewScript(record: TaskRecord) {
       background: rgb(var(--success-1));
       color: rgb(var(--success-6));
     }
+    &--import {
+      background: rgb(var(--warning-1));
+      color: rgb(var(--warning-6));
+    }
   }
   &__title {
     font-size: 15px;
@@ -564,5 +839,14 @@ function viewScript(record: TaskRecord) {
     color: var(--color-text-3);
     line-height: 1.5;
   }
+}
+
+/* 通用文字色(导入详情抽屉统计行) */
+.text-success {
+  color: rgb(var(--success-6));
+}
+.text-warn {
+  color: rgb(var(--warning-6));
+  margin-left: 4px;
 }
 </style>

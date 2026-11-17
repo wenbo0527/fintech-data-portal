@@ -19,6 +19,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { useSyncTaskStore } from '@/stores-dca/management/sync-task'
+import { useImportTaskStore } from '@/stores-dca/management/import-task'
 import { useUqTaskStore } from '@/stores-dca/unified-query/task'
 
 export type TaskInstanceTrigger = 'manual' | 'cron' | 'dependency' | 'external'
@@ -33,8 +34,8 @@ export interface TaskInstance {
   taskId: string
   /** 任务名 */
   taskName: string
-  /** 类型(同步/调度) */
-  taskType: 'sync' | 'schedule'
+  /** 类型(同步/调度/导入) */
+  taskType: 'sync' | 'schedule' | 'import'
   /** 触发方式 */
   trigger: TaskInstanceTrigger
   /** 实例状态 */
@@ -64,7 +65,7 @@ export interface TaskInstance {
 
 export interface TaskInstanceFilter {
   keyword: string
-  type: 'all' | 'sync' | 'schedule'
+  type: 'all' | 'sync' | 'schedule' | 'import'
   status: 'all' | TaskInstanceStatus
   trigger: 'all' | TaskInstanceTrigger
   /** 时间范围(E12 默认近 30 天) */
@@ -81,7 +82,7 @@ const DEFAULT_FILTER: TaskInstanceFilter = {
 
 const DEFAULT_TASK_FILTER = {
   keyword: '',
-  type: 'all' as 'all' | 'sync' | 'schedule',
+  type: 'all' as 'all' | 'sync' | 'schedule' | 'import',
   /** 任务级状态(对齐需求 R05 启用/停用/归档,本期暂存为启用/停用/失败/运行中/执行中) */
   status: 'all' as string
 }
@@ -89,7 +90,7 @@ const DEFAULT_TASK_FILTER = {
 /** 任务列表筛选 */
 export interface TaskListFilter {
   keyword: string
-  type: 'all' | 'sync' | 'schedule'
+  type: 'all' | 'sync' | 'schedule' | 'import'
   status: string
 }
 
@@ -103,8 +104,8 @@ export interface TaskSummary {
   /** 任务 ID(与其所属 store 的 id 一致) */
   taskId: string
   taskName: string
-  taskType: 'sync' | 'schedule'
-  /** 派生自 TaskStatus/SyncStatus */
+  taskType: 'sync' | 'schedule' | 'import'
+  /** 派生自 TaskStatus/SyncStatus/ImportRunStatus */
   status: string
   statusText: string
   statusColor: string
@@ -119,6 +120,10 @@ export interface TaskSummary {
   direction?: string
   sourceTable?: string
   targetTable?: string
+  /** 导入任务专属(R27 扩展字段) */
+  importFileName?: string
+  importDelimiter?: string
+  importDatasource?: string
   // 拓展字段:调度任务的 schedule 字段、cron 表达式
   cronExpression?: string
 }
@@ -187,6 +192,45 @@ function buildSummaryFromSchedule(t: {
   }
 }
 
+/**
+ * 导入任务汇总行
+ * - 无独立实例概念(单次),但每次执行产出一条 run,列行以最近一次 run 状态为准
+ * - 文件信息 / 分隔符 / 目标表落库放在导入专属字段
+ */
+function buildSummaryFromImport(r: {
+  id: string
+  name: string
+  fileName: string
+  delimiterLabel: string
+  targetDatasource: string
+  targetDatabase: string
+  targetTable: string
+  runStatus: string
+  creator: string
+  startedAt: string
+}): TaskSummary {
+  const map: Record<string, { text: string; color: string }> = {
+    success: { text: '成功', color: 'green' },
+    failed: { text: '失败', color: 'red' },
+    running: { text: '执行中', color: 'arcoblue' },
+    pending: { text: '待执行', color: 'gray' }
+  }
+  return {
+    taskId: r.id,
+    taskName: r.name,
+    taskType: 'import',
+    status: r.runStatus,
+    statusText: map[r.runStatus]?.text ?? r.runStatus,
+    statusColor: map[r.runStatus]?.color ?? 'gray',
+    creator: r.creator,
+    lastRunAt: r.startedAt,
+    importFileName: r.fileName,
+    importDelimiter: r.delimiterLabel,
+    importDatasource: r.targetDatasource === 'doris' ? 'Doris' : 'Hive',
+    targetTable: `${r.targetDatabase}.${r.targetTable}`
+  }
+}
+
 /** 状态文本+R27 颜色配置 */
 export const INSTANCE_STATUS_META: Record<TaskInstanceStatus, { text: string; color: string }> = {
   queued: { text: '排队', color: 'gray' },
@@ -234,6 +278,7 @@ export const useTaskInstanceStore = defineStore('taskInstance', () => {
   /** 全量(派生):从两个 source store 中拼出统一实例列表 */
   const all = computed<TaskInstance[]>(() => {
     const syncStore = useSyncTaskStore()
+    const importStore = useImportTaskStore()
     const uqStore = useUqTaskStore()
 
     const out: TaskInstance[] = []
@@ -258,6 +303,31 @@ export const useTaskInstanceStore = defineStore('taskInstance', () => {
           targetTable: r.targetDatabase,
           rowsCopied: r.rowsCopied,
           direction
+        }
+      })
+    }
+
+    // 导入实例(单次任务:每个任务取最近一次 run 作为一条实例)
+    for (const r of importStore.records) {
+      const mappedStatus: TaskInstanceStatus =
+        r.runStatus === 'pending' ? 'queued' : (r.runStatus as TaskInstanceStatus)
+      out.push({
+        id: r.latestRunId ?? r.id,
+        taskId: r.id,
+        taskName: r.name,
+        taskType: 'import',
+        trigger: 'manual',
+        status: mappedStatus,
+        creator: r.creator,
+        startedAt: r.startedAt,
+        finishedAt: r.finishedAt,
+        costMs: r.costMs,
+        errorMessage: r.errorMessage,
+        extra: {
+          sourceTable: r.fileName,
+          targetTable: `${r.targetDatabase}.${r.targetTable}`,
+          rowsCopied: r.rowsWritten,
+          direction: r.delimiterLabel
         }
       })
     }
@@ -340,6 +410,7 @@ export const useTaskInstanceStore = defineStore('taskInstance', () => {
   /** 单表任务列表:同步 + 调度合并为同一份 rows */
   const tasks = computed<TaskSummary[]>(() => {
     const syncStore = useSyncTaskStore()
+    const importStore = useImportTaskStore()
     const uqStore = useUqTaskStore()
     const list: TaskSummary[] = []
 
@@ -352,6 +423,22 @@ export const useTaskInstanceStore = defineStore('taskInstance', () => {
           targetDatabase: r.targetDatabase,
           direction: r.direction,
           status: r.status,
+          creator: r.creator,
+          startedAt: r.startedAt
+        })
+      )
+    }
+    for (const r of importStore.records) {
+      list.push(
+        buildSummaryFromImport({
+          id: r.id,
+          name: r.name,
+          fileName: r.fileName,
+          delimiterLabel: r.delimiterLabel,
+          targetDatasource: r.targetDatasource,
+          targetDatabase: r.targetDatabase,
+          targetTable: r.targetTable,
+          runStatus: r.runStatus,
           creator: r.creator,
           startedAt: r.startedAt
         })
@@ -372,7 +459,7 @@ export const useTaskInstanceStore = defineStore('taskInstance', () => {
         if (f.type !== 'all' && t.taskType !== f.type) return false
         if (f.status !== 'all' && t.status !== f.status) return false
         if (kw) {
-          const hay = [t.taskId, t.taskName, t.creator, t.sourceTable ?? '', t.targetTable ?? '', t.scriptName ?? '']
+          const hay = [t.taskId, t.taskName, t.creator, t.sourceTable ?? '', t.targetTable ?? '', t.scriptName ?? '', t.importFileName ?? '', t.importDelimiter ?? '']
             .filter(Boolean)
             .join(' ')
             .toLowerCase()
@@ -391,6 +478,7 @@ export const useTaskInstanceStore = defineStore('taskInstance', () => {
       total: list.length,
       schedule: list.filter(t => t.taskType === 'schedule').length,
       sync: list.filter(t => t.taskType === 'sync').length,
+      import: list.filter(t => t.taskType === 'import').length,
       success: list.filter(t => t.status === 'success').length,
       failed: list.filter(t => t.status === 'failed' || t.status === 'timeout').length,
       running: list.filter(t => t.status === 'running').length

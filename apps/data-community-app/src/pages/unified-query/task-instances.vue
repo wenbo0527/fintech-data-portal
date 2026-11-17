@@ -97,6 +97,7 @@
             <a-option value="all">全部类型</a-option>
             <a-option value="sync">同步</a-option>
             <a-option value="schedule">调度</a-option>
+            <a-option value="import">导入</a-option>
           </a-select>
         </a-col>
         <a-col :span="4">
@@ -144,8 +145,8 @@
           <a-link @click="openDetail(record)">{{ record.id }}</a-link>
         </template>
         <template #taskType="{ record }">
-          <a-tag size="small" :color="record.taskType === 'sync' ? 'arcoblue' : 'green'">
-            {{ record.taskType === 'sync' ? '同步' : '调度' }}
+          <a-tag size="small" :color="typeMeta(record.taskType).color">
+            {{ typeMeta(record.taskType).text }}
           </a-tag>
         </template>
         <template #trigger="{ record }">
@@ -192,8 +193,8 @@
           <a-descriptions-item label="实例 ID">{{ current.id }}</a-descriptions-item>
           <a-descriptions-item label="任务名">{{ current.taskName }}</a-descriptions-item>
           <a-descriptions-item label="任务类型">
-            <a-tag size="small" :color="current.taskType === 'sync' ? 'arcoblue' : 'green'">
-              {{ current.taskType === 'sync' ? '同步' : '调度' }}
+            <a-tag size="small" :color="typeMeta(current.taskType).color">
+              {{ typeMeta(current.taskType).text }}
             </a-tag>
           </a-descriptions-item>
           <a-descriptions-item label="触发方式">
@@ -348,6 +349,16 @@ function statusMeta(s: TaskInstanceStatus) {
 }
 function triggerMeta(t: TaskInstanceTrigger) {
   return INSTANCE_TRIGGER_META[t]
+}
+/** 任务类型标签(同步 / 调度 / 导入) */
+function typeMeta(t: string): { text: string; color: string } {
+  return (
+    {
+      sync: { text: '同步', color: 'arcoblue' },
+      schedule: { text: '调度', color: 'green' },
+      import: { text: '导入', color: 'orange' }
+    }[t] ?? { text: t, color: 'gray' }
+  )
 }
 function formatCost(ms: number): string {
   if (!ms) return '—'

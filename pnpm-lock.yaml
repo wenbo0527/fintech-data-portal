@@ -323,6 +323,25 @@ importers:
         specifier: ^1.8.0
         version: 1.8.27(typescript@5.3.3)
 
+  apps/portal-app:
+    dependencies:
+      '@arco-design/web-vue':
+        specifier: ^2.55.2
+        version: 2.57.0(vue@3.5.19(typescript@5.3.3))
+      vue:
+        specifier: ^3.4.0
+        version: 3.5.19(typescript@5.3.3)
+    devDependencies:
+      '@vitejs/plugin-vue':
+        specifier: ^5.0.0
+        version: 5.2.4(vite@5.4.19(@types/node@22.19.7)(less@4.5.1)(sass-embedded@1.90.0)(sass@1.97.3)(terser@5.46.0))(vue@3.5.19(typescript@5.3.3))
+      typescript:
+        specifier: 5.3.3
+        version: 5.3.3
+      vite:
+        specifier: ^5.0.0
+        version: 5.4.19(@types/node@22.19.7)(less@4.5.1)(sass-embedded@1.90.0)(sass@1.97.3)(terser@5.46.0)
+
   apps/report-monitor:
     dependencies:
       '@arco-design/color':

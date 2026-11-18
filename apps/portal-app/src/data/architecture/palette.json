@@ -1,0 +1,24 @@
+{
+  "light": {
+    "primary": "#3B82F6",
+    "secondary": "#6366F1",
+    "accent": "#22D3EE",
+    "neutral": "#64748B",
+    "success": "#22C55E",
+    "warn": "#F59E0B",
+    "danger": "#EF4444",
+    "bg": "#0F172A",
+    "surface": "#111827"
+  },
+  "dark": {
+    "primary": "#60A5FA",
+    "secondary": "#818CF8",
+    "accent": "#38BDF8",
+    "neutral": "#94A3B8",
+    "success": "#34D399",
+    "warn": "#FBBF24",
+    "danger": "#F87171",
+    "bg": "#0A0F1E",
+    "surface": "#0D1428"
+  }
+}

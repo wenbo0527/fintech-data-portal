@@ -131,4 +131,7 @@ apps/*.zip
 apps/*/dist-ssr/
 
 # 浏览器验证截图（临时产物，不入库）
-.screenshots/.tmp/
+.screenshots/
+
+# Syncthing 本地忽略配置（个人同步职责，不入库）
+.stignore

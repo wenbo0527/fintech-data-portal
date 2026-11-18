@@ -148,6 +148,21 @@ export const ASSOCIATION_METHODS = [
   { value: 'cert_no', label: '身份证号关联' }
 ]
 
+// 预置模型产物：创建回溯时从平台拉取的模型文件（格式白名单 .pkl / .pb），详情页只读回显
+function seedModelFile(serviceName, version, fileName, format, size, pulledAt) {
+  return {
+    serviceName,
+    version,
+    url: `/platform/models/${fileName}`,
+    fileName,
+    format,
+    formatLabel: format === 'pb' ? 'protobuf' : 'pickle',
+    supported: true,
+    size,
+    pulledAt
+  }
+}
+
 // 构造结构化日志——嵌套日志（stages 在顶层 + main_model + sub_models）
 // 用于详情页日志结构化展示（模块C P0）
 function buildNestedLog(now) {
@@ -244,6 +259,7 @@ function seedBulkInputMappings(count = 700) {
     status: BACKTRACK_STATUS.COMPLETED,
     progress: [
       { key: 'init', name: '初始化', status: 'done', time: now },
+      { key: 'fetchModel', name: '拉取模型文件', status: 'done', time: now },
       { key: 'pull', name: '拉取样本', status: 'done', time: now },
       { key: 'map', name: '参数匹配', status: 'done', time: now },
       { key: 'execute', name: '执行模型', status: 'done', time: now },
@@ -293,6 +309,8 @@ function seedBulkInputMappings(count = 700) {
       dateRange: ['2026-07-01', '2026-07-31'],
       serviceName: 'credit_score_service',
       version: 'V1',
+      // 模型产物：步骤一从平台拉取，执行引擎按该文件加载模型
+      modelFile: seedModelFile('credit_score_service', 'V1', 'credit_score_model_v1.pkl', 'pkl', '25MB', now),
       taskName: '信用评分服务-单次全量回溯',
       sqlWhere: "dt >= '2026-07-01' AND dt <= '2026-07-31' AND cert_no IS NOT NULL",
       // 模块A：是否勾选『推理入参入库』
@@ -327,6 +345,7 @@ function seedBulkInputMappings(count = 700) {
     status: BACKTRACK_STATUS.PARTIAL_SUCCESS,
     progress: [
       { key: 'init', name: '初始化', status: 'done', time: now2 },
+      { key: 'fetchModel', name: '拉取模型文件', status: 'done', time: now2 },
       { key: 'pull', name: '拉取样本', status: 'done', time: now2 },
       { key: 'map', name: '参数匹配', status: 'done', time: now2 },
       { key: 'execute', name: '执行模型', status: 'done', time: now2 },
@@ -348,6 +367,8 @@ function seedBulkInputMappings(count = 700) {
       dateRange: ['2026-08-01', '2026-08-31'],
       serviceName: 'risk_score_v2',
       version: 'V2',
+      // 模型产物：.pb（TensorFlow frozen graph）产物演示，验证白名单同时支持 .pkl 与 .pb
+      modelFile: seedModelFile('risk_score_v2', 'V2', 'risk_score_model_v2.pb', 'pb', '68MB', now2),
       taskName: '风险评分V2-每日周期回溯',
       sqlWhere: "dt >= '2026-08-01' AND status = 'active'",
       featurePersist: false,
@@ -590,6 +611,7 @@ export function createBacktrack(data) {
     status: persistedStatus,
     progress: status === BACKTRACK_STATUS.DRAFT ? [] : [
       { key: 'init', name: '初始化', status: 'done', time: now },
+      { key: 'fetchModel', name: '拉取模型文件', status: data.modelFile ? 'done' : 'pending', time: data.modelFile ? now : '' },
       { key: 'pull', name: '拉取样本', status: 'running', time: now },
       { key: 'map', name: '参数匹配', status: 'pending', time: '' },
       { key: 'execute', name: '执行模型', status: 'pending', time: '' },

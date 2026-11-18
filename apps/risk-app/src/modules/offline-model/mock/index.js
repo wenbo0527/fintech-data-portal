@@ -471,11 +471,23 @@ export const modelAPI = {
       return createErrorResponse('获取平台模型详情失败: ' + error.message)
     }
   },
-  async downloadPlatformModelFile(serviceName) {
+  async listModelFileFormats() {
+    try {
+      return createResponse(modelMock.listModelFileFormats())
+    } catch (error) {
+      return createErrorResponse('获取模型文件格式失败: ' + error.message)
+    }
+  },
+  async downloadPlatformModelFile(serviceName, version) {
     await simulateDelay(500, 1200)
     try {
-      const result = modelMock.downloadPlatformModelFile(serviceName)
+      const result = modelMock.downloadPlatformModelFile(serviceName, version)
       if (!result) return createErrorResponse('模型文件不存在', 404)
+      // 格式门禁：白名单（.pkl / .pb）之外的产物不下发给执行引擎
+      if (!result.supported) {
+        const supported = modelMock.listModelFileFormats().map(f => `.${f.ext}`).join(' / ')
+        return createErrorResponse(`暂不支持 .${result.format} 格式的模型文件，当前支持 ${supported}`, 400)
+      }
       return createResponse(result, true, '模型文件拉取成功')
     } catch (error) {
       return createErrorResponse('拉取模型文件失败: ' + error.message)

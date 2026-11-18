@@ -58,6 +58,34 @@
               </a-col>
             </a-row>
 
+            <!-- 模型产物文件：选定模型与版本后从平台拉取，支持 .pkl / .pb（TensorFlow frozen graph） -->
+            <a-form-item
+              v-if="modelForm.serviceName"
+              label="模型文件"
+              required
+              :extra="`支持格式：${modelFileFormatHint}；拉取到的产物随任务配置下发执行引擎，版本变更后需重新拉取`"
+            >
+              <div class="model-file-row">
+                <a-button
+                  type="primary"
+                  :loading="modelFileLoading"
+                  :disabled="!modelForm.selectedVersion"
+                  @click="handlePullModelFile"
+                >
+                  {{ modelFile ? '重新拉取模型文件' : '拉取模型文件' }}
+                </a-button>
+                <div v-if="modelFile" class="model-file-meta">
+                  <icon-file />
+                  <span class="model-file-name">{{ modelFile.fileName }}</span>
+                  <a-tag size="small" color="arcoblue">.{{ modelFile.format }}（{{ modelFile.formatLabel }}）</a-tag>
+                  <a-tag size="small" color="green">{{ modelFile.size }}</a-tag>
+                  <span class="model-file-path">{{ modelFile.url }}</span>
+                  <span class="model-file-time">{{ modelFile.pulledAt }} 拉取</span>
+                </div>
+                <div v-else class="field-hint">尚未拉取：执行回溯前需先拉取所选版本的模型产物</div>
+              </div>
+            </a-form-item>
+
             <!-- 观测日期范围：单次 / 周期共用的时间窗口 -->
             <a-row :gutter="16" v-if="createMode === CREATE_MODES.SINGLE">
               <a-col :span="12">
@@ -629,7 +657,7 @@ const activeKeys = ref(['model', 'target', 'sample', 'required', 'match', 'outpu
 
 // 步骤完成状态
 const stepStatus = computed(() => {
-  const s1 = modelForm.value.serviceName ? 'done' : 'pending'
+  const s1 = (modelForm.value.serviceName && modelFile.value) ? 'done' : 'pending'
   const s2 = (landingForm.value.summary || landingForm.value.singleModel) ? 'done' : 'pending'
   const s3 = tableInputStatus.value === 'success' ? 'done' : 'pending'
   const reqMatched = requiredMappings.value.filter(r => isRequiredRowComplete(r)).length
@@ -873,6 +901,15 @@ const platformServices = ref([])
 const modelInputs = ref([])
 const modelOutputs = ref([])
 const modelOptions = ref([])
+// 模型产物文件：步骤一拉取平台模型文件，格式白名单由 mock 下发（.pkl / .pb）
+const modelFile = ref(null)
+const modelFileLoading = ref(false)
+const modelFileFormats = ref([])
+const modelFileFormatHint = computed(() =>
+  modelFileFormats.value.length
+    ? modelFileFormats.value.map(f => `.${f.ext}`).join(' / ')
+    : '.pkl / .pb'
+)
 const modelInputDefs = [
   { title: '入参名', dataIndex: 'name', width: 160 },
   { title: '类型', dataIndex: 'type', width: 140 },
@@ -1068,10 +1105,38 @@ const onModelVersionChange = async (value) => {
     }
   }
   if (!serviceName) return
+  // 模型或版本变更后旧产物失效，需重新拉取
+  modelFile.value = null
   modelForm.value.serviceName = serviceName
   modelForm.value.selectedVersion = version
   Message.info(`选择模型: ${serviceName}${version ? ' / ' + version : ''}`)
   await onServiceChange(serviceName)
+}
+
+/**
+ * 拉取模型文件：按选中的服务+版本向平台取产物，格式不在白名单（如非 .pkl / .pb）时由接口拒绝并回错
+ */
+const handlePullModelFile = async () => {
+  if (!modelForm.value.serviceName) {
+    Message.warning('请先选择模型与版本')
+    return
+  }
+  modelFileLoading.value = true
+  try {
+    const res = await modelAPI.downloadPlatformModelFile(modelForm.value.serviceName, modelForm.value.selectedVersion)
+    if (res.success) {
+      modelFile.value = res.data
+      Message.success(`已拉取模型文件：${res.data.fileName}（.${res.data.format}）`)
+    } else {
+      modelFile.value = null
+      Message.error(res.message || '拉取模型文件失败')
+    }
+  } catch (e) {
+    modelFile.value = null
+    Message.error(e?.message || '拉取模型文件失败')
+  } finally {
+    modelFileLoading.value = false
+  }
 }
 
 const loadServices = async () => {
@@ -1086,6 +1151,15 @@ const loadServices = async () => {
   } catch {}
 }
 loadServices()
+
+// 格式白名单（步骤一提示文案与校验口径的唯一来源）
+const loadModelFileFormats = async () => {
+  try {
+    const res = await modelAPI.listModelFileFormats()
+    modelFileFormats.value = res.data || []
+  } catch {}
+}
+loadModelFileFormats()
 
 // 加载回溯配置枚举（场景标签 / 渠道 / 关联字段定义 / 关联方式 / 来源表字典 / 日期关联锚点 / 入参来源字典）
 const loadEnumOptions = () => {
@@ -1123,6 +1197,8 @@ const prefillFromCopy = async (copyFromId) => {
     if (cfg.serviceName) {
       modelForm.value.modelVersion = cfg.version ? [cfg.serviceName, cfg.version] : [cfg.serviceName]
       await onModelVersionChange(modelForm.value.modelVersion)
+      // 沿用源任务的模型产物（版本未变则无需重复拉取）；历史任务无产物时留空，由人工重新拉取
+      modelFile.value = cfg.modelFile || null
     }
 
     if (Array.isArray(cfg.inputMappings) && cfg.inputMappings.length) {
@@ -1299,6 +1375,7 @@ const handleSubmit = async () => {
     const errors = []
     if (!sampleForm.value.tableNameInput) errors.push('请输入样本表名')
     if (!modelForm.value.serviceName) errors.push('请选择回溯模型')
+    else if (!modelFile.value) errors.push('请拉取模型文件（支持 ' + modelFileFormatHint.value + '）')
     if (routeParams.copyFrom && !modelForm.value.taskName) errors.push('请输入任务名称')
     // 关联条件校验（步骤四）：仅强制项关联不完整时阻断提交（红色报错）
     const missingRequired = (requiredMappings.value || []).filter(r => r.required && !isRequiredRowComplete(r))
@@ -1333,6 +1410,8 @@ const handleSubmit = async () => {
       dateRange: observeForm.value.dateRange || [],
       serviceName: modelForm.value.serviceName,
       version: modelForm.value.selectedVersion,
+      // 模型产物文件：拉取成功后随任务下发，详情页只读回显
+      modelFile: modelFile.value ? { ...modelFile.value } : null,
       taskName: modelForm.value.taskName,
       copiedFrom: routeParams.copyFrom ? Number(routeParams.copyFrom) : undefined,
       status: routeParams.copyFrom ? 'draft' : 'running',
@@ -1468,6 +1547,20 @@ const handleCancel = () => {
 .field-status.success { color: rgb(var(--green-6)); }
 .field-status.error { color: rgb(var(--red-6)); }
 .field-hint { color: var(--color-text-3); font-size: 12px; }
+
+/* 模型产物文件 */
+.model-file-row { display: flex; flex-direction: column; gap: 8px; }
+.model-file-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text-2);
+}
+.model-file-name { font-weight: 500; }
+.model-file-path { color: var(--color-text-3); font-family: monospace; font-size: 12px; }
+.model-file-time { color: var(--color-text-3); font-size: 12px; }
 
 /* SQL 预览 */
 .sql-preview-box {

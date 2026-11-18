@@ -101,7 +101,9 @@ export const modelAPI = {
   ,
   listPlatformModels: () => mockAPI.model.listPlatformModels(),
   getPlatformModel: (serviceName) => mockAPI.model.getPlatformModel(serviceName),
-  downloadPlatformModelFile: (serviceName) => mockAPI.model.downloadPlatformModelFile(serviceName)
+  // 模型产物文件：listModelFileFormats 给出格式白名单（.pkl / .pb），download 按选中版本拉取
+  listModelFileFormats: () => mockAPI.model.listModelFileFormats(),
+  downloadPlatformModelFile: (serviceName, version) => mockAPI.model.downloadPlatformModelFile(serviceName, version)
   ,
   createModelVersion: (id) => mockAPI.model.createModelVersion(id)
 }

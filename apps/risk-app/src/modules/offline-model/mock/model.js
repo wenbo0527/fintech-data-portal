@@ -402,10 +402,18 @@ export default {
   listPlatformModels,
   getPlatformModel,
   downloadPlatformModelFile,
+  listModelFileFormats,
   createModelVersion
 }
 
 // 模型平台同步相关 Mock
+// 平台模型产物文件格式白名单：模型注册 / 模型回溯『拉取模型文件』按扩展名校验，不在白名单内的一律拒绝下发
+// .pkl = sklearn / xgboost 序列化产物；.pb = TensorFlow frozen graph（SavedModel 单文件图）
+export const MODEL_FILE_FORMATS = [
+  { ext: 'pkl', label: 'pickle', description: 'Sklearn / XGBoost 序列化模型' },
+  { ext: 'pb', label: 'protobuf', description: 'TensorFlow frozen graph 模型' }
+]
+
 // 大入参演示模型前 6 个入参的字段名：与 dw.risk_sample 样本表字段同名，供『一键入参匹配』演示同名命中
 const BULK_DEMO_SAMPLE_FIELDS = ['age', 'income', 'credit_history', 'user_id', 'cert_no', 'mobile']
 
@@ -512,6 +520,30 @@ const platformModels = [
     fileUrl: '/platform/models/model_score_model_v1.pkl'
   }
   ,
+  // .pb 产物演示服务：平台以 TensorFlow frozen graph 发布，用于验证回溯创建页『拉取模型文件』支持 .pb
+  {
+    serviceName: 'dnn_deep_score_service',
+    name: '深度神经网络评分模型服务',
+    code: 'dnn_deep_score_model',
+    version: 'v2.1.0',
+    framework: FRAMEWORKS.TENSORFLOW,
+    type: MODEL_TYPES.DEEP_LEARNING,
+    description: '平台以 frozen graph(.pb) 形式发布的深度评分服务，输出模型分与违约概率',
+    pkFields: ['cert_no', 'flow_id'],
+    inputs: [
+      { name: 'age', type: 'number', description: '用户年龄' },
+      { name: 'income', type: 'number', description: '用户收入' },
+      { name: 'credit_history', type: 'number', description: '信用历史分' },
+      { name: 'overdue_count', type: 'number', description: '逾期次数' }
+    ],
+    outputs: [
+      { name: 'dnn_score', type: 'number', description: '深度模型分' },
+      { name: 'prob_default', type: 'number', description: '违约概率' }
+    ],
+    fileUrl: '/platform/models/dnn_deep_score_model_v2.1.0.pb',
+    fileSize: '68MB'
+  }
+  ,
   // 大入参演示模型：700 个入参，用于验证步骤五『入参匹配』长列表渲染/搜索/一键入参匹配
   {
     serviceName: 'bulk_feature_score_service',
@@ -554,10 +586,34 @@ export function getPlatformModel(serviceName) {
   return { ...p, udfDefinition: { udfName, language: 'python', code } }
 }
 
-export function downloadPlatformModelFile(serviceName) {
+export function listModelFileFormats() {
+  return MODEL_FILE_FORMATS
+}
+
+/** 按文件名解析产物格式，返回 { format, supported, label } */
+export function parseModelFileFormat(fileName) {
+  const ext = (String(fileName || '').split('.').pop() || '').toLowerCase()
+  const meta = MODEL_FILE_FORMATS.find(f => f.ext === ext)
+  return { format: ext, supported: !!meta, label: meta?.label || ext }
+}
+
+export function downloadPlatformModelFile(serviceName, version) {
   const p = platformModels.find(x => x.serviceName === serviceName)
   if (!p) return null
-  return { url: p.fileUrl, size: '25MB', fileName: p.fileUrl.split('/').pop() }
+  const fileName = p.fileUrl.split('/').pop()
+  const { format, supported, label } = parseModelFileFormat(fileName)
+  // supported=false 时由统一 mock 入口转成错误响应，前端不做格式判断
+  return {
+    serviceName,
+    version: version || p.version,
+    url: p.fileUrl,
+    fileName,
+    format,
+    formatLabel: label,
+    supported,
+    size: p.fileSize || '25MB',
+    pulledAt: new Date().toLocaleString('zh-CN')
+  }
 }
 
 export const platformAPI = {

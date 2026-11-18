@@ -22,6 +22,18 @@
               <a-descriptions-item label="模型与版本">
                 {{ detail.config?.serviceName || '—' }} / {{ detail.config?.version || '—' }}
               </a-descriptions-item>
+              <a-descriptions-item label="模型文件" :span="2">
+                <template v-if="detail.config?.modelFile">
+                  <span>{{ detail.config.modelFile.fileName }}</span>
+                  <a-tag size="small" color="arcoblue" style="margin-left: 8px;">
+                    .{{ detail.config.modelFile.format }}
+                    <template v-if="detail.config.modelFile.formatLabel">（{{ detail.config.modelFile.formatLabel }}）</template>
+                  </a-tag>
+                  <a-tag size="small" color="green" style="margin-left: 4px;">{{ detail.config.modelFile.size || '—' }}</a-tag>
+                  <div class="model-file-path">{{ detail.config.modelFile.url }}</div>
+                </template>
+                <span v-else>—（历史任务未记录产物文件）</span>
+              </a-descriptions-item>
               <a-descriptions-item label="回溯模式">
                 <a-tag :color="detail.config?.mode === 'periodic' ? 'purple' : 'blue'">
                   {{ detail.config?.mode === 'periodic' ? '周期回溯' : '单次回溯' }}
@@ -429,6 +441,13 @@ onMounted(loadDetail)
 .page-title { margin: 0; font-size: 18px; font-weight: 600; }
 .section { margin-top: 12px; }
 .section-tip { font-size: 13px; color: var(--color-text-3); margin-bottom: 10px; }
+/* 模型产物文件路径 */
+.model-file-path {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 12px;
+  color: var(--color-text-3);
+  margin-top: 4px;
+}
 .actions-bar { margin-top: 16px; }
 .report-placeholder {
   display: flex;

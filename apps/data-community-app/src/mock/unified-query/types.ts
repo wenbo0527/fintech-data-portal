@@ -234,10 +234,7 @@ export interface TaskExecHistory {
   errorMsg?: string
 }
 
-/** 导出方式:保存到平台 / 下载到本地 */
-export type ExportMethod = 'platform' | 'local'
-
-/** 导出模式:前端快速导出 / 后端导出任务 */
+/** 导出模式:前端快速导出 / 常规导出(后端导出任务) */
 export type ExportMode = 'quick' | 'backend'
 
 /** SQL 语句类别:DDL / 结构查询(SHOW、DESC、EXPLAIN)/ 查询 / 未知 */
@@ -263,10 +260,9 @@ export interface ExportTask {
   fileSize: string
   /** 创建时间 */
   createdAt: string
-  method: ExportMethod
   /** 返回行数 */
   rowCount: number
-  /** 结果集快照,用于「下载到本地」时重新生成 CSV */
+  /** 结果集快照(仅包含勾选的导出列),用于「我的导出」下载时重新生成 CSV */
   data?: { columns: ResultColumn[]; rows: Record<string, string | number>[] }
 }
 
@@ -383,15 +379,14 @@ export interface DbAccountGrant {
   history: DbAccountHistory[]
 }
 
-/** 访问 Key 记录:用于 Python / R 客户端连接的凭证 */
+/** 访问 Key 记录:用于 Python / R 客户端连接的凭证,仅下发 AccessKeyId */
 export interface AccessKeyRecord {
   /** 记录编号,如 AK20260912-001 */
   id: string
   /** 用户自定义名称,如「风控建模-特征查询」 */
   name: string
+  /** AccessKeyId,同时作为客户端连接口令,可随时在详情中查看 */
   accessKeyId: string
-  /** 完整 SecretKey,仅在创建 / 重置时明文展示 */
-  secretKey: string
   /** 授权数据源 */
   datasources: DataSourceKey[]
   status: AccessKeyStatus

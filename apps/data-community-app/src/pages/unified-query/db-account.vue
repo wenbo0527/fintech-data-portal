@@ -24,7 +24,7 @@
         <template #title>数据库账号按用户独立开通</template>
         当前申请人:<b>{{ ACCOUNT_OWNER.name }}</b>({{ ACCOUNT_OWNER.department }} / {{ ACCOUNT_OWNER.employeeNo }})。
         提交申请后进入 DBA 审批(演示约 2 秒自动通过);访问 Key 用于 Python / R 客户端连接,
-        SecretKey 仅在创建时展示一次,遗失需删除后重建。
+        创建后只签发 AccessKeyId,它就是连接口令;若已泄露请删除后重建。
       </a-alert>
 
       <a-tabs v-model:active-key="activeTab" type="rounded" class="account-tabs">
@@ -45,7 +45,7 @@
  *
  * 两块能力:
  *   1. 数据源权限 — 按用户申请 Doris / Hive 库级只读授权(读写 / 管理权限由 DBA 管理端授予),账号长期有效,已开通可释放
- *   2. 访问 Key  — 供 Python / R 客户端连接,创建时一次性展示 SecretKey,到期可续期
+ *   2. 访问 Key  — 供 Python / R 客户端连接,创建后只下发 AccessKeyId,到期可续期
  *
  * 全部为前端 Mock,不发起任何 HTTP 请求;审批流由 store 定时器模拟。
  */

@@ -23,11 +23,6 @@ export function daysLeft(date: string): number {
   return Math.round((target - today.getTime()) / 86400000)
 }
 
-/** SecretKey 掩码:dcs_•••••••• + 末 4 位 */
-export function maskSecret(secret: string): string {
-  return `dcs_${'•'.repeat(8)}${secret.slice(-4)}`
-}
-
 /** `2026-03-01 09:20:00` → 日期部分,用于两行展示避免折行 */
 export function dateOf(datetime: string | undefined): string {
   if (!datetime) return '—'

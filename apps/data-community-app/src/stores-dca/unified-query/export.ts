@@ -8,7 +8,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { SEED_EXPORT_TASKS } from '@/mock/unified-query/export-tasks'
-import type { ExportMethod, ExportStatus, ExportTask, ResultColumn } from '@/mock/unified-query/types'
+import type { ExportStatus, ExportTask, ResultColumn } from '@/mock/unified-query/types'
 
 /** 每个任务编号的当日序号游标:EXP20260910 → 已分配的最大序号 */
 const seqByDate: Record<string, number> = {}
@@ -105,7 +105,6 @@ export const useUqExportStore = defineStore('uqExport', () => {
   function createTask(payload: {
     baseName: string
     datasource: string
-    method: ExportMethod
     rowCount: number
     columns?: ResultColumn[]
     rows?: Record<string, string | number>[]
@@ -121,7 +120,6 @@ export const useUqExportStore = defineStore('uqExport', () => {
       progress: 5,
       fileSize: '—',
       createdAt: stamp,
-      method: payload.method,
       rowCount: payload.rowCount,
       data: payload.columns && payload.rows
         ? { columns: payload.columns, rows: payload.rows }

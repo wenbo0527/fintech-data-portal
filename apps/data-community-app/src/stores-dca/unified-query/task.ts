@@ -159,6 +159,9 @@ export const useUqTaskStore = defineStore('uqTask', () => {
     return record
   }
 
+  /** F31 进行中的重跑:key=任务 id,用于 F32 停止时取消延迟回调,避免停止后被重跑结果覆盖状态 */
+  const rerunTimers = new Map<string, { timer: ReturnType<typeof setTimeout>; resolve: (s: TaskStatus | 'cancelled') => void }>()
+
   /** F29/F33:启用已停用任务 */
   function enable(id: string) {
     const t = getById(id)
@@ -168,7 +171,7 @@ export const useUqTaskStore = defineStore('uqTask', () => {
     }
   }
 
-  /** F30:停用任务 */
+  /** F30:停用任务(仅成功/失败态可停用,运行中需先走 F32 停止) */
   function disable(id: string) {
     const t = getById(id)
     if (t && (t.status === 'success' || t.status === 'failed')) {
@@ -177,8 +180,9 @@ export const useUqTaskStore = defineStore('uqTask', () => {
     }
   }
 
-  /** F32:停止运行中任务,回到已启用 */
+  /** F32:停止运行中任务,回到已启用;若重跑还在排队则一并取消 */
   function stop(id: string) {
+    cancelRerun(id)
     const t = getById(id)
     if (t && t.status === 'running') {
       t.status = 'success'
@@ -186,13 +190,26 @@ export const useUqTaskStore = defineStore('uqTask', () => {
     }
   }
 
-  /** F31:重跑任务 → 运行中 → 1-2s 后变成功/失败 */
-  function rerun(id: string): Promise<TaskStatus> {
+  /** 取消某任务尚未落地的重跑回调 */
+  function cancelRerun(id: string) {
+    const pending = rerunTimers.get(id)
+    if (!pending) {
+      return
+    }
+    clearTimeout(pending.timer)
+    rerunTimers.delete(id)
+    pending.resolve('cancelled')
+  }
+
+  /** F31:重跑任务 → 运行中 → 1-2s 后变成功/失败;期间被 F32 停止则 resolve 'cancelled' */
+  function rerun(id: string): Promise<TaskStatus | 'cancelled'> {
     const t = getById(id)
-    if (!t) return Promise.resolve('failed')
+    if (!t) return Promise.resolve('cancelled')
+    cancelRerun(id)
     t.status = 'running'
     return new Promise(resolve => {
-      setTimeout(() => {
+      const timer = setTimeout(() => {
+        rerunTimers.delete(id)
         // 80% 概率成功
         const ok = Math.random() > 0.2
         t.status = ok ? 'success' : 'failed'
@@ -208,6 +225,7 @@ export const useUqTaskStore = defineStore('uqTask', () => {
         })
         resolve(t.status)
       }, 1000 + Math.random() * 1000)
+      rerunTimers.set(id, { timer, resolve })
     })
   }
 

@@ -3,7 +3,7 @@
  *
  * 覆盖两类自助申请:
  *   1. 数据源权限 — 按用户开通 Doris / Hive 只读账号(库级授权;读写 / 管理权限仅由 DBA 管理端授予)
- *   2. 访问 Key  — 供 Python / R 客户端连接时使用的 AccessKeyId + SecretKey
+ *   2. 访问 Key  — 供 Python / R 客户端连接时使用的 AccessKeyId(即连接口令)
  *
  * 全部为前端 Mock,不发起任何 HTTP 请求。
  * 审批流演示:提交后进入审批中,约 2 秒自动通过(见 store)。
@@ -187,7 +187,6 @@ export const SEED_ACCESS_KEYS: AccessKeyRecord[] = [
     id: 'AK20260912-001',
     name: '风控建模-特征查询',
     accessKeyId: 'DCAK3F8A2C71D9E4B65',
-    secretKey: 'dcs_9f3c71ba2e5d48c6a0b7f8421d95e3cc',
     datasources: ['doris'],
     status: 'active',
     createdAt: '2026-09-12 10:30:00',
@@ -201,7 +200,6 @@ export const SEED_ACCESS_KEYS: AccessKeyRecord[] = [
     id: 'AK20260601-002',
     name: '周报取数',
     accessKeyId: 'DCAK7B1E5A90C2F834',
-    secretKey: 'dcs_4a8e02c7b96d51f3e7c40a18b6d2f9a5',
     datasources: ['doris', 'hive'],
     status: 'active',
     createdAt: '2026-06-01 09:00:00',
@@ -215,7 +213,6 @@ export const SEED_ACCESS_KEYS: AccessKeyRecord[] = [
     id: 'AK20260815-003',
     name: '临时分析-已停用',
     accessKeyId: 'DCAK9C4D2F66B1A7E308',
-    secretKey: 'dcs_2b6d90f4c1a83e75b0d9528ce4a17f36',
     datasources: ['hive'],
     status: 'disabled',
     createdAt: '2026-08-15 14:20:00',
@@ -235,82 +232,106 @@ export function randomAccessKeyId(): string {
   return `DCAK${out}`
 }
 
-/** 生成 SecretKey:dcs_ + 32 位小写十六进制 */
-export function randomSecretKey(): string {
-  const chars = '0123456789abcdef'
-  let out = ''
-  for (let i = 0; i < 32; i++) out += chars[Math.floor(Math.random() * chars.length)]
-  return `dcs_${out}`
+/** 客户端语言(访问 Key 支持切换的示例语言) */
+export type ClientLanguage = 'python' | 'r'
+
+/** 单个语言的连接示例:安装(Doris / Hive 共用一段) + 各数据源的连接代码 */
+export interface LangSnippet {
+  /** 统一安装依赖:Doris 与 Hive 共用,不按数据源拆分 */
+  install: string
+  /** 连接代码才按 Doris / Hive 分别给出 */
+  connect: Record<DataSourceKey, string>
 }
+
+/** 可切换的语言清单(详情抽屉按此渲染切换器) */
+export const CLIENT_LANGUAGES: { key: ClientLanguage; label: string }[] = [
+  { key: 'python', label: 'Python' },
+  { key: 'r', label: 'R' }
+]
 
 /**
- * 生成 Python 连接示例
+ * 生成结构化连接示例:语言 → { 统一安装, Doris / Hive 各自连接 }
  *
- * secret 统一用占位符,避免代码片段把明文密钥带进日志 / 截图。
+ * 访问 Key 只有 AccessKeyId 一个凭证,示例直接内联当前 Key 作为连接口令。
+ * 安装部分对 Doris / Hive 是一致的(合并为一段);只有连接按数据源拆分。
  */
-export function buildPythonSnippet(record: AccessKeyRecord): string {
-  const useDoris = record.datasources.includes('doris')
-  const useHive = record.datasources.includes('hive')
-  const lines: string[] = []
-  if (useDoris) lines.push('import pymysql                      # Doris:MySQL 协议')
-  if (useHive) lines.push('from pyhive import hive             # Hive:HiveServer2')
-  lines.push('')
-  lines.push(`ACCESS_KEY = "${record.accessKeyId}"`)
-  lines.push('SECRET_KEY = "<SecretKey>"          # 创建 Key 时返回的密钥')
-  if (useDoris) {
-    const d = CONNECTION_ENDPOINT.doris
-    lines.push('')
-    lines.push('# ── Doris ──')
-    lines.push('doris_conn = pymysql.connect(')
-    lines.push(`    host="${d.host}", port=${d.port},`)
-    lines.push('    user=ACCESS_KEY, password=SECRET_KEY,')
-    lines.push('    database="ADM", charset="utf8mb4",')
-    lines.push(')')
+export function buildKeySnippets(record: AccessKeyRecord): Record<ClientLanguage, LangSnippet> {
+  const acct = ACCOUNT_OWNER.account
+  const ak = record.accessKeyId
+  const d = CONNECTION_ENDPOINT.doris
+  const h = CONNECTION_ENDPOINT.hive
+  return {
+    python: {
+      install: [
+        '# 一次安装 Doris + Hive 连接依赖(两类数据源共用)',
+        '#   Doris:MySQL 协议(pymysql)',
+        '#   Hive  :HiveServer2(pyhive)',
+        'pip install PyMySQL "pyhive[hive_pure_sasl]" thrift'
+      ].join('\n'),
+      connect: {
+        doris: [
+          'import pymysql                      # Doris:MySQL 协议',
+          '',
+          `ACCOUNT = "${acct}"               # 平台账号`,
+          `ACCESS_KEY = "${ak}"   # 即 AccessKeyId`,
+          '',
+          'conn = pymysql.connect(',
+          `    host="${d.host}", port=${d.port},`,
+          '    user=ACCOUNT, password=ACCESS_KEY,',
+          '    database="ADM", charset="utf8mb4",',
+          ')'
+        ].join('\n'),
+        hive: [
+          'from pyhive import hive             # Hive:HiveServer2',
+          '',
+          `ACCOUNT = "${acct}"               # 平台账号`,
+          `ACCESS_KEY = "${ak}"   # 即 AccessKeyId`,
+          '',
+          'conn = hive.connect(',
+          `    host="${h.host}", port=${h.port},`,
+          '    username=ACCOUNT, password=ACCESS_KEY,',
+          '    auth="CUSTOM",',
+          ')'
+        ].join('\n')
+      }
+    },
+    r: {
+      install: [
+        '# 一次安装 Doris + Hive 连接依赖(两类数据源共用)',
+        '#   Doris:MySQL 协议(RMariaDB)',
+        '#   Hive  :HiveServer2(odbc,需先装 Hive ODBC 驱动)',
+        'install.packages(c("DBI", "RMariaDB", "odbc"))'
+      ].join('\n'),
+      connect: {
+        doris: [
+          'library(DBI)',
+          'library(RMariaDB)                   # Doris:MySQL 协议',
+          '',
+          `ACCOUNT <- "${acct}"              # 平台账号`,
+          `ACCESS_KEY <- "${ak}"  # 即 AccessKeyId`,
+          '',
+          'con <- dbConnect(',
+          '  MariaDB(),',
+          `  host = "${d.host}", port = ${d.port},`,
+          '  user = ACCOUNT, password = ACCESS_KEY,',
+          '  dbname = "ADM"',
+          ')'
+        ].join('\n'),
+        hive: [
+          'library(DBI)',
+          'library(odbc)                       # Hive:HiveServer2 ODBC',
+          '',
+          `ACCOUNT <- "${acct}"              # 平台账号`,
+          `ACCESS_KEY <- "${ak}"  # 即 AccessKeyId`,
+          '',
+          'con <- dbConnect(',
+          '  odbc(),',
+          '  Driver = "Hive",',
+          `  Host = "${h.host}", Port = ${h.port},`,
+          '  UID = ACCOUNT, PWD = ACCESS_KEY',
+          ')'
+        ].join('\n')
+      }
+    }
   }
-  if (useHive) {
-    const h = CONNECTION_ENDPOINT.hive
-    lines.push('')
-    lines.push('# ── Hive ──')
-    lines.push('hive_conn = hive.connect(')
-    lines.push(`    host="${h.host}", port=${h.port},`)
-    lines.push('    username=ACCESS_KEY, password=SECRET_KEY,')
-    lines.push('    auth="CUSTOM",')
-    lines.push(')')
-  }
-  return lines.join('\n')
-}
-
-/** 生成 R 连接示例(RMariaDB 连 Doris / odbc 连 Hive) */
-export function buildRSnippet(record: AccessKeyRecord): string {
-  const useDoris = record.datasources.includes('doris')
-  const useHive = record.datasources.includes('hive')
-  const lines: string[] = ['library(DBI)']
-  if (useDoris) lines.push('library(RMariaDB)                   # Doris:MySQL 协议')
-  if (useHive) lines.push('library(odbc)                       # Hive:HiveServer2 ODBC')
-  lines.push('')
-  lines.push(`ACCESS_KEY <- "${record.accessKeyId}"`)
-  lines.push('SECRET_KEY <- "<SecretKey>"         # 创建 Key 时返回的密钥')
-  if (useDoris) {
-    const d = CONNECTION_ENDPOINT.doris
-    lines.push('')
-    lines.push('# ── Doris ──')
-    lines.push('doris <- dbConnect(')
-    lines.push('  MariaDB(),')
-    lines.push(`  host = "${d.host}", port = ${d.port},`)
-    lines.push('  user = ACCESS_KEY, password = SECRET_KEY,')
-    lines.push('  dbname = "ADM"')
-    lines.push(')')
-  }
-  if (useHive) {
-    const h = CONNECTION_ENDPOINT.hive
-    lines.push('')
-    lines.push('# ── Hive ──')
-    lines.push('hive <- dbConnect(')
-    lines.push('  odbc(),')
-    lines.push('  Driver = "Hive",')
-    lines.push(`  Host = "${h.host}", Port = ${h.port},`)
-    lines.push('  UID = ACCESS_KEY, PWD = SECRET_KEY')
-    lines.push(')')
-  }
-  return lines.join('\n')
 }

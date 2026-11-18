@@ -3,7 +3,7 @@
  *
  * 面向 DBA / 数据管理员的版本:
  *   1. 全库账号清单  — 跨用户查看、重置密码、调整权限、锁定 / 回收
- *   2. 全库访问 Key  — 跨用户重置密钥、停用、吊销
+ *   2. 全库访问 Key  — 跨用户重置 AccessKey、停用、吊销
  *   3. 操作审计      — 所有管理动作留痕
  *
  * 与用户自助版共用类型,但数据主体是「库内真实账号」而非「申请单」。
@@ -213,7 +213,6 @@ export const SEED_ADMIN_EXTRA_KEYS: AccessKeyRecord[] = [
     id: 'AK20260705-004',
     name: '信贷风控报表',
     accessKeyId: 'DCAK5E2B8D14A7C903',
-    secretKey: 'dcs_71c4e0a95b2d38f6ca17e5b90d4f2a86',
     datasources: ['doris'],
     status: 'active',
     createdAt: '2026-07-05 10:00:00',
@@ -227,7 +226,6 @@ export const SEED_ADMIN_EXTRA_KEYS: AccessKeyRecord[] = [
     id: 'AK20260820-005',
     name: '数据质量巡检',
     accessKeyId: 'DCAK2A9F6C30E8B571',
-    secretKey: 'dcs_08b3f5d19a6c47e2d8f01b7c4e59a3d2',
     datasources: ['hive'],
     status: 'active',
     createdAt: '2026-08-20 09:15:00',
@@ -241,7 +239,6 @@ export const SEED_ADMIN_EXTRA_KEYS: AccessKeyRecord[] = [
     id: 'AK20260930-006',
     name: '营销标签加工',
     accessKeyId: 'DCAK8D3E57B2F0C946',
-    secretKey: 'dcs_5e9a2c7b10d84f63a7b0e29d51c8f4a7',
     datasources: ['doris'],
     status: 'disabled',
     createdAt: '2026-09-30 14:40:00',
@@ -302,7 +299,7 @@ export const SEED_ADMIN_AUDITS: DbAdminAuditEntry[] = [
     target: 'DCAK7B1E5A90C2F834',
     targetUser: '张三',
     operator: ADMIN_OPERATOR,
-    detail: '用户申诉密钥可能泄露,旧 SecretKey 立即失效并下发新密钥',
+    detail: '用户申诉 AccessKey 可能泄露,旧 Key 立即失效并重新下发新 AccessKeyId',
     level: 'danger'
   },
   {

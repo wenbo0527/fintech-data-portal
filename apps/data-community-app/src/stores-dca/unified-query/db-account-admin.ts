@@ -3,7 +3,7 @@
  *
  * 面向 DBA 的全库管理能力:
  *   - 账号:重置密码(一次性下发)、修改权限与授权库、锁定 / 解锁、停用、回收
- *   - 访问 Key:跨用户重置密钥、停用 / 启用、吊销
+ *   - 访问 Key:跨用户重置 AccessKey、停用 / 启用、吊销
  *   - 审计:所有管理动作写入审计流水
  *
  * 全部为前端 Mock,不发起任何 HTTP 请求;密码明文只作为返回值抛出,不落库。
@@ -17,7 +17,7 @@ import {
   SEED_ADMIN_EXTRA_KEYS,
   SEED_DB_ACCOUNTS
 } from '@/mock/unified-query/db-account-admin'
-import { ACCOUNT_OWNER, randomSecretKey, SEED_ACCESS_KEYS } from '@/mock/unified-query/db-account'
+import { ACCOUNT_OWNER, randomAccessKeyId, SEED_ACCESS_KEYS } from '@/mock/unified-query/db-account'
 import { useUqDbAccountStore } from './db-account'
 import type {
   AccessKeyRecord,
@@ -219,20 +219,20 @@ export const useUqDbAccountAdminStore = defineStore('uqDbAccountAdmin', () => {
     return true
   }
 
-  /** 管理员重置某个 Key 的 SecretKey,返回新密钥(仅此次可见) */
-  function resetKeySecret(id: string): string | null {
+  /** 管理员重置某个 Key 的 AccessKeyId,返回新 Key */
+  function resetKeyAccessId(id: string): string | null {
     const key = getKeyById(id)
     if (!key) return null
-    key.secretKey = randomSecretKey()
+    key.accessKeyId = randomAccessKeyId()
     key.status = 'active'
     writeAudit({
       action: '重置密钥',
       target: key.accessKeyId,
       targetUser: key.owner,
-      detail: `Key「${key.name}」的 SecretKey 已重置,旧密钥立即失效;新密钥一次性下发`,
+      detail: `Key「${key.name}」已重置,旧 AccessKey 立即失效;新 AccessKeyId 已下发`,
       level: 'danger'
     })
-    return key.secretKey
+    return key.accessKeyId
   }
 
   /** 停用 / 启用 Key */
@@ -260,7 +260,7 @@ export const useUqDbAccountAdminStore = defineStore('uqDbAccountAdmin', () => {
       action: '吊销密钥',
       target: key.accessKeyId,
       targetUser: key.owner,
-      detail: `Key「${key.name}」已吊销,SecretKey 立即失效`,
+      detail: `Key「${key.name}」已吊销,AccessKey 立即失效`,
       level: 'danger'
     })
     return true
@@ -322,7 +322,7 @@ export const useUqDbAccountAdminStore = defineStore('uqDbAccountAdmin', () => {
     updateAccountGrant,
     setAccountState,
     revokeAccount,
-    resetKeySecret,
+    resetKeyAccessId,
     toggleKey,
     revokeKey,
     syncSelfService,

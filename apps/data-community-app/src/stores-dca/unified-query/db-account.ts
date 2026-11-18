@@ -3,7 +3,7 @@
  *
  * 管理两类自助申请:
  *   1. 数据源权限(Doris / Hive)— 提交后进入审批中,约 2 秒模拟审批通过
- *   2. 访问 Key(Python / R)— 创建时返回一次性明文 SecretKey,可续期
+ *   2. 访问 Key(Python / R)— 创建时下发 AccessKeyId,可续期
  *
  * 全部为前端 Mock,不发起任何 HTTP 请求。
  */
@@ -14,7 +14,6 @@ import {
   extendExpireAt,
   GRANT_SCOPE_OPTIONS,
   randomAccessKeyId,
-  randomSecretKey,
   SEED_ACCESS_KEYS,
   SEED_DB_ACCOUNT_GRANTS
 } from '@/mock/unified-query/db-account'
@@ -190,7 +189,7 @@ export const useUqDbAccountStore = defineStore('uqDbAccount', () => {
     return true
   }
 
-  /** 新建访问 Key,返回含明文 SecretKey 的记录(仅此次可见) */
+  /** 新建访问 Key,返回含 AccessKeyId 的记录 */
   function createKey(payload: {
     name: string
     datasources: DataSourceKey[]
@@ -202,7 +201,6 @@ export const useUqDbAccountStore = defineStore('uqDbAccount', () => {
       id: uniqueId('AK', dateKey),
       name: payload.name,
       accessKeyId: randomAccessKeyId(),
-      secretKey: randomSecretKey(),
       datasources: [...payload.datasources],
       status: 'active',
       createdAt: stamp,

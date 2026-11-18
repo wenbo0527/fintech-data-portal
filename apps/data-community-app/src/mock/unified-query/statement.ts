@@ -3,8 +3,8 @@
  *
  * 导出口径(产品规则):
  *   DDL 类(含 SHOW CREATE / DESC / EXPLAIN 等结构查询),或结果行数低于
- *   QUICK_EXPORT_ROW_LIMIT 时,默认走前端「快速导出」;其余走后端导出任务。
- *   用户始终可以在导出弹窗里改为后端导出。
+ *   QUICK_EXPORT_ROW_LIMIT 时,导出弹窗右下角展示「快速导出」+「常规导出」两个按钮;
+ *   不满足时不展示「快速导出」,只能走后端导出任务(常规导出)。
  */
 import type { StatementKind } from './types'
 

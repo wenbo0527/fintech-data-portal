@@ -136,7 +136,7 @@
         <a-descriptions-item label="任务编号">{{ detailTask.id }}</a-descriptions-item>
         <a-descriptions-item label="文件名">{{ detailTask.fileName }}.{{ detailTask.fileExt }}</a-descriptions-item>
         <a-descriptions-item label="数据源">{{ detailTask.datasource }}</a-descriptions-item>
-        <a-descriptions-item label="导出方式">{{ detailTask.method === 'platform' ? '保存到平台' : '下载到本地' }}</a-descriptions-item>
+        <a-descriptions-item label="导出列">{{ detailTask.data ? `${detailTask.data.columns.length} 列` : '—' }}</a-descriptions-item>
         <a-descriptions-item label="状态">{{ statusMeta(detailTask.status).text }}</a-descriptions-item>
         <a-descriptions-item label="进度">{{ detailTask.progress }}%</a-descriptions-item>
         <a-descriptions-item label="文件大小">{{ detailTask.fileSize }}</a-descriptions-item>

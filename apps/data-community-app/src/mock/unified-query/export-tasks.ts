@@ -18,7 +18,6 @@ export const SEED_EXPORT_TASKS: ExportTask[] = [
     progress: 67,
     fileSize: '—',
     createdAt: '2026-09-10 14:55:00',
-    method: 'platform',
     rowCount: 12840
   },
   {
@@ -30,7 +29,6 @@ export const SEED_EXPORT_TASKS: ExportTask[] = [
     progress: 0,
     fileSize: '—',
     createdAt: '2026-09-10 15:02:00',
-    method: 'platform',
     rowCount: 5230
   },
   {
@@ -42,7 +40,6 @@ export const SEED_EXPORT_TASKS: ExportTask[] = [
     progress: 100,
     fileSize: '156.3 MB',
     createdAt: '2026-09-10 14:30:00',
-    method: 'platform',
     rowCount: 96420
   },
   {
@@ -54,7 +51,6 @@ export const SEED_EXPORT_TASKS: ExportTask[] = [
     progress: 100,
     fileSize: '2.4 GB',
     createdAt: '2026-09-10 12:00:00',
-    method: 'local',
     rowCount: 1250000
   },
   {
@@ -66,7 +62,6 @@ export const SEED_EXPORT_TASKS: ExportTask[] = [
     progress: 34,
     fileSize: '—',
     createdAt: '2026-09-10 11:00:00',
-    method: 'platform',
     rowCount: 0
   },
   {
@@ -78,7 +73,6 @@ export const SEED_EXPORT_TASKS: ExportTask[] = [
     progress: 100,
     fileSize: '89.7 MB',
     createdAt: '2026-09-09 16:00:00',
-    method: 'platform',
     rowCount: 68200
   }
 ]

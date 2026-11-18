@@ -2,7 +2,7 @@
   <div class="admin-key-panel">
     <a-alert type="warning" show-icon class="panel-tip">
       <template #title>管理端可直接重置 / 吊销任何用户的访问 Key</template>
-      SecretKey 重置后旧密钥立即失效,用户侧需重新拉取连接示例;吊销为不可恢复操作,仅建议在确认泄露时使用。
+      重置后会签发新的 AccessKeyId,旧 Key 立即失效,用户需更新客户端配置;吊销为不可恢复操作,仅建议在确认泄露时使用。
     </a-alert>
 
     <div class="toolbar">
@@ -69,7 +69,7 @@
       </template>
       <template #colOps="{ record }">
         <div class="cell-ops">
-          <a-link @click="openReset(record)">重置密钥</a-link>
+          <a-link @click="openReset(record)">重置 AccessKey</a-link>
           <a-link v-if="record.status !== 'expired'" @click="confirmToggle(record)">
             {{ record.status === 'active' ? '停用' : '启用' }}
           </a-link>
@@ -89,10 +89,10 @@
       @confirm="submitRevoke"
     />
 
-    <!-- 重置密钥 -->
+    <!-- 重置 AccessKey -->
     <a-modal
       v-model:visible="resetVisible"
-      :title="resetStage === 'confirm' ? '重置 SecretKey' : '新 SecretKey 已生成'"
+      :title="resetStage === 'confirm' ? '重置 AccessKey' : '新 AccessKey 已生成'"
       :width="540"
       :footer="false"
       :mask-closable="resetStage === 'confirm'"
@@ -111,8 +111,8 @@
 
         <template v-if="resetStage === 'confirm'">
           <a-alert type="warning" show-icon class="modal-tip">
-            重置后旧 SecretKey 立即失效,使用旧密钥的 Python / R 脚本会连接失败,
-            需要用户重新获取连接示例。AccessKeyId 保持不变。
+            重置后旧 AccessKey 立即失效,使用旧 Key 的 Python / R 脚本会连接失败,
+            需要用户把新的 AccessKeyId 更新到客户端配置。
           </a-alert>
           <a-form :model="resetForm" layout="vertical">
             <a-form-item label="重置原因" required>
@@ -126,15 +126,15 @@
         </template>
 
         <template v-else>
-          <div class="secret-card">
-            <div class="secret-card__label">新的 SecretKey</div>
-            <div class="secret-card__value">{{ resetResult }}</div>
-            <a-space size="mini" class="secret-card__ops">
-              <a-button size="small" @click="copyText(resetResult, 'SecretKey')">
+          <div class="ak-card">
+            <div class="ak-card__label">新的 AccessKeyId</div>
+            <div class="ak-card__value">{{ resetResult }}</div>
+            <a-space size="mini" class="ak-card__ops">
+              <a-button size="small" @click="copyText(resetResult, 'AccessKeyId')">
                 <template #icon><icon-copy /></template>
-                复制密钥
+                复制 Key
               </a-button>
-              <span class="secret-card__hint">关闭后无法再次查看</span>
+              <span class="ak-card__hint">关闭后仍可在列表查看</span>
             </a-space>
           </div>
           <a-alert type="info" show-icon>
@@ -153,7 +153,7 @@
 /**
  * 数据库账号 · 全库访问 Key(管理端)
  *
- * 跨用户管理 Key:重置 SecretKey(一次性下发)、停用 / 启用、吊销。
+ * 跨用户管理 Key:重置 AccessKey(重新下发新 Key)、停用 / 启用、吊销。
  * 所有动作写入审计流水,并即时反映到全库统计。
  */
 import { computed, reactive, ref } from 'vue'
@@ -227,10 +227,10 @@ function keyExpireHint(key: AccessKeyRecord): string {
   return left >= 0 ? `剩余 ${left} 天` : `已过期 ${Math.abs(left)} 天`
 }
 
-/* ── 重置密钥 ─────────────────────────── */
+/* ── 重置 AccessKey ───────────────────── */
 const RESET_REASONS = [
-  '用户申诉密钥可能泄露',
-  '密钥误写入公开仓库',
+  '用户申诉 AccessKey 可能泄露',
+  'AccessKey 误写入公开仓库',
   '人员转岗,重新下发',
   '定期轮换'
 ]
@@ -252,15 +252,15 @@ function openReset(key: AccessKeyRecord) {
 
 function confirmReset() {
   if (!resetTarget.value) return
-  const secret = admin.resetKeySecret(resetTarget.value.id)
-  if (!secret) {
+  const accessKeyId = admin.resetKeyAccessId(resetTarget.value.id)
+  if (!accessKeyId) {
     Message.error('访问 Key 不存在或已被吊销')
     resetVisible.value = false
     return
   }
-  resetResult.value = secret
+  resetResult.value = accessKeyId
   resetStage.value = 'result'
-  Message.success('SecretKey 已重置,请及时通知用户')
+  Message.success('AccessKey 已重置,请及时通知用户')
 }
 
 function closeReset() {
@@ -407,7 +407,7 @@ function submitRevoke() {
   margin-top: 12px;
 }
 
-.secret-card {
+.ak-card {
   padding: 16px;
   margin-bottom: 12px;
   border: 1px dashed rgb(var(--danger-5));

@@ -47,58 +47,23 @@
       </a-button>
     </div>
 
-    <!-- 导出弹窗:按语句类型/行数推荐快速导出,也可切换为后端导出任务 -->
+    <!-- 导出弹窗:右下角两个按钮就是两种导出模式;行数超限时不展示「快速导出」 -->
     <a-modal
       v-model:visible="exportVisible"
       title="导出查询结果"
-      :width="500"
+      :width="520"
       :mask-closable="false"
-      ok-text="确定"
-      @before-ok="submitExport"
     >
       <a-alert v-if="quickEligible" type="success" show-icon class="uq-export__alert">
         <template #title>已匹配「快速导出」· {{ STATEMENT_KIND_LABEL[statementKind] }}</template>
-        {{ quickReason }}。默认在浏览器直接生成 CSV,无需创建后端任务;如需留存或统一下载,可切换为「后端导出任务」。
+        {{ quickReason }}。点右下角「快速导出」由浏览器直接生成 CSV,不创建任务、不写入「我的导出」;需要留存记录时点「常规导出」。
       </a-alert>
       <a-alert v-else type="warning" show-icon class="uq-export__alert">
-        <template #title>将走后端导出任务</template>
-        结果共 {{ rowCount }} 行,超过快速导出上限({{ QUICK_EXPORT_ROW_LIMIT }} 行),已固定走后端导出流程。
+        <template #title>本次仅支持「常规导出」</template>
+        结果共 {{ rowCount }} 行,超过快速导出上限({{ QUICK_EXPORT_ROW_LIMIT }} 行),因此不展示「快速导出」,只能走后端导出任务。
       </a-alert>
 
       <a-form :model="exportForm" layout="vertical">
-        <a-form-item label="导出模式" required>
-          <div class="uq-export__field">
-            <a-radio-group v-model="exportForm.mode" type="button">
-              <a-radio value="quick" :disabled="!quickEligible">快速导出</a-radio>
-              <a-radio value="backend">后端导出任务</a-radio>
-            </a-radio-group>
-            <div class="uq-export__hint">
-              <template v-if="exportForm.mode === 'quick'">
-                浏览器直接生成并下载 CSV(共 {{ rowCount }} 行),无需等待任务,不写入「我的导出」。
-              </template>
-              <template v-else>
-                生成导出任务并在「我的导出」查看进度,适合大数据量或需要留存文件的场景。
-              </template>
-            </div>
-          </div>
-        </a-form-item>
-        <a-form-item v-if="exportForm.mode === 'backend'" label="导出方式" required>
-          <div class="uq-export__field">
-            <a-radio-group v-model="exportForm.method" type="button">
-              <a-radio value="platform">
-                <icon-save /> 保存到平台
-              </a-radio>
-              <a-radio value="local">
-                <icon-download /> 下载到本地
-              </a-radio>
-            </a-radio-group>
-            <div class="uq-export__hint">
-              {{ exportForm.method === 'platform'
-                ? '生成导出任务并保存到「我的导出」,可稍后统一下载。'
-                : '创建导出任务的同时,浏览器会立即下载一份 CSV 文件。' }}
-            </div>
-          </div>
-        </a-form-item>
         <a-form-item label="文件名称" required>
           <a-input v-model="exportForm.fileName" placeholder="请输入文件名称" allow-clear>
             <template #suffix>.csv</template>
@@ -108,6 +73,62 @@
           <a-input model-value="CSV(逗号分隔)" disabled />
         </a-form-item>
       </a-form>
+
+      <!-- 导出列:放在最下面,面板可折叠 + 列名可搜索 -->
+      <a-collapse
+        v-model:active-key="colsPanel"
+        :bordered="false"
+        expand-icon-position="right"
+        class="uq-export__collapse"
+      >
+        <a-collapse-item
+          key="cols"
+          :header="`导出列(已选 ${exportColumns.length} / ${columns.length})`"
+        >
+          <template #extra>
+            <a-space size="mini" @click.stop>
+              <a-link size="mini" @click="selectAllColumns">全选当前</a-link>
+              <a-link size="mini" @click="exportForm.columns = []">清空</a-link>
+            </a-space>
+          </template>
+          <a-input-search
+            v-model="colKeyword"
+            size="small"
+            placeholder="搜索列名(支持中文名与字段名)"
+            allow-clear
+            class="uq-export__cols-search"
+          />
+          <a-checkbox-group v-if="filteredColumns.length" v-model="exportForm.columns" class="uq-export__cols">
+            <a-checkbox v-for="c in filteredColumns" :key="c.dataIndex" :value="c.dataIndex">
+              {{ c.title }}
+            </a-checkbox>
+          </a-checkbox-group>
+          <div v-else class="uq-export__cols-empty">无匹配列</div>
+          <div class="uq-export__hint">
+            默认导出全部列,可按需只勾选部分列;两种导出模式都按勾选列生成文件。
+          </div>
+        </a-collapse-item>
+      </a-collapse>
+
+      <!-- 右下角:模式即动作,点哪个就走哪条链路 -->
+      <template #footer>
+        <a-space>
+          <a-button @click="exportVisible = false">取消</a-button>
+          <a-button
+            v-if="quickEligible"
+            type="primary"
+            status="success"
+            @click="submitExport('quick')"
+          >
+            <template #icon><icon-download /></template>
+            快速导出
+          </a-button>
+          <a-button type="primary" @click="submitExport('backend')">
+            <template #icon><icon-save /></template>
+            常规导出
+          </a-button>
+        </a-space>
+      </template>
     </a-modal>
   </div>
 </template>
@@ -123,7 +144,7 @@ import { computed, h, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
-import type { DataSourceKey, ExecStatus, ExportMethod, ExportMode, QueryResult, ResultColumn, StatementKind } from '@/mock/unified-query/types'
+import type { DataSourceKey, ExecStatus, ExportMode, QueryResult, ResultColumn, StatementKind } from '@/mock/unified-query/types'
 import { DATASOURCE_LABEL } from '@/mock/unified-query/database'
 import {
   detectStatementKind,
@@ -238,11 +259,33 @@ function downloadCsv(fileName: string, cols: ResultColumn[], data: Record<string
 
 /* ── 导出弹窗 ── */
 const exportVisible = ref(false)
-const exportForm = reactive<{ fileName: string; method: ExportMethod; mode: ExportMode }>({
+/** columns 存勾选的列 dataIndex,默认全选 */
+const exportForm = reactive<{ fileName: string; columns: string[] }>({
   fileName: '',
-  method: 'platform',
-  mode: 'backend'
+  columns: []
 })
+
+/** 勾选列(按表格列顺序,保证 CSV 列序稳定) */
+const exportColumns = computed<ResultColumn[]>(() =>
+  columns.value.filter(c => exportForm.columns.includes(c.dataIndex))
+)
+
+/** 导出列面板:默认展开;colKeyword 只影响展示,不改变已勾列 */
+const colsPanel = ref<string[]>(['cols'])
+const colKeyword = ref('')
+const filteredColumns = computed<ResultColumn[]>(() => {
+  const kw = colKeyword.value.trim().toLowerCase()
+  if (!kw) return columns.value
+  return columns.value.filter(
+    c => c.title.toLowerCase().includes(kw) || c.dataIndex.toLowerCase().includes(kw)
+  )
+})
+
+/** 全选当前(筛选结果):并入勾选中按表格列序排列,已勾但被筛掉的列不丢 */
+function selectAllColumns() {
+  const picked = new Set([...exportForm.columns, ...filteredColumns.value.map(c => c.dataIndex)])
+  exportForm.columns = columns.value.filter(c => picked.has(c.dataIndex)).map(c => c.dataIndex)
+}
 
 /** 默认文件名:查询结果_YYYYMMDDHHmmss */
 function defaultFileName(): string {
@@ -253,43 +296,48 @@ function defaultFileName(): string {
 
 function openExport() {
   exportForm.fileName = defaultFileName()
-  exportForm.method = 'platform'
-  exportForm.mode = quickEligible.value ? 'quick' : 'backend'
+  colKeyword.value = ''
+  colsPanel.value = ['cols']
+  selectAllColumns()
   exportVisible.value = true
 }
 
-/** 点击确定:快速导出直接下载;后端模式创建导出任务(下载到本地时额外触发浏览器下载) */
-function submitExport() {
+/**
+ * 右下角模式按钮直接提交(只导出勾选列):
+ * quick 纯前端生成文件,不创建任务、不写入「我的导出」;
+ * backend 创建导出任务,文件在「我的导出」列表里下载。
+ */
+function submitExport(mode: ExportMode) {
   const name = exportForm.fileName.trim()
   if (!name) {
     Message.warning('请填写文件名称')
-    return false // 阻止弹窗关闭
+    return // 保持弹窗打开
   }
-  const cols = columns.value
+  const cols = exportColumns.value
+  if (!cols.length) {
+    Message.warning('请至少勾选 1 列')
+    return
+  }
   const data = sortedRows.value
 
-  // 快速导出:纯前端生成文件,不创建后端任务、不写入「我的导出」
-  if (exportForm.mode === 'quick') {
+  if (mode === 'quick') {
     downloadCsv(name, cols, data)
     Message.success(`已生成 CSV(${data.length} 行),开始下载`)
-    return true
+    exportVisible.value = false
+    return
   }
 
   const dsLabel = DATASOURCE_LABEL[props.datasource]
 
-  const task = exportStore.createTask({
+  exportStore.createTask({
     baseName: name,
     datasource: dsLabel,
-    method: exportForm.method,
     rowCount: data.length,
     columns: cols,
     rows: data
   })
 
-  if (exportForm.method === 'local') {
-    downloadCsv(task.fileName, cols, data)
-  }
-
+  exportVisible.value = false
   Message.success({
     content: () =>
       h('span', {}, [
@@ -306,7 +354,6 @@ function submitExport() {
     duration: 5000,
     closable: true
   })
-  return true
 }
 </script>
 
@@ -357,6 +404,10 @@ function submitExport() {
   }
 }
 
+.uq-export__alert {
+  margin-bottom: 16px;
+}
+
 .uq-export__hint {
   margin-top: 8px;
   font-size: 12px;
@@ -364,14 +415,29 @@ function submitExport() {
   color: var(--color-text-3);
 }
 
-.uq-export__field {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  width: 100%;
+/* 导出列面板(可折叠):紧贴表单下方 */
+.uq-export__collapse {
+  margin-top: 4px;
 }
 
-.uq-export__alert {
-  margin-bottom: 16px;
+.uq-export__cols-search {
+  margin-bottom: 8px;
+}
+
+/* 列名平铺展示,列多时限定高度内滚动,避免弹窗被撑长 */
+.uq-export__cols {
+  width: 100%;
+  max-height: 132px;
+  padding: 8px 10px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border-2);
+  border-radius: 4px;
+}
+
+.uq-export__cols-empty {
+  padding: 12px 0;
+  font-size: 12px;
+  text-align: center;
+  color: var(--color-text-3);
 }
 </style>

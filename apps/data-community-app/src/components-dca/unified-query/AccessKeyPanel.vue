@@ -1,7 +1,7 @@
 <template>
   <div class="key-panel">
     <a-alert type="warning" show-icon class="key-tip">
-      SecretKey 等同数据库密码,请勿写入代码仓库或明文分享。Key 仅在已开通或审批中的数据源上可选,
+      AccessKey 等同数据库密码,请勿写入代码仓库或明文分享。Key 仅在已开通或审批中的数据源上可选,
       停用后将立即阻断 Python / R 客户端连接。
     </a-alert>
 
@@ -152,31 +152,29 @@
       </template>
     </a-modal>
 
-    <!-- 一次性密钥展示 -->
+    <!-- 创建成功:下发 AccessKeyId -->
     <a-modal
-      v-model:visible="secretVisible"
+      v-model:visible="createdVisible"
       title="访问 Key 创建成功"
       :footer="false"
       :width="600"
-      :mask-closable="false"
     >
-      <a-alert type="warning" show-icon class="modal-tip">
-        SecretKey 仅显示这一次,关闭后无法再次查看,请立即保存到安全位置。
+      <a-alert type="success" show-icon class="modal-tip">
+        AccessKey 是 Python / R 客户端连接的唯一凭证,可在「代码示例」中直接复制使用。
       </a-alert>
-      <div v-if="secretPayload" class="secret-box">
-        <div class="secret-row">
-          <span class="secret-row__label">AccessKeyId</span>
-          <code>{{ secretPayload.accessKeyId }}</code>
-          <a-link @click="copyText(secretPayload.accessKeyId, 'AccessKeyId')"><icon-copy /> 复制</a-link>
+      <div v-if="createdPayload" class="ak-box">
+        <div class="ak-row">
+          <span class="ak-row__label">Key 名称</span>
+          <span class="ak-row__value">{{ createdPayload.name }}</span>
         </div>
-        <div class="secret-row">
-          <span class="secret-row__label">SecretKey</span>
-          <code class="secret-row__secret">{{ secretPayload.secretKey }}</code>
-          <a-link @click="copyText(secretPayload.secretKey, 'SecretKey')"><icon-copy /> 复制</a-link>
+        <div class="ak-row">
+          <span class="ak-row__label">AccessKeyId</span>
+          <code>{{ createdPayload.accessKeyId }}</code>
+          <a-link @click="copyText(createdPayload.accessKeyId, 'AccessKeyId')"><icon-copy /> 复制</a-link>
         </div>
       </div>
-      <div class="secret-foot">
-        <a-button type="primary" @click="secretVisible = false">我已保存</a-button>
+      <div class="ak-foot">
+        <a-button type="primary" @click="createdVisible = false">完成</a-button>
       </div>
     </a-modal>
 
@@ -195,10 +193,6 @@
               <a-link @click="copyText(detail.accessKeyId, 'AccessKeyId')"><icon-copy /> 复制</a-link>
             </div>
           </a-descriptions-item>
-          <a-descriptions-item label="SecretKey">
-            <code class="is-muted">{{ maskSecret(detail.secretKey) }}</code>
-            <span class="secret-hint">仅创建时展示一次,遗失请删除后重建 Key</span>
-          </a-descriptions-item>
           <a-descriptions-item label="授权数据源">
             <a-space size="mini">
               <a-tag v-for="ds in detail.datasources" :key="ds" size="small">{{ dsLabel(ds) }}</a-tag>
@@ -213,19 +207,55 @@
           <a-descriptions-item label="用途">{{ detail.purpose }}</a-descriptions-item>
         </a-descriptions>
 
-        <div class="drawer-title">连接示例</div>
-        <div v-for="snippet in snippets" :key="snippet.lang" class="code-block">
-          <div class="code-block__head">
-            <span class="code-block__lang">{{ snippet.lang }}</span>
-            <a-link @click="copyText(snippet.code, `${snippet.lang} 连接示例`)">
-              <icon-copy /> 复制代码
-            </a-link>
-          </div>
-          <pre><code>{{ snippet.code }}</code></pre>
+        <div class="drawer-title">
+          <span>连接示例</span>
+          <a-radio-group v-model="activeLang" type="button" size="mini">
+            <a-radio v-for="l in CLIENT_LANGUAGES" :key="l.key" :value="l.key">{{ l.label }}</a-radio>
+          </a-radio-group>
         </div>
+        <div class="code-lang-tip">
+          当前语言:<b>{{ activeLangLabel }}</b> · 安装依赖 Doris / Hive 共用一段,仅连接按数据源区分
+        </div>
+
+        <template v-if="connModel">
+          <div class="ds-section">
+            <div class="ds-section__head">
+              <a-tag size="small" color="purple">安装</a-tag>
+              <span class="ds-section__note">Doris / Hive 共用</span>
+            </div>
+            <div class="code-block">
+              <div class="code-block__head">
+                <span class="code-block__lang">安装依赖</span>
+                <a-link @click="copyText(connModel.install, `${activeLangLabel} 安装`)">
+                  <icon-copy /> 复制
+                </a-link>
+              </div>
+              <pre><code>{{ connModel.install }}</code></pre>
+            </div>
+          </div>
+
+          <div v-for="c in connModel.connects" :key="c.ds" class="ds-section">
+            <div class="ds-section__head">
+              <a-tag size="small" :color="c.ds === 'doris' ? 'arcoblue' : 'orange'">{{ c.dsName }}</a-tag>
+              <span class="ds-section__note">{{ c.note }}</span>
+              <a-tag v-if="c.authorized" size="small" color="green">已授权</a-tag>
+              <a-tag v-else size="small" color="gray">当前 Key 未授权</a-tag>
+            </div>
+            <div class="code-block">
+              <div class="code-block__head">
+                <span class="code-block__lang">连接</span>
+                <a-link @click="copyText(c.code, `${activeLangLabel} · ${c.dsName} 连接`)">
+                  <icon-copy /> 复制代码
+                </a-link>
+              </div>
+              <pre><code>{{ c.code }}</code></pre>
+            </div>
+          </div>
+        </template>
+
         <div class="code-hint">
-          代码中的 &lt;SecretKey&gt; 需替换为创建 Key 时保存的密钥;Doris 走 MySQL 协议,
-          Hive 走 HiveServer2。密钥遗失或泄露时应删除并重建 Key。
+          示例中的 ACCESS_KEY 就是当前 Key 的 AccessKeyId,可直接复制到客户端配置;Doris 走 MySQL 协议,
+          Hive 走 HiveServer2。AccessKey 泄露时请停用或删除后重建 Key。
         </div>
       </template>
     </a-drawer>
@@ -236,8 +266,8 @@
 /**
  * 统一查询 · 数据库账号管理 —— 访问 Key 面板
  *
- * 为 Python / R 客户端签发 AccessKeyId + SecretKey:
- * 创建时一次性展示密钥,支持续期、停用、启用、删除与连接示例复制。
+ * 为 Python / R 客户端签发 AccessKeyId(唯一连接凭证):
+ * 创建后支持查看连接示例、续期、停用、启用、删除。
  */
 import { computed, reactive, ref } from 'vue'
 import { Message, Modal } from '@arco-design/web-vue'
@@ -245,17 +275,19 @@ import { useUqDbAccountStore } from '@/stores-dca/unified-query/db-account'
 import {
   ACCESS_KEY_STATUS_META,
   ACCOUNT_PURPOSE_OPTIONS,
-  buildPythonSnippet,
-  buildRSnippet,
+  buildKeySnippets,
+  CLIENT_LANGUAGES,
+  CONNECTION_ENDPOINT,
   extendExpireAt,
   KEY_EXPIRE_OPTIONS
 } from '@/mock/unified-query/db-account'
+import type { ClientLanguage } from '@/mock/unified-query/db-account'
 import type {
   AccessKeyRecord,
   AccessKeyStatus,
   DataSourceKey
 } from '@/mock/unified-query/types'
-import { copyText, daysLeft, dsLabel, maskSecret } from './db-account-utils'
+import { copyText, daysLeft, dsLabel } from './db-account-utils'
 
 const store = useUqDbAccountStore()
 
@@ -333,24 +365,22 @@ function submitCreate() {
     purpose: form.purpose.trim()
   })
   createVisible.value = false
-  showSecret(record)
+  showCreated(record)
 }
 
-/* ── 密钥弹窗 ─────────────────────────── */
-const secretVisible = ref(false)
-const secretPayload = ref<{
+/* ── 创建成功弹窗 ─────────────────────── */
+const createdVisible = ref(false)
+const createdPayload = ref<{
   name: string
   accessKeyId: string
-  secretKey: string
 } | null>(null)
 
-function showSecret(record: AccessKeyRecord) {
-  secretPayload.value = {
+function showCreated(record: AccessKeyRecord) {
+  createdPayload.value = {
     name: record.name,
-    accessKeyId: record.accessKeyId,
-    secretKey: record.secretKey
+    accessKeyId: record.accessKeyId
   }
-  secretVisible.value = true
+  createdVisible.value = true
 }
 
 /* ── 状态操作 ─────────────────────────── */
@@ -411,17 +441,34 @@ const detail = ref<AccessKeyRecord | null>(null)
 
 function openDetail(record: AccessKeyRecord) {
   detail.value = record
+  activeLang.value = 'python' // 每次打开重置为默认语言,避免跨 Key 残留上次选择
   detailVisible.value = true
 }
 
-/** 连接示例:Python 与 R 同时展示,不再按 Key 区分语言 */
-const snippets = computed(() => {
+/** 当前选择的客户端语言(详情抽屉内切换) */
+const activeLang = ref<ClientLanguage>('python')
+const activeLangLabel = computed(
+  () => CLIENT_LANGUAGES.find(l => l.key === activeLang.value)?.label ?? ''
+)
+
+/**
+ * 连接示例:当前语言下安装为 Doris / Hive 共用的一段,
+ * 连接才按 Doris / Hive 拆成两段;并标注当前 Key 是否已授权该数据源。
+ */
+const connModel = computed(() => {
   const key = detail.value
-  if (!key) return []
-  return [
-    { lang: 'Python', code: buildPythonSnippet(key) },
-    { lang: 'R', code: buildRSnippet(key) }
-  ]
+  if (!key) return null
+  const s = buildKeySnippets(key)[activeLang.value]
+  return {
+    install: s.install,
+    connects: (['doris', 'hive'] as DataSourceKey[]).map(ds => ({
+      ds,
+      dsName: dsLabel(ds),
+      note: CONNECTION_ENDPOINT[ds].note,
+      authorized: key.datasources.includes(ds),
+      code: s.connect[ds]
+    }))
+  }
 })
 
 defineExpose({ openCreate })
@@ -465,10 +512,6 @@ defineExpose({ openCreate })
   }
 }
 
-.is-muted {
-  color: var(--color-text-4);
-}
-
 .modal-tip {
   margin-bottom: 12px;
 }
@@ -484,7 +527,7 @@ defineExpose({ openCreate })
   }
 }
 
-.secret-box {
+.ak-box {
   border: 1px dashed var(--color-border-2);
   border-radius: 6px;
   padding: 12px 14px;
@@ -494,7 +537,7 @@ defineExpose({ openCreate })
   gap: 10px;
 }
 
-.secret-row {
+.ak-row {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -506,27 +549,22 @@ defineExpose({ openCreate })
     color: var(--color-text-3);
   }
 
+  &__value {
+    flex: 1;
+    font-size: 13px;
+  }
+
   code {
     flex: 1;
     font-family: 'SFMono-Regular', Consolas, Menlo, monospace;
     font-size: 12px;
     word-break: break-all;
   }
-
-  &__secret {
-    color: rgb(var(--danger-6));
-  }
 }
 
-.secret-foot {
+.ak-foot {
   margin-top: 16px;
   text-align: right;
-}
-
-.secret-hint {
-  margin-left: 12px;
-  font-size: 12px;
-  color: var(--color-text-3);
 }
 
 .extend-info {
@@ -550,6 +588,38 @@ defineExpose({ openCreate })
   margin: 20px 0 12px;
   font-size: 14px;
   font-weight: 600;
+}
+
+.code-lang-tip {
+  margin: -4px 0 12px;
+  font-size: 12px;
+  color: var(--color-text-3);
+
+  b {
+    color: rgb(var(--primary-6));
+  }
+}
+
+.ds-section {
+  & + & {
+    margin-top: 16px;
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  &__note {
+    font-size: 12px;
+    color: var(--color-text-3);
+  }
+
+  .code-block + .code-block {
+    margin-top: 8px;
+  }
 }
 
 .code-block {

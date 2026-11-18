@@ -76,7 +76,6 @@
         <!-- 普通节点：流量指标 + 趋势小图（R13-3） -->
         <template v-else>
           <div class="metrics-bar">
-            <div class="metric"><span class="label">进入人数</span><span class="value">{{ totalEnter }}</span></div>
             <div class="metric">
               <span class="label">
                 执行人数
@@ -85,15 +84,6 @@
                 </a-tooltip>
               </span>
               <span class="value">{{ totalExit }}</span>
-            </div>
-            <div class="metric">
-              <span class="label">
-                执行率
-                <a-tooltip content="执行人数 ÷ 进入人数（均按客户去重）">
-                  <span class="col-title__tip" role="img" aria-label="口径说明"><IconInfoCircle /></span>
-                </a-tooltip>
-              </span>
-              <span class="value">{{ formatRatio(exitRate) }}</span>
             </div>
           </div>
 
@@ -171,8 +161,10 @@
 <script setup>
 /*
 用途：节点统计抽屉（A3 形态，画布结构 TAB 内点击节点唤出）
-说明：抽屉内提供「统计 / 配置」双 TAB；统计 TAB 给分流分支表或流量指标与趋势小图，并附「按进入时间查看」分桶下钻；
+说明：抽屉内提供「统计 / 配置」双 TAB；统计 TAB 给分流分支表或执行人数与趋势小图，并附「按进入时间查看」分桶下钻；
       配置 TAB 只读回显节点原配置。两种形态都提供客户列表下钻。
+口径：不再展示节点级「进入人数」（跨天同人会重复出现在多条流水中，去重人数易误读），依赖该分母的「执行率」一并下线；
+      具体流转路径由 A4 下钻至 A5 详情查看。
 边界：只读，不写入画布配置；同一时刻只存在一个抽屉（由页面控制）。
 */
 import { computed, ref, watch } from 'vue'
@@ -229,12 +221,8 @@ const personStats = computed(() => {
   } catch { return { enterPersons: 0, exitPersons: 0 } }
 })
 
-/** 进入人数：区间内进入过该节点的去重客户数 */
-const totalEnter = computed(() => personStats.value.enterPersons)
-/** 执行人数：区间内在该节点执行实际节点动作的去重客户数 */
+/** 执行人数：区间内在该节点执行实际节点动作的去重客户数（进入人数不单独展示，分母无口径支撑，执行率同步下线） */
 const totalExit = computed(() => personStats.value.exitPersons)
-/** 执行率：执行人数 / 进入人数（同口径去重） */
-const exitRate = computed(() => (personStats.value.enterPersons > 0 ? totalExit.value / personStats.value.enterPersons : 0))
 
 /** 分支汇总（R13：分支名称 / 流入人数 / 执行人数 / 占比） */
 const branchTable = computed(() => {

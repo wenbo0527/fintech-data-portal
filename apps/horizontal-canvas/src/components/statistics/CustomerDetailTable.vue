@@ -8,13 +8,11 @@
         <span class="breadcrumb__cur">{{ sourceLabel }}</span>
         <span v-if="rangeText" class="breadcrumb__range">{{ rangeText }}</span>
       </div>
-      <div class="customer-detail__count">进入人数 <b>{{ summary.personCount }}</b></div>
     </div>
 
-    <!-- 汇总条：五指标 -->
+    <!-- 汇总条：四项人次指标（客户每进入一次计一条，不做去重） -->
     <div class="summary-bar">
-      <div class="summary-item"><span class="label">进入（人数）</span><span class="value">{{ summary.personCount }}</span></div>
-      <div class="summary-item"><span class="label">流水总条数</span><span class="value">{{ summary.recordCount }}</span></div>
+      <div class="summary-item"><span class="label">进入人次</span><span class="value">{{ summary.recordCount }}</span></div>
       <div class="summary-item"><span class="label">已结束</span><span class="value">{{ summary.statusCounts.finished }}</span></div>
       <div class="summary-item"><span class="label">进行中</span><span class="value">{{ summary.statusCounts.running }}</span></div>
       <div class="summary-item"><span class="label">等待中</span><span class="value">{{ summary.statusCounts.waiting }}</span></div>
@@ -31,7 +29,7 @@
           :class="[`pill--${pill.key}`, { 'is-active': status === pill.key }]"
           @click="setStatus(pill.key)"
         >
-          {{ pill.label }}<span class="pill__count">{{ pill.count }}</span>
+          {{ pill.label }}
         </button>
       </div>
       <div class="filter-row__right">
@@ -78,7 +76,8 @@
     </a-table>
 
     <div class="table-foot">
-      同一客户多次进入按流水逐条展示，共 {{ summary.total }} 条流水 / {{ summary.filteredPersonCount }} 位客户
+      四项指标均按进入流水逐条计数（客户每进入一次计一条，不做去重），跨天、跨批次重复进入会分别计入，因此已结束 + 进行中 + 等待中 = 进入人次；
+      状态与客户号仅作为筛选条件，完整流转路径请在「详情」中查看。
     </div>
 
     <div class="pager">
@@ -87,7 +86,6 @@
         :current="page"
         :page-size="pageSize"
         :page-size-options="[20, 50, 100]"
-        show-total
         @change="onPageChange"
       />
     </div>
@@ -97,7 +95,9 @@
 <script setup>
 /*
 用途：客户明细列表（A4）
-说明：一行对应一次进入；提供来源维度面包屑、汇总条五指标、三态筛选胶囊（带条数）、客户号检索、六列固定表格与分页。
+说明：一行对应一次进入；提供来源维度面包屑、四项人次指标汇总条、三态筛选胶囊、客户号检索、六列固定表格与分页。
+      按产品口径：客户进入时间只记录进入这一事件，进一次就是一段流水，所以汇总条统一取人次（流水条数）口径，
+      不再提供按客户去重的人数指标（跨天同人会重复出现，人数相加会与四个状态对不上）；状态胶囊与客户号仅承担筛选条件，不重复展示数字。
 边界：列表本身不提供改时间入口（继承上游带入的区间）；不修改画布；点击「详情」抛给父级打开 A5。
 */
 import { ref, computed, watch } from 'vue'
@@ -176,16 +176,13 @@ const summary = computed(() => {
   }
 })
 
-/** 状态筛选胶囊 */
-const statusPills = computed(() => {
-  const c = summary.value.statusCounts
-  return [
-    { key: 'all', label: '全部', count: c.all || 0 },
-    { key: 'finished', label: '已结束', count: c.finished || 0 },
-    { key: 'running', label: '进行中', count: c.running || 0 },
-    { key: 'waiting', label: '等待中', count: c.waiting || 0 }
-  ]
-})
+/** 状态筛选胶囊：仅作为筛选条件，不展示各状态数量 */
+const statusPills = [
+  { key: 'all', label: '全部' },
+  { key: 'finished', label: '已结束' },
+  { key: 'running', label: '进行中' },
+  { key: 'waiting', label: '等待中' }
+]
 
 const columns = computed(() => [
   { title: '客户号', dataIndex: 'customerNo', width: 120 },
@@ -279,8 +276,6 @@ watch(() => [props.sourceDimension, props.range?.from, props.range?.to], () => {
 .breadcrumb__sep { color: #c9cdd4 }
 .breadcrumb__cur { color: #1d2129; font-weight: 600 }
 .breadcrumb__range { margin-left: 8px; font-size: 12px; color: #86909c }
-.customer-detail__count { font-size: 13px; color: #4e5969 }
-.customer-detail__count b { color: #165dff; font-size: 16px }
 .summary-bar { display: flex; gap: 28px; flex-wrap: wrap; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px 14px; margin-bottom: 12px }
 .summary-item { display: flex; flex-direction: column; gap: 2px }
 .summary-item .label { font-size: 12px; color: #86909c }
@@ -288,9 +283,7 @@ watch(() => [props.sourceDimension, props.range?.from, props.range?.to], () => {
 .filter-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 10px; flex-wrap: wrap }
 .status-pills { display: flex; gap: 8px; flex-wrap: wrap }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; font-size: 12px; border: 1px solid #e5e6eb; border-radius: 14px; background: #fff; color: #4e5969; cursor: pointer }
-.pill__count { color: #86909c; font-size: 11px }
 .pill.is-active { border-color: rgb(var(--primary-6)); color: rgb(var(--primary-6)); background: rgb(var(--primary-1)) }
-.pill.is-active .pill__count { color: rgb(var(--primary-6)) }
 .filter-row__right { display: flex; align-items: center; gap: 8px }
 .table-foot { margin-top: 8px; font-size: 12px; color: #86909c; background: #f8fafc; border-radius: 4px; padding: 6px 10px }
 .pager { margin-top: 12px; display: flex; justify-content: flex-end }

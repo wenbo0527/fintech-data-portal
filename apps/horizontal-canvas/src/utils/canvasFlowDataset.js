@@ -704,7 +704,7 @@ function findBucketIndex(buckets, ts) {
  * 按进入时刻分桶聚合节点流量
  * 口径：进入按流水进入该节点的时刻（enterTime）归桶；执行按同一条流水离开该节点的时刻（exitTime）归桶；
  *      customers = 该桶进入的去重客户数；exitPersons = 该桶完成执行离开该节点的去重客户数。
- *      同一批次在同一节点至多一条流水，但同一客户可跳批次重复出现，故人次 ≥ 人数。
+ *      同一批次在同一节点至多一条流水，但同一客户可跨批次重复出现，故人次 ≥ 人数。
  * 入参：dataset(object)、nodeId(any)、buckets(Array<{ key, label, start, end }>)
  *      - start / end 为毫秒时间戳，桶区间左闭右开
  * 返回：Array<{ key, label, start, end, enter, exit, customers, exitPersons }>

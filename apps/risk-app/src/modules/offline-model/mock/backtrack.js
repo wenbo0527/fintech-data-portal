@@ -26,9 +26,11 @@ export const LANDING_CHANNELS = [
   { value: 'douyin', label: '抖音' }
 ]
 
-// 来源表类型：外数底表的字段需要额外填写「缓存天数」来定位取数分区
+// 来源表类型：外数底表 / 外数宽表的字段都需要额外填写「缓存天数」来定位取数分区
+// 差别：外数底表按表统一缓存天数（可批量覆盖），外数宽表按外数列独立缓存天数（列间不联动）
 export const SOURCE_TABLE_TYPES = {
   external: '外数底表',
+  external_wide: '外数宽表',
   model: '模型底表',
   sample: '样本表'
 }
@@ -37,8 +39,8 @@ export const SOURCE_TABLE_TYPES = {
 export const BACKTRACK_SOURCE_TABLES = [
   {
     table: 'ext.credit_report',
-    tableType: 'external',
-    description: '征信报告外数底表（回溯落库后）',
+    tableType: 'external_wide',
+    description: '征信报告外数宽表（回溯落库后，多列独立缓存）',
     columns: [
       { name: 'id_md5', type: 'varchar(64)', comment: '身份证MD5' },
       { name: 'product_id', type: 'varchar(20)', comment: '产品ID' },
@@ -106,9 +108,15 @@ export function getSourceTableMeta(tableName) {
   return BACKTRACK_SOURCE_TABLES.find((t) => t.table === tableName) || null
 }
 
-// 是否外数底表：决定「缓存天数」这一列在该行是否必填
+// 是否外数类来源表（底表 + 宽表）：决定「缓存天数」这一列在该行是否必填
 export function isExternalSourceTable(tableName) {
-  return getSourceTableMeta(tableName)?.tableType === 'external'
+  const t = getSourceTableMeta(tableName)?.tableType
+  return t === 'external' || t === 'external_wide'
+}
+
+// 是否外数宽表：缓存天数按外数列独立填写；外数底表可按表批量覆盖
+export function isExternalWideTable(tableName) {
+  return getSourceTableMeta(tableName)?.tableType === 'external_wide'
 }
 
 export function getDateFieldsOf(tableName) {
@@ -736,5 +744,6 @@ export default {
   INPUT_MATCH_SOURCES,
   getSourceTableMeta,
   isExternalSourceTable,
+  isExternalWideTable,
   getDateFieldsOf
 }

@@ -55,6 +55,15 @@
           <!-- 步骤二：落表目标与场景配置 -->
           <a-collapse-item key="landing" header="步骤二：落表目标与场景配置">
             <a-descriptions :column="2" bordered size="small">
+              <a-descriptions-item label="落库模式" :span="2">
+                <a-tag :color="landingMode === 'temp' ? 'orange' : 'green'">{{ landingMode === 'temp' ? '临时落库（备用）' : '标准化落库' }}</a-tag>
+                <span v-if="landingMode === 'temp'" style="margin-left: 12px;">
+                  临时表：<code class="cell-mono">{{ detail.config?.landingForm?.tempTable || '—' }}</code>
+                  <a-tag size="small" style="margin-left: 8px;">不删表，手工回收</a-tag>
+                </span>
+                <span v-else style="margin-left: 12px; color: var(--color-text-3); font-size: 12px;">写入模型标准表与多模型汇总表，进血缘与下游依赖</span>
+              </a-descriptions-item>
+              <template v-if="landingMode !== 'temp'">
               <a-descriptions-item label="多模型汇总表" :span="2">
                 <a-tag v-if="detail.config?.landingForm?.summary" color="green">已勾选</a-tag>
                 <a-tag v-else color="gray">未勾选</a-tag>
@@ -71,7 +80,7 @@
                   </span>
                 </template>
               </a-descriptions-item>
-              <a-descriptions-item label="单模型独立表" :span="2">
+              <a-descriptions-item label="模型标准表" :span="2">
                 <a-tag v-if="detail.config?.landingForm?.singleModel" color="green">已勾选</a-tag>
                 <a-tag v-else color="gray">未勾选</a-tag>
                 <template v-if="detail.config?.landingForm?.singleModel">
@@ -84,6 +93,7 @@
                   </span>
                 </template>
               </a-descriptions-item>
+              </template>
               <a-descriptions-item label="场景标签" :span="2">
                 <template v-if="detail.config?.sceneTags?.length">
                   <a-tag v-for="tag in detail.config.sceneTags" :key="tag" color="arcoblue" style="margin-right: 6px;">{{ tag }}</a-tag>
@@ -130,6 +140,9 @@
 
           <!-- 步骤四：关联条件配置 -->
           <a-collapse-item key="required" header="步骤四：关联条件配置">
+            <div class="section-tip">
+              来源表为外数类时需填写缓存天数：<b>外数底表按表统一、外数宽表按外数列独立</b>
+            </div>
             <a-table
               class="required-map-table"
               :data="detail.config?.requiredFieldMappings || []"
@@ -303,13 +316,16 @@ const collapseKeys = ref(['model', 'landing', 'sample', 'required', 'match', 'ou
 const isFromRisk = computed(() => isFromRiskModule(route))
 const isFromOffline = computed(() => isFromOfflineModule(route))
 
-// 只读列配置：与创建页步骤四保持同一列序，缓存天数仅在有外数底表行时出现
+// 落库模式：历史无 mode 的旧任务默认 standardized；temp 时展示临时表 + 保留天数
+const landingMode = computed(() => detail.value?.config?.landingForm?.mode === 'temp' ? 'temp' : 'standard')
+
+// 只读列配置：与创建页步骤四保持同一列序，缓存天数仅在有外数类行（底表/宽表）时出现
 const sourceTableTypes = backtrackAPI.getSourceTableTypes() || {}
 const watchDateField = backtrackAPI.getWatchDateField() || 'watch_dt'
 const typeOfSourceTable = (table) => table ? (backtrackAPI.getSourceTableMeta(table)?.tableType || '') : ''
 const isExternalSourceTable = (table) => !!table && backtrackAPI.isExternalSourceTable(table)
 const sourceTableTypeLabel = (t) => sourceTableTypes[t] || t || '—'
-const sourceTableTypeColor = (t) => ({ external: 'orange', model: 'arcoblue', sample: 'gray' }[t] || 'gray')
+const sourceTableTypeColor = (t) => ({ external: 'orange', external_wide: 'purple', model: 'arcoblue', sample: 'gray' }[t] || 'gray')
 
 const requiredCols = computed(() => {
   const rows = detail.value.config?.requiredFieldMappings || []

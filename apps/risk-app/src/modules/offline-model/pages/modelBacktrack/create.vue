@@ -119,8 +119,16 @@
             <a-tag v-else color="gray" size="small">待配置</a-tag>
           </template>
           <a-form layout="vertical">
-            <!-- 落表目标选择 -->
-            <a-form-item label="落表目标" extra="一个模型同时落多模型汇总表和单模型独立表（并行写入）">
+            <!-- 落库模式开关：标准化 vs 临时（备用） -->
+            <a-form-item label="落库模式" extra="标准化落库写入治理表（dw.*），一个模型同时写多模型汇总表与模型标准表；临时落库写到临时表（不删表），仅供验证与应急取数">
+              <a-radio-group v-model="landingForm.mode" @change="onLandingModeChange">
+                <a-radio value="standard">标准化落库<span class="mode-hint">（默认，写入模型标准表 + 多模型汇总表）</span></a-radio>
+                <a-radio value="temp">临时落库<span class="mode-hint">（备用，不删表、不进血缘与治理清单）</span></a-radio>
+              </a-radio-group>
+            </a-form-item>
+
+            <!-- 落表目标选择（仅标准化模式） -->
+            <a-form-item v-if="landingForm.mode === 'standard'" label="落表目标" extra="一个模型同时写入多模型汇总表与模型标准表（并行写入）">
               <div class="landing-block">
                 <!-- 多模型汇总表 -->
                 <div class="landing-group">
@@ -143,10 +151,10 @@
                     </a-select>
                   </div>
                 </div>
-                <!-- 单模型独立表 -->
+                <!-- 模型标准表 -->
                 <div class="landing-group">
                   <a-checkbox v-model="landingForm.singleModel" @change="onSingleModelToggle">
-                    单模型独立表
+                    模型标准表
                   </a-checkbox>
                   <div class="landing-sub" v-if="landingForm.singleModel">
                     <a-radio-group v-model="landingForm.singleTableType">
@@ -165,6 +173,31 @@
                 </div>
               </div>
             </a-form-item>
+
+            <!-- 临时落库参数（仅 temp 模式） -->
+            <template v-else>
+              <a-form-item label="临时表名" required extra="建议以 tmp. 前缀；临时落库不删表，任务不会自动回收，如需清理请手工处理">
+                <div class="temp-table-row">
+                  <a-input
+                    v-model="landingForm.tempTable"
+                    placeholder="例如 tmp.risk_model_backtrack_xxx_20260101"
+                    allow-clear
+                    style="max-width: 460px;"
+                  />
+                  <a-button size="small" type="outline" @click="fillDefaultTempTable">生成默认名</a-button>
+                </div>
+              </a-form-item>
+              <a-alert type="warning" :show-icon="true" style="margin-bottom: 12px;">
+                临时落库只写这一张临时表，不会写入模型标准表与多模型汇总表；产物不进入血缘与治理清单，且任务不会自动删表
+              </a-alert>
+              <div v-if="landingTableNames.length" class="landing-table-preview">
+                <div class="preview-title">将写入以下表：</div>
+                <div class="preview-item" v-for="item in landingTableNames" :key="item.table">
+                  <span class="preview-label">{{ item.label }}</span>
+                  <span class="preview-table">{{ item.table }}</span>
+                </div>
+              </div>
+            </template>
 
             <!-- 场景标签 -->
             <a-form-item label="场景标签" :extra="createMode === CREATE_MODES.PERIODIC ? '周期任务：首次配置选择，后续周期执行沿用' : '临时任务：每次配置时手动选择（仅展示标记，不参与校验）'">
@@ -346,7 +379,7 @@
           </a-alert>
           <div class="section-tip">
             为每个必填字段配置与来源表的关联条件：日期关联逻辑固定以样本观测日 <code>watch_dt</code> 为锚点往前推 X 天（只填 X），
-            来源表为「外数底表」时还需填写缓存天数；样本字段即关联时样本侧的 join key
+            来源表为「外数类」（外数底表 / 外数宽表）时还需填写缓存天数——<b>外数底表按表统一、可批量覆盖；外数宽表按外数列独立</b>；样本字段即关联时样本侧的 join key
           </div>
           <div class="table-search-row">
             <a-input-search
@@ -355,6 +388,61 @@
               allow-clear
               style="width: 240px; margin-bottom: 8px;"
             />
+          </div>
+          <!-- 外数表缓存天数面板：底表按表统一批量覆盖；宽表按列独立，同时提供一键覆盖 N 行 -->
+          <div v-if="externalCacheGroups.length" class="cache-days-panel">
+            <div class="cache-days-head">
+              <span class="cache-days-title">外数表缓存天数</span>
+              <span class="cache-days-hint">外数底表一个值刷全表；外数宽表下方逐个外数列独立调整</span>
+            </div>
+            <div v-for="grp in externalCacheGroups" :key="grp.table" class="cache-days-group">
+              <div class="cache-days-row">
+                <span class="cache-days-table">{{ grp.table }}</span>
+                <a-tag size="small" :color="grp.isWide ? 'arcoblue' : 'gray'">{{ grp.isWide ? '外数宽表 · 按列' : '外数底表 · 按表' }}</a-tag>
+                <a-input-number
+                  v-model="cacheDaysBulk[grp.table]"
+                  size="mini"
+                  :min="0"
+                  :max="365"
+                  :step="1"
+                  :precision="0"
+                  hide-button
+                  placeholder="天数"
+                  style="width: 96px;"
+                >
+                  <template #suffix>天</template>
+                </a-input-number>
+                <a-button
+                  size="mini"
+                  type="outline"
+                  :disabled="isNil(cacheDaysBulk[grp.table])"
+                  @click="applyCacheDaysToTable(grp)"
+                >
+                  应用到 {{ grp.rows.length }} 行
+                </a-button>
+              </div>
+              <div v-if="grp.isWide" class="cache-days-cols">
+                <div v-for="row in grp.rows" :key="row.name" class="cache-days-col">
+                  <a-tooltip :content="`${row.name}（${row.label || ''}） 列级缓存天数`">
+                    <span class="cache-days-col-name">{{ row.name }}</span>
+                  </a-tooltip>
+                  <a-input-number
+                    :model-value="row.cacheDays"
+                    size="mini"
+                    :min="0"
+                    :max="365"
+                    :step="1"
+                    :precision="0"
+                    hide-button
+                    placeholder="天数"
+                    style="width: 92px;"
+                    @change="(v) => { row.cacheDays = v; updateRequiredStatus(row); }"
+                  >
+                    <template #suffix>天</template>
+                  </a-input-number>
+                </div>
+              </div>
+            </div>
           </div>
           <a-table
             class="required-map-table"
@@ -457,7 +545,7 @@
                 :step="1"
                 :precision="0"
                 hide-button
-                placeholder="天数"
+                :placeholder="isExternalWide(record.sourceTable) ? '按列' : '按表'"
                 @change="updateRequiredStatus(record)"
               >
                 <template #suffix>天</template>
@@ -485,7 +573,7 @@
             请先完成步骤三：拉取样本表数据
           </a-alert>
           <div class="section-tip">
-            为每个模型入参选择取值来源：「特征中心」映射已配置特征（支持搜索），「样本表」直接映射步骤三拉取的样本字段；
+            为每个模型入参选择取值来源：<b>优先样本表</b>——入参名与步骤三拉取的样本字段同名时自动命中样本表、无需关联配置；「特征中心」映射已配置特征（支持搜索），「样本表」直接映射样本字段；
             已匹配 {{ matchedCount }} / {{ inputMappings.length }}，未匹配 {{ inputMappings.length - matchedCount }}；未匹配行置顶，匹配完成后沉底
           </div>
           <div class="table-search-row">
@@ -658,7 +746,9 @@ const activeKeys = ref(['model', 'target', 'sample', 'required', 'match', 'outpu
 // 步骤完成状态
 const stepStatus = computed(() => {
   const s1 = (modelForm.value.serviceName && modelFile.value) ? 'done' : 'pending'
-  const s2 = (landingForm.value.summary || landingForm.value.singleModel) ? 'done' : 'pending'
+  const s2 = landingForm.value.mode === LANDING_MODES.TEMP
+    ? (landingForm.value.tempTable?.trim() ? 'done' : 'pending')
+    : ((landingForm.value.summary || landingForm.value.singleModel) ? 'done' : 'pending')
   const s3 = tableInputStatus.value === 'success' ? 'done' : 'pending'
   const reqMatched = requiredMappings.value.filter(r => isRequiredRowComplete(r)).length
   const reqTotal = requiredMappings.value.length
@@ -717,6 +807,7 @@ const sourceTableTypes = ref({})
 const watchDateField = ref('watch_dt')
 const sourceTableTypeLabel = (t) => sourceTableTypes.value[t] || t
 const isExternalSource = (table) => !!table && backtrackAPI.isExternalSourceTable(table)
+const isExternalWide = (table) => !!table && backtrackAPI.isExternalWideTable(table)
 const dateFieldsOf = (table) => backtrackAPI.getDateFieldsOf(table) || []
 const isNil = (v) => v === null || v === undefined || v === ''
 // 下拉面板默认被锁成与选择框同宽，密排列里选项文案会被省略号截断，改为「不小于选择框宽度且随内容自适应」
@@ -742,7 +833,7 @@ const requiredColumns = computed(() => {
 })
 const requiredTableWidth = computed(() => requiredColumns.value.reduce((sum, c) => sum + (c.width || 0), 0))
 
-// 行完整性：来源表 + 样本字段 + 日期关联天数必齐（X 可以为 0）；来源表是外数底表时，日期字段与缓存天数也必齐
+// 行完整性：来源表 + 样本字段 + 日期关联天数必齐（X 可以为 0）；来源表是外数类（底表/宽表）时，日期字段与缓存天数也必齐
 const requiredRowMissing = (record) => {
   const missing = []
   if (!record.sourceTable) missing.push('来源表')
@@ -755,6 +846,33 @@ const requiredRowMissing = (record) => {
   return missing
 }
 const isRequiredRowComplete = (record) => requiredRowMissing(record).length === 0
+
+// 外数表缓存天数面板：同一来源表归为一组；底表只需一个批量入口，宽表额外展示列级输入
+const cacheDaysBulk = ref({}) // { [table]: number | null }
+const externalCacheGroups = computed(() => {
+  const map = new Map()
+  requiredMappings.value.forEach((r) => {
+    if (!isExternalSource(r.sourceTable)) return
+    if (!map.has(r.sourceTable)) {
+      map.set(r.sourceTable, {
+        table: r.sourceTable,
+        isWide: isExternalWide(r.sourceTable),
+        rows: []
+      })
+    }
+    map.get(r.sourceTable).rows.push(r)
+  })
+  return [...map.values()]
+})
+const applyCacheDaysToTable = (grp) => {
+  const v = cacheDaysBulk.value[grp.table]
+  if (isNil(v)) return
+  grp.rows.forEach((r) => {
+    r.cacheDays = v
+    updateRequiredStatus(r)
+  })
+  Message.success(`已将 ${grp.table} 的缓存天数 ${v} 天覆盖到 ${grp.rows.length} 行`)
+}
 
 // 换来源表：已选的日期字段按新表字段清单校验，不适用则清空；切离外数底表后缓存天数不再适用
 const onSourceTableChange = (record, val) => {
@@ -775,6 +893,40 @@ const onInputSourceChange = (record, val) => {
   record.source = val === 'sample' ? 'sample' : 'feature'
   record.target = ''
   updateInputStatus(record)
+}
+
+/**
+ * 优先命中样本表：仅处理未匹配行，入参名与样本字段同名则自动将来源置为样本表 + 映射到同名字段；
+ * 不触碰已人工选定的行，避免覆盖。无同名字段的行不做处理，交由一键入参匹配或人工选。
+ */
+const applySamplePriority = () => {
+  if (!sampleReady.value || !tableColumns.value.length) return 0
+  let hit = 0
+  inputMappings.value.forEach((r) => {
+    if (r.target) return
+    const same = tableColumns.value.find(c => c.name === r.name)
+    if (!same) return
+    r.source = 'sample'
+    r.target = same.name
+    r.status = 'matched'
+    hit += 1
+  })
+  return hit
+}
+
+/**
+ * 入参行初始映射种子：优先样本表（已拉取且同名）→ 特征中心同名 → 空。
+ * 与「优先匹配样本表字段，样本表存在则无需关联」的需求一致：
+ * 样本表已有则直接取，不占特征中心通道
+ */
+const pickInitialInputMapping = (name) => {
+  if (sampleReady.value) {
+    const sampleCol = tableColumns.value.find(c => c.name === name)
+    if (sampleCol) return { source: 'sample', target: sampleCol.name, status: 'matched' }
+  }
+  const feature = featureTargets.value.find(f => f.name === name)
+  if (feature) return { source: 'feature', target: feature.name, status: 'matched' }
+  return { source: 'feature', target: '', status: 'unmatched' }
 }
 
 /**
@@ -810,17 +962,25 @@ const autoMatchFromSample = () => {
 }
 
 // ============ 回溯任务配置：新增字段 ============
-// 落表目标（默认同时勾选 多模型汇总表 + 单模型独立表）
+// 落表目标（默认同时勾选 多模型汇总表 + 模型标准表）
+// mode：'standard' 标准化落库（默认） / 'temp' 临时落库，后者写临时表且不删表，与治理链路解耦
+const LANDING_MODES = { STANDARD: 'standard', TEMP: 'temp' }
 const landingForm = ref({
+  mode: LANDING_MODES.STANDARD,
   summary: true,
   summaryType: 'general',
   channelCode: '',
   singleModel: true,
-  singleTableType: 'realtime'
+  singleTableType: 'realtime',
+  tempTable: ''
 })
 
-// 根据落表目标选择生成对应表名预览
+// 根据落库模式与落表目标生成对应表名预览（两种模式互斥，只展示当前模式对应的表）
 const landingTableNames = computed(() => {
+  if (landingForm.value.mode === LANDING_MODES.TEMP) {
+    const t = landingForm.value.tempTable?.trim()
+    return [{ label: '临时表（不删表，手工回收）', table: t || 'tmp.{待填写临时表名}' }]
+  }
   const names = []
   if (landingForm.value.summary) {
     if (landingForm.value.summaryType === 'general') {
@@ -838,11 +998,24 @@ const landingTableNames = computed(() => {
   if (landingForm.value.singleModel) {
     const type = landingForm.value.singleTableType
     if (type) {
-      names.push({ label: '单模型独立表', table: `dw.risk_model_single_${type}` })
+      names.push({ label: '模型标准表', table: `dw.risk_model_single_${type}` })
     }
   }
   return names
 })
+
+// 切换落库模式：切到临时且无临时表名时自动预置默认名；切回标准化不需要额外处理
+const onLandingModeChange = (val) => {
+  if (val === LANDING_MODES.TEMP && !landingForm.value.tempTable) fillDefaultTempTable()
+}
+
+// 默认临时表名：tmp.risk_model_backtrack_{serviceName}_{yyyymmdd}，去掉非字子，末尾拼上日期保证唯一
+const fillDefaultTempTable = () => {
+  const svc = (modelForm.value.serviceName || 'anon').replace(/[^a-zA-Z0-9_]+/g, '_').toLowerCase()
+  const d = new Date()
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+  landingForm.value.tempTable = `tmp.risk_model_backtrack_${svc}_${ymd}`
+}
 
 // 场景标签
 const sceneTags = ref([])
@@ -874,7 +1047,7 @@ const onSummaryToggle = (val) => {
 const onSummaryTypeChange = (val) => {
   if (val !== 'channel') landingForm.value.channelCode = ''
 }
-// 落表目标交互：勾选/取消 单模型独立表
+// 落表目标交互：勾选/取消 模型标准表
 const onSingleModelToggle = (val) => {
   if (val) {
     if (!landingForm.value.singleTableType) landingForm.value.singleTableType = 'realtime'
@@ -1075,6 +1248,9 @@ const handleTableValidate = async () => {
         row.status = isRequiredRowComplete(row) ? 'matched' : 'unmatched'
         return row
       })
+      // 优先样本表：入参名与样本字段同名时自动命中，无需人工匹配
+      const prioHits = applySamplePriority()
+      if (prioHits) Message.info(`优先命中样本表：已自动匹配 ${prioHits} 个入参，无需关联`)
     } else {
       tableInputStatus.value = 'error'
     }
@@ -1228,14 +1404,16 @@ const prefillFromCopy = async (copyFromId) => {
       })
     }
 
-    // 回填落表目标
+    // 回填落表目标（兼容历史无 mode 的旧任务 → 默认标准化）
     if (cfg.landingForm) {
       landingForm.value = {
+        mode: cfg.landingForm.mode === LANDING_MODES.TEMP ? LANDING_MODES.TEMP : LANDING_MODES.STANDARD,
         summary: !!cfg.landingForm.summary,
         summaryType: cfg.landingForm.summaryType || '',
         channelCode: cfg.landingForm.channelCode || '',
         singleModel: cfg.landingForm.singleModel !== false,
-        singleTableType: cfg.landingForm.singleTableType || (cfg.landingForm.singleModel !== false ? 'realtime' : '')
+        singleTableType: cfg.landingForm.singleTableType || (cfg.landingForm.singleModel !== false ? 'realtime' : ''),
+        tempTable: cfg.landingForm.tempTable || ''
       }
     }
     // 回填场景标签
@@ -1286,8 +1464,8 @@ const onServiceChange = async (serviceName) => {
       modelInputs.value = (p.inputs || []).map(i => ({ name: i.name, type: i.type, description: i.description || '' }))
       modelOutputs.value = (p.outputs || []).map(o => ({ name: o.name, type: o.type, description: o.description || '' }))
       const baseInputs = modelInputs.value.map(i => {
-        const same = featureTargets.value.find(f => f.name === i.name)
-        return { rowKey: `${p.serviceName}|${i.name}`, name: i.name, type: i.type, from: '当前模型', source: 'feature', target: same ? same.name : '', status: same ? 'matched' : 'unmatched' }
+        const init = pickInitialInputMapping(i.name)
+        return { rowKey: `${p.serviceName}|${i.name}`, name: i.name, type: i.type, from: '当前模型', ...init }
       })
       let childInputs = []
       const depends = Array.isArray(p.dependsOn) ? p.dependsOn : []
@@ -1297,8 +1475,8 @@ const onServiceChange = async (serviceName) => {
           if (childRes.success) {
             const c = childRes.data
             const ci = (c.inputs || []).map(i => {
-              const same = featureTargets.value.find(f => f.name === i.name)
-              return { rowKey: `${c.serviceName}|${i.name}`, name: i.name, type: i.type, from: c.serviceName, source: 'feature', target: same ? same.name : '', status: same ? 'matched' : 'unmatched' }
+              const init = pickInitialInputMapping(i.name)
+              return { rowKey: `${c.serviceName}|${i.name}`, name: i.name, type: i.type, from: c.serviceName, ...init }
             })
             childInputs = childInputs.concat(ci)
           }
@@ -1312,6 +1490,9 @@ const onServiceChange = async (serviceName) => {
         seen.add(k)
         return true
       })
+      // 优先样本表：模型入参拉到后，若样本表已拉取且存在同名字段，自动命中样本表
+      const prioHits = applySamplePriority()
+      if (prioHits) Message.info(`优先命中样本表：已自动匹配 ${prioHits} 个入参，无需关联`)
       // 关联条件配置（步骤四）：固定枚举（product_id/flow_id/data_dt 强制 + business_code/session_number 选填）
       const defs = (requiredFieldDefs.value && requiredFieldDefs.value.length)
         ? requiredFieldDefs.value
@@ -1390,6 +1571,12 @@ const handleSubmit = async () => {
     if (createMode.value === CREATE_MODES.PERIODIC) {
       if (!sampleForm.value.taskStartDate) errors.push('请选择任务执行开始时间')
       if (!sampleForm.value.taskEndDate) errors.push('请选择任务执行结束时间')
+    }
+    // 落库模式校验：临时落库必须有临时表名；标准化落库至少选中一个目标（与既往行为一致）
+    if (landingForm.value.mode === LANDING_MODES.TEMP) {
+      if (!landingForm.value.tempTable?.trim()) errors.push('临时落库需填写临时表名')
+    } else if (!landingForm.value.summary && !landingForm.value.singleModel) {
+      errors.push('标准化落库需至少选中一个落表目标')
     }
     if (errors.length > 0) {
       errors.forEach(error => Message.warning(error))
@@ -1718,8 +1905,70 @@ const handleCancel = () => {
   font-weight: 500;
 }
 
+/* 落库模式开关提示、临时表名行 */
+.mode-hint { color: var(--color-text-3); font-size: 12px; margin-left: 4px; }
+.temp-table-row { display: flex; align-items: center; gap: 8px; }
+
 /* collapse extra slot 状态标签对齐 */
 :deep(.arco-collapse-item-header-extra) {
   margin-right: 8px;
+}
+
+/* 外数表缓存天数面板 */
+.cache-days-panel {
+  margin: 4px 0 12px;
+  padding: 10px 12px;
+  background: var(--color-fill-1);
+  border: 1px solid var(--color-neutral-3);
+  border-radius: 6px;
+}
+.cache-days-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.cache-days-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-1);
+}
+.cache-days-hint {
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+.cache-days-group + .cache-days-group {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--color-neutral-3);
+}
+.cache-days-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cache-days-table {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: var(--color-text-2);
+  min-width: 160px;
+}
+.cache-days-cols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 8px;
+  padding-left: 24px;
+}
+.cache-days-col {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cache-days-col-name {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: var(--color-text-2);
 }
 </style>

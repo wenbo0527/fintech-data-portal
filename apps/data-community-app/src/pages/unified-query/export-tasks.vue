@@ -136,6 +136,10 @@
         <a-descriptions-item label="任务编号">{{ detailTask.id }}</a-descriptions-item>
         <a-descriptions-item label="文件名">{{ detailTask.fileName }}.{{ detailTask.fileExt }}</a-descriptions-item>
         <a-descriptions-item label="数据源">{{ detailTask.datasource }}</a-descriptions-item>
+        <a-descriptions-item label="分隔符">
+          <code>{{ prettyDelimiter(detailTask.delimiter || ',') }}</code>
+          <span style="margin-left: 8px; color: var(--color-text-3); font-size: 12px;">→ .{{ detailTask.fileExt }}</span>
+        </a-descriptions-item>
         <a-descriptions-item label="导出列">{{ detailTask.data ? `${detailTask.data.columns.length} 列` : '—' }}</a-descriptions-item>
         <a-descriptions-item label="状态">{{ statusMeta(detailTask.status).text }}</a-descriptions-item>
         <a-descriptions-item label="进度">{{ detailTask.progress }}%</a-descriptions-item>
@@ -162,6 +166,7 @@ import PageContainer from '@/components-dca/common/PageContainer.vue'
 import PageHeader from '@/components-dca/common/PageHeader.vue'
 import { useUqExportStore } from '@/stores-dca/unified-query/export'
 import { EXPORT_DS_COLOR } from '@/mock/unified-query/export-tasks'
+import { buildDelimitedText, prettyDelimiter } from '@/mock/unified-query/delimiter'
 import type { ExportStatus, ExportTask, ResultColumn } from '@/mock/unified-query/types'
 
 const router = useRouter()
@@ -191,32 +196,26 @@ function statusMeta(s: ExportStatus) {
 }
 
 /* ── 操作 ── */
-function buildCsv(cols: ResultColumn[], data: Record<string, string | number>[]): string {
-  const header = cols.map(c => c.title).join(',')
-  const lines = data.map(r =>
-    cols.map(c => {
-      const v = r[c.dataIndex] ?? ''
-      const s = String(v)
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-    }).join(',')
-  )
-  return '\uFEFF' + [header, ...lines].join('\n')
+function buildCsv(cols: ResultColumn[], data: Record<string, string | number>[], delimiter: string): string {
+  return buildDelimitedText(cols, data, delimiter)
 }
 
 function handleDownload(record: ExportTask) {
   if (!record.data) {
-    Message.info('该演示任务无结果集快照,无法下载')
+    Message.info('该演示任务无结果集快照，无法下载')
     return
   }
-  const csv = buildCsv(record.data.columns, record.data.rows)
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const delimiter = record.delimiter || ','
+  const text = buildCsv(record.data.columns, record.data.rows, delimiter)
+  const mime = record.fileExt === 'tsv' ? 'text/tab-separated-values' : record.fileExt === 'csv' ? 'text/csv' : 'text/plain'
+  const blob = new Blob([text], { type: `${mime};charset=utf-8` })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = `${record.fileName}.${record.fileExt}`
   a.click()
   URL.revokeObjectURL(url)
-  Message.success(`已开始下载 ${record.fileName}.${record.fileExt}`)
+  Message.success(`已开始下载 ${record.fileName}.${record.fileExt}（分隔符 “${prettyDelimiter(delimiter)}”）`)
 }
 
 function handleCancel(record: ExportTask) {

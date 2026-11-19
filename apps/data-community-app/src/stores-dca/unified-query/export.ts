@@ -9,7 +9,6 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { SEED_EXPORT_TASKS } from '@/mock/unified-query/export-tasks'
 import type { ExportStatus, ExportTask, ResultColumn } from '@/mock/unified-query/types'
-
 /** 每个任务编号的当日序号游标:EXP20260910 → 已分配的最大序号 */
 const seqByDate: Record<string, number> = {}
 
@@ -101,20 +100,25 @@ export const useUqExportStore = defineStore('uqExport', () => {
     }, 400)
   }
 
-  /** 新建导出任务,返回创建后的记录 */
+  /** 新建导出任务，返回创建后的记录 */
   function createTask(payload: {
     baseName: string
     datasource: string
     rowCount: number
     columns?: ResultColumn[]
     rows?: Record<string, string | number>[]
+    /** 导出分隔串，默认 ','；存入任务供下载时重建 */
+    delimiter?: string
+    /** 文件扩展名，默认 'csv' */
+    fileExt?: 'csv' | 'tsv' | 'txt'
   }): ExportTask {
     const { stamp, dateKey, fileStamp } = nowParts()
     const fileName = `${payload.baseName}_${payload.datasource}_${fileStamp}`
     const task: ExportTask = {
       id: nextExportId(dateKey),
       fileName,
-      fileExt: 'csv',
+      fileExt: payload.fileExt || 'csv',
+      delimiter: payload.delimiter || ',',
       datasource: payload.datasource,
       status: 'exporting',
       progress: 5,

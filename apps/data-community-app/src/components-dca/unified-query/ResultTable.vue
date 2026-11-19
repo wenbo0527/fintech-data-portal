@@ -64,13 +64,33 @@
       </a-alert>
 
       <a-form :model="exportForm" layout="vertical">
+        <a-form-item label="分隔符" required>
+          <div class="uq-export__delimiter">
+            <a-select v-model="exportForm.delimiter" style="width: 200px">
+              <a-option v-for="o in DELIMITER_OPTIONS" :key="o.value" :value="o.value" :label="o.label">
+                {{ o.label }}
+                <span class="uq-export__delimiter-preview">{{ o.preview }}</span>
+              </a-option>
+            </a-select>
+            <a-input
+              v-if="exportForm.delimiter === 'custom'"
+              v-model="exportForm.delimiterCustom"
+              size="small"
+              placeholder="输入 1-3 个字符"
+              :max-length="MAX_CUSTOM_DELIMITER_LEN"
+              allow-clear
+              style="width: 160px;"
+            />
+            <a-tag size="small" color="gray">→ .{{ exportExt }}</a-tag>
+          </div>
+          <div class="uq-export__hint">
+            当前分隔：<code>{{ prettyDelimiter(effectiveDelimiter) }}</code>；值内含分隔串、双引号或换行会自动转义。
+          </div>
+        </a-form-item>
         <a-form-item label="文件名称" required>
           <a-input v-model="exportForm.fileName" placeholder="请输入文件名称" allow-clear>
-            <template #suffix>.csv</template>
+            <template #suffix>.{{ exportExt }}</template>
           </a-input>
-        </a-form-item>
-        <a-form-item label="文件类型">
-          <a-input model-value="CSV(逗号分隔)" disabled />
         </a-form-item>
       </a-form>
 
@@ -153,6 +173,15 @@ import {
   QUICK_EXPORT_ROW_LIMIT,
   STATEMENT_KIND_LABEL
 } from '@/mock/unified-query/statement'
+import {
+  buildDelimitedText,
+  DELIMITER_OPTIONS,
+  extOfDelimiter,
+  MAX_CUSTOM_DELIMITER_LEN,
+  prettyDelimiter,
+  resolveDelimiter,
+  validateCustomDelimiter
+} from '@/mock/unified-query/delimiter'
 import { useUqExportStore } from '@/stores-dca/unified-query/export'
 
 const props = withDefaults(
@@ -231,39 +260,53 @@ function clearSort() {
 // 换了查询结果就重置排序,避免残留的排序键落到新列上
 watch(() => props.result, clearSort)
 
-/** 生成 CSV 文本(含 BOM,Excel 友好) */
-function buildCsv(cols: ResultColumn[], data: Record<string, string | number>[]): string {
-  const header = cols.map(c => c.title).join(',')
-  const lines = data.map(r =>
-    cols.map(c => {
-      const v = r[c.dataIndex] ?? ''
-      const s = String(v)
-      // 含逗号/引号/换行的用双引号包裹
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-    }).join(',')
-  )
-  return '\uFEFF' + [header, ...lines].join('\n')
+/** 按当前分隔符生成导出文本（含 BOM） */
+function buildFile(cols: ResultColumn[], data: Record<string, string | number>[], delimiter: string): string {
+  return buildDelimitedText(cols, data, delimiter)
 }
 
-/** 触发浏览器下载 CSV */
-function downloadCsv(fileName: string, cols: ResultColumn[], data: Record<string, string | number>[]) {
-  const csv = buildCsv(cols, data)
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+/** 触发浏览器下载（扩展名由分隔符推导） */
+function downloadFile(
+  fileName: string,
+  ext: string,
+  cols: ResultColumn[],
+  data: Record<string, string | number>[],
+  delimiter: string
+) {
+  const text = buildFile(cols, data, delimiter)
+  const mime = ext === 'tsv' ? 'text/tab-separated-values' : ext === 'csv' ? 'text/csv' : 'text/plain'
+  const blob = new Blob([text], { type: `${mime};charset=utf-8` })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${fileName}.csv`
+  a.download = `${fileName}.${ext}`
   a.click()
   URL.revokeObjectURL(url)
 }
 
 /* ── 导出弹窗 ── */
 const exportVisible = ref(false)
-/** columns 存勾选的列 dataIndex,默认全选 */
-const exportForm = reactive<{ fileName: string; columns: string[] }>({
+/** columns 存勾选的列 dataIndex，默认全选；delimiter/delimiterCustom 控制分隔符 */
+const exportForm = reactive<{
+  fileName: string
+  columns: string[]
+  delimiter: string
+  delimiterCustom: string
+}>({
   fileName: '',
-  columns: []
+  columns: [],
+  delimiter: ',',
+  delimiterCustom: ''
 })
+
+/** 当前选择推导出的实际分隔串（自定义为空时回落逗号） */
+const effectiveDelimiter = computed(() =>
+  resolveDelimiter({ selected: exportForm.delimiter, custom: exportForm.delimiterCustom })
+)
+/** 当前选择对应的文件扩展名 */
+const exportExt = computed(() =>
+  extOfDelimiter({ selected: exportForm.delimiter, custom: exportForm.delimiterCustom })
+)
 
 /** 勾选列(按表格列顺序,保证 CSV 列序稳定) */
 const exportColumns = computed<ResultColumn[]>(() =>
@@ -296,6 +339,8 @@ function defaultFileName(): string {
 
 function openExport() {
   exportForm.fileName = defaultFileName()
+  exportForm.delimiter = ','
+  exportForm.delimiterCustom = ''
   colKeyword.value = ''
   colsPanel.value = ['cols']
   selectAllColumns()
@@ -313,16 +358,26 @@ function submitExport(mode: ExportMode) {
     Message.warning('请填写文件名称')
     return // 保持弹窗打开
   }
+  // 自定义分隔符验证：非空 + 长度 + 不涵盖换行
+  if (exportForm.delimiter === 'custom') {
+    const err = validateCustomDelimiter(exportForm.delimiterCustom)
+    if (err) {
+      Message.warning(err)
+      return
+    }
+  }
   const cols = exportColumns.value
   if (!cols.length) {
     Message.warning('请至少勾选 1 列')
     return
   }
   const data = sortedRows.value
+  const delimiter = effectiveDelimiter.value
+  const ext = exportExt.value
 
   if (mode === 'quick') {
-    downloadCsv(name, cols, data)
-    Message.success(`已生成 CSV(${data.length} 行),开始下载`)
+    downloadFile(name, ext, cols, data, delimiter)
+    Message.success(`已生成 ${ext.toUpperCase()}（${data.length} 行，分隔符 “${prettyDelimiter(delimiter)}”），开始下载`)
     exportVisible.value = false
     return
   }
@@ -334,7 +389,9 @@ function submitExport(mode: ExportMode) {
     datasource: dsLabel,
     rowCount: data.length,
     columns: cols,
-    rows: data
+    rows: data,
+    delimiter,
+    fileExt: ext
   })
 
   exportVisible.value = false
@@ -406,6 +463,21 @@ function submitExport(mode: ExportMode) {
 
 .uq-export__alert {
   margin-bottom: 16px;
+}
+
+/* 分隔符行：下拉 + 自定义输入 + 扩展名标签 */
+.uq-export__delimiter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.uq-export__delimiter-preview {
+  margin-left: 8px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: var(--color-text-3);
 }
 
 .uq-export__hint {

@@ -249,8 +249,13 @@ export interface ExportTask {
   id: string
   /** 文件名(不含扩展名) */
   fileName: string
-  /** 文件扩展名,当前固定 csv */
-  fileExt: 'csv'
+  /** 文件扩展名，当前支持 csv / tsv / txt（由分隔符预设或自定义推导） */
+  fileExt: 'csv' | 'tsv' | 'txt'
+  /**
+   * 导出分隔串（默认 ','）；历史任务可能为空，下载时回落 ','。
+   * 快速导出与常规导出共用同一口径；包含 Tab / 自定义多字符串
+   */
+  delimiter?: string
   /** 数据源展示名:Doris / Hive / Spark */
   datasource: string
   status: ExportStatus

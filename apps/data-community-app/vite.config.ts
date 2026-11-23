@@ -40,17 +40,12 @@ export default defineConfig({
       { find: '@/mock-shared', replacement: path.resolve(__dirname, 'src/mock/shared') },
       { find: '@mock-shared', replacement: path.resolve(__dirname, 'src/mock/shared') },
       { find: '@/composables', replacement: path.resolve(__dirname, 'src/composables') },
-      // 迁移完成（2026-11-06）：dca→dfd 闭包归零，@/dfd-pages、@/dfd-api、@/dfd-mock、
-      // @/dfd-components 四个迁移期脚手架别名已全部无用并删除；下方指向 DFD 的通用别名
-      // （@/pages、@/components、@/api/*、@/mock/* 等）经 build 验证后可另行清理
-      // 跨子应用复用:dca 公共组件(data-community-app 解析 dfd-app 的 vue 时也需要这个 alias)
+      // 迁移完成（2026-11-06）：指向 dfd-app 的 45 条别名已全部删除并通过逐条 build 验证，
+      // 下方所有别名只落在本 app 的 src 或 packages/shared-utils，dca 不再读取其他 app 源码
+      // 历史别名 @dca-components 等价于 @/components-dca，仍被 2 个页面使用
       { find: '@dca-components', replacement: path.resolve(__dirname, 'src/components-dca') },
 
-      // dfd 子目录(中等长度)
-      // dfd-app 的 api 模块(data-community-app 中同名 src/api 仅含 search-shim.ts,
-      // 此处统一把所有 @/api/<模块> 指向 dfd-app/src/api，
-      // 与第 73 行的宽泛 @/api 别名配合使用，dca 自有 src/api 内容不覆盖 dfd 已存在的)
-      // [重构方案 P0] search-shim 不再指向 dfd 空 stub，改命中 dca 真实实现（读 table-catalog-store）
+      // @/api、@/mock 现指向本 app 自有目录；search-shim 读 dca 真实的 table-catalog-store
       { find: '@/api/search-shim', replacement: path.resolve(__dirname, 'src/api/search-shim.ts') },
 
       // dca 引用 @/utils/copy，但 dfd-app 下没有 copy.js；

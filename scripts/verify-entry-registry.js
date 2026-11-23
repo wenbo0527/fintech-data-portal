@@ -372,7 +372,7 @@ function main () {
     console.log('入口清单一致性校验（以 vite base + router 为事实源）\n')
     for (const r of results) {console.log(`  [${r.level}] ${r.id}  ${r.msg}`)}
     console.log(`\nFAIL ${fails.length} · WARN ${warns.length} · 共 ${results.length} 项`)
-    if (!portalShell) {console.log('提示：加 --portal-shell <路径> 或设 PORTAL_SHELL_PATH 可启用 R6（外部域字典逐条校验）')}
+    if (!portalShell) {console.log('提示：加 --portal-shell <路径> 或设 PORTAL_SHELL_PATH 可启用 R6（域字典逐条校验）与 R7（生产 origin 口径），再加 --probe 启用 R8 实测')}
   }
   process.exit(fails.length ? 1 : 0)
 }

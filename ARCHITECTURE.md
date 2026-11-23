@@ -104,6 +104,9 @@ apps/mkt-app/src/
 | 子应用 | 8 个活跃独立静态构建 | `/var/www/html/{risk,mkt,dex,touch,horizontal-canvas,report-monitor,...}/` |
 | 加载方式 | iframe 嵌入 | `https://118.196.79.130:8443/${key}/` |
 
+> 上表的活跃应用清单已过时（2026-11-23 实测线上有 10 个前缀，含 3 个冻结应用）。
+> 前缀口径、实测矩阵与回归闸门见 [docs/architecture/deploy-prefix-2026-11.md](docs/architecture/deploy-prefix-2026-11.md)，以该文件为准。
+
 ### 3.2 部署环境
 
 | 环境 | 端口 | URL | 触发 |

@@ -33,7 +33,7 @@
 /* eslint-disable @typescript-eslint/no-var-requires -- CommonJS 脚本，与同目录 verify-* 守卫保持一致 */
 const fs = require('fs')
 const path = require('path')
-const { execSync } = require('child_process')
+const { execFileSync } = require('child_process')
 
 const ROOT = path.resolve(__dirname, '..')
 const APPS = path.join(ROOT, 'apps')
@@ -280,17 +280,28 @@ function runChecks (portalShellPath, probe) {
     } else {
       add('R7', 'PASS', 'SubAppPage.vue 兜底常量与 .env.production 同值')
     }
-    // R8 —— 可选：真打一次现网，验证 origin + 前缀确实可用
+    // R8 —— 可选实测：origin + 前缀 + 每个前缀一条真实深链（深链 200 才说明 nginx 配了 SPA fallback）
     if (probe) {
-      const prefixes = [...new Set([...dict.matchAll(/\burl:\s*'\/([a-z-]+)\//g)].map(x => x[1]))]
-      for (const p of prefixes.sort()) {
-        let code = 'ERR'
+      const probeUrl = (u) => {
         try {
-          code = execSync(`curl -sk -m 10 -o /dev/null -w '%{http_code}' ${PROD_ORIGIN}/${p}/`).toString().trim()
+          return execFileSync('curl', ['-sk', '-m', '10', '-o', '/dev/null', '-w', '%{http_code}', u]).toString().trim()
         } catch {
-          code = 'ERR'
+          return 'ERR'
         }
-        add('R8', code === '200' ? 'PASS' : 'FAIL', `实测 ${PROD_ORIGIN}/${p}/ → HTTP ${code}`)
+      }
+      const urls = [...new Set([...dict.matchAll(/\burl:\s*'((?:\/[\w-]+)+)'/g)].map(x => x[1]))]
+      const byPrefix = new Map()
+      for (const u of urls) {
+        const p = u.split('/')[1]
+        if (p && !byPrefix.has(p)) {byPrefix.set(p, u)}
+      }
+      for (const [p, u] of [...byPrefix.entries()].sort()) {
+        const prefixCode = probeUrl(`${PROD_ORIGIN}/${p}/`)
+        const deepCode = probeUrl(`${PROD_ORIGIN}${u}`)
+        const hint = prefixCode === '200' && deepCode !== '200'
+          ? '← 前缀可开但深链非 200：该 location 缺 SPA fallback'
+          : '（仅证明 nginx 有 SPA fallback，路由本身是否存在由 R6 判）'
+        add('R8', prefixCode === '200' && deepCode === '200' ? 'PASS' : 'FAIL', `实测 /${p}/ → ${prefixCode}，深链 ${u} → ${deepCode} ${hint}`)
       }
     }
   } else {

@@ -12,6 +12,7 @@
  * 用法：
  *   node scripts/verify-entry-registry.js
  *   node scripts/verify-entry-registry.js --portal-shell ~/code/portal-shell   # 加上 A 项校验
+ *   node scripts/verify-entry-registry.js --portal-shell <路径> --probe         # 再实测现网 HTTP 码（需联网）
  *   node scripts/verify-entry-registry.js --json
  *   node scripts/verify-entry-registry.js --selftest                            # 校验器自身有效性
  *
@@ -20,9 +21,13 @@
  *   R2 registry.ts 的 entry 端口是否等于该 app 的真实 dev 端口
  *   R3 dev-with-subapps.js 编排的应用集合是否覆盖 workspace 内活跃应用
  *   R4 dca APP_URLS 里登记的端口是否等于目标应用真实端口
- *   R5 portal-app 的域清单是否具备可跳转地址（当前无 url 即报 WARN）
+ *   R5 portal-app 定性为「视觉首页、非入口」：不得出现跳转地址，出现即与定性冲突
  *   R6（需 --portal-shell）domainDictionary 每条 Feature.url 必须命中目标 app 的真实路由；
  *      且 Feature.domain 必须等于其所属域 key
+ *   R7（需 --portal-shell）生产 origin 口径：.env.production 与 SubAppPage 兜底常量必须
+ *      一致且为 https + :8443 —— 80 端口 301 到不带端口的域名 vhost，那里只有 /home/ 可用，
+ *      子应用路径返回 500，按错误值重建部署会让所有域 iframe 白屏
+ *   R8（需 --portal-shell --probe）对字典里出现的每个应用前缀实测 origin+prefix 的 HTTP 码
  */
 
 /* eslint-disable @typescript-eslint/no-var-requires -- CommonJS 脚本，与同目录 verify-* 守卫保持一致 */
@@ -32,6 +37,17 @@ const { execSync } = require('child_process')
 
 const ROOT = path.resolve(__dirname, '..')
 const APPS = path.join(ROOT, 'apps')
+// 现网唯一实测可用的 origin：8443 上 /home/ + 9 个子应用前缀全 200
+const PROD_ORIGIN = 'https://118.196.79.130:8443'
+
+/** 生产 origin 判定：返回 null 表示可用，否则返回问题描述 */
+function originProblem (val) {
+  if (!val) {return '未声明（构建时会退回源码兜底常量）'}
+  if (val === PROD_ORIGIN) {return null}
+  if (!val.startsWith('https://')) {return `'${val}' 非 https`}
+  if (!/:8443$/.test(val)) {return `'${val}' 未带 :8443 —— 该入口只有 /home/ 可用，子应用路径 500、iframe 白屏`}
+  return `'${val}' 与实测可用 origin '${PROD_ORIGIN}' 不同`
+}
 
 function read (p) { try { return fs.readFileSync(p, 'utf8') } catch { return '' } }
 function exists (p) { try { fs.statSync(p); return true } catch { return false } }
@@ -147,7 +163,7 @@ function workspaceApps () {
 const results = []
 function add (id, level, msg) { results.push({ id, level, msg }) }
 
-function runChecks (portalShellPath) {
+function runChecks (portalShellPath, probe) {
   const { all, excluded } = workspaceApps()
   const active = all.filter(a => !excluded.includes(a))
 
@@ -185,12 +201,12 @@ function runChecks (portalShellPath) {
     add('R4', ok ? 'PASS' : 'FAIL', `APP_URLS.${key} = localhost:${port} vs ${target} 实际 ${facts.port ?? '未声明'}${ok ? '' : ' ← 不一致'}`)
   }
 
-  // R5 —— portal-app 域清单是否可跳转
+  // R5 —— portal-app 定性：视觉首页，不进入口清单（2026-11-23 裁定）
   const pappHome = read(path.join(APPS, 'portal-app', 'src', 'mock', 'home.ts'))
   if (pappHome) {
     const keys = [...pappHome.matchAll(/\{\s*key:\s*'([^']+)',\s*title:\s*'([^']+)'\s*\}/g)]
     const hasUrl = /(url|href|path)\s*:/.test(pappHome)
-    add('R5', hasUrl ? 'PASS' : 'WARN', `portal-app home.ts 声明 ${keys.length} 个域键，${hasUrl ? '含跳转地址' : '无任何 url/href/path 字段 → 不构成可用入口'}`)
+    add('R5', hasUrl ? 'WARN' : 'PASS', `portal-app home.ts 声明 ${keys.length} 个域键、${hasUrl ? '含跳转地址 → 与「视觉首页、非入口」定性冲突，需先定夺是否取代 portal-shell' : '无跳转地址，符合定性（不计入入口清单）'}`)
   }
 
   // R6 —— portal-shell 的 Feature.url 必须命中真实路由
@@ -244,8 +260,41 @@ function runChecks (portalShellPath) {
         add('R6', 'FAIL', `R6 解析器覆盖不足：字典含 ${rawUrls} 个 url 字段，仅解析到 ${total} 条，差额 ${rawUrls - total} 条未经校验`)
       }
     }
+    // R7 —— 生产 origin 口径（.env.production 与源码兜底常量必须同值且可用）
+    const envTxt = read(path.join(portalShellPath, '.env.production'))
+    const envLine = envTxt.split('\n').map(l => l.trim()).find(l => /^VITE_PUBLIC_BASE_URL=/.test(l)) || ''
+    const envVal = envLine.slice('VITE_PUBLIC_BASE_URL='.length).trim()
+    const envProb = originProblem(envVal)
+    if (envProb) {
+      add('R7', 'FAIL', `.env.production VITE_PUBLIC_BASE_URL ${envProb}`)
+    } else {
+      add('R7', 'PASS', `.env.production = ${envVal}（与实测可用 origin 一致）`)
+    }
+    const subTxt = read(path.join(portalShellPath, 'src/components/layout/SubAppPage.vue'))
+    const fallback = (subTxt.match(/VITE_PUBLIC_BASE_URL\s*\|\|\s*'([^']*)'/) || [])[1]
+    const fbProb = originProblem(fallback)
+    if (!fallback) {
+      add('R7', 'WARN', 'SubAppPage.vue 未找到 VITE_PUBLIC_BASE_URL 兜底常量（源码形态已变，校验器需同步）')
+    } else if (fbProb) {
+      add('R7', 'FAIL', `SubAppPage.vue 兜底常量 ${fbProb}（未加 --mode production 构建时用的就是它）`)
+    } else {
+      add('R7', 'PASS', 'SubAppPage.vue 兜底常量与 .env.production 同值')
+    }
+    // R8 —— 可选：真打一次现网，验证 origin + 前缀确实可用
+    if (probe) {
+      const prefixes = [...new Set([...dict.matchAll(/\burl:\s*'\/([a-z-]+)\//g)].map(x => x[1]))]
+      for (const p of prefixes.sort()) {
+        let code = 'ERR'
+        try {
+          code = execSync(`curl -sk -m 10 -o /dev/null -w '%{http_code}' ${PROD_ORIGIN}/${p}/`).toString().trim()
+        } catch {
+          code = 'ERR'
+        }
+        add('R8', code === '200' ? 'PASS' : 'FAIL', `实测 ${PROD_ORIGIN}/${p}/ → HTTP ${code}`)
+      }
+    }
   } else {
-    add('R6', 'SKIP', '未提供 --portal-shell <路径>，跳过外部域字典校验')
+    add('R6', 'SKIP', '未提供 --portal-shell <路径>，跳过外部域字典校验（含 R7 origin 口径）')
   }
 }
 
@@ -275,6 +324,13 @@ function selftest () {
   assert(matches(optSeg, 'variable-management/detail/9/create'), 'R6 前置：可选参数段应命中')
   assert(matches(optSeg, 'variable-management/detail/9'), 'R6 前置：可选参数段缺省应命中')
   assert(!matches(new Set([':id']), 'any-single-segment'), 'R6 前置：纯参数路由不应兜住任意 URL')
+
+  // 1c) R7 生产 origin 判定：必须精确抓住本次修掉的漂移（http 且不带端口）
+  assert(originProblem('http://118.196.79.130') !== null, 'R7 语义：http + 无端口（原 .env.production 值）必须判为不可用')
+  assert(originProblem('https://118.196.79.130') !== null, 'R7 语义：https 但缺 :8443 必须判为不可用')
+  assert(originProblem('http://118.196.79.130:8443') !== null, 'R7 语义：带端口但非 https 必须判为不可用')
+  assert(originProblem(PROD_ORIGIN) === null, 'R7 语义：实测可用 origin 必须判为可用')
+  assert(originProblem(undefined) !== null && originProblem('') !== null, 'R7 语义：缺失值必须判为不可用')
 
   // 2) base 与 registry 不一致必须被抓住（构造内存样本）
   const factsLike = { base: '/risk/', port: 5176 }
@@ -307,7 +363,7 @@ function main () {
   const idx = argv.indexOf('--portal-shell')
   const portalShell = idx >= 0 ? path.resolve(argv[idx + 1]) : process.env.PORTAL_SHELL_PATH || null
 
-  runChecks(portalShell)
+  runChecks(portalShell, argv.includes('--probe'))
 
   const fails = results.filter(r => r.level === 'FAIL')
   const warns = results.filter(r => r.level === 'WARN')
@@ -322,4 +378,4 @@ function main () {
 }
 
 if (require.main === module) {main()}
-module.exports = { appFacts, registryFacts, routePathsFrom, matches, workspaceApps, runChecks, results }
+module.exports = { appFacts, registryFacts, routePathsFrom, matches, originProblem, PROD_ORIGIN, workspaceApps, runChecks, results }

@@ -1,0 +1,55 @@
+// 核心入口与"伪入口"清单拓扑 · data-community-platform
+// 方法: architecture-visualization:flow-visualizer + graphviz
+// 生成: 2026-11-06 · 全部节点均有实测证据（见 label 内 file:line 或验证方式）
+// 图例: 实线绿框 = 真正驱动用户可到达位置的入口；虚线灰框 = 看似入口但无驱动能力
+digraph entrypoints {
+  rankdir=TB
+  fontname="Helvetica"
+  node [fontname="Helvetica", fontsize=11]
+  edge [fontname="Helvetica", fontsize=9]
+
+  user [label="用户浏览器", shape=oval]
+
+  subgraph cluster_real {
+    label="真入口（决定用户能到哪里）"
+    style=rounded
+    color=darkgreen
+    ps [label="portal-shell\ndomainDictionary.ts\ncurrent · 8 域 / 86 Feature / 49 跨 app URL\niframe src = PUBLIC_BASE_URL + url", color=darkgreen, style=bold]
+    routers [label="各 app 的 router/**\ncurrent · dca 130 条 component 记录\nrisk/dex/mkt/touch 各自路由", color=darkgreen]
+    prefix [label="部署前缀口径\ncurrent · vite base + nginx location\n⚠ 矛盾：.env.production=http://118.196.79.130（80）\nvs ARCHITECTURE.md 称 8443；portal-shell 自身 base=/home/", color=orange, style=bold]
+  }
+
+  subgraph cluster_fake {
+    label="伪入口（看似清单，实际不驱动导航）"
+    style=rounded
+    color=gray50
+    reg [label="9 × apps/*/src/registry.ts\ncurrent · 自称「微应用注册中心」\n仅 mkt-app/src/stores/registry.ts 读它\n该 store 又 import 不存在的 @/shared/registry/types\n端口自相矛盾：dfd 5185 撞 dca；dmt 写 5184 实为 5181", shape=note, style=dashed, color=gray40]
+    papp [label="apps/portal-app\ncurrent · PRIVATE · port 3000 · base '/'\nHome.vue 的 9 个域键无任何 href/url/router.push\n（仅一张 architecture.svg 背景）\n不在 dev 编排、不在 deploy/nginx", shape=note, style=dashed, color=gray40]
+    menus [label="11 个 app 各自的 MainLayout 菜单\ncurrent · 与 portal 的 Feature 各写一份\n无同步机制", shape=note, style=dashed, color=gray40]
+    appurls [label="dca config-dca/apps.ts APP_URLS\ncurrent · 仅 1 个键 mkt\nrisk/dex/touch 未登记", shape=note, style=dashed, color=gray40]
+  }
+
+  subgraph cluster_proposed {
+    label="统一方案（proposed，未实现）"
+    style=rounded
+    color=blue
+    genscript [label="scripts/gen-registry.mjs [proposed]\n解析各 app 的 vite base/port + router 记录\n→ packages/app-registry/registry.json", shape=note]
+    taxonomy [label="taxonomy.json [proposed]（人工维护）\n域 / EPIC / 中文名 / 归属\n机器不生成，只校验引用", shape=note]
+    ci [label="CI 校验 [proposed]\n每条 Feature.url 必须命中真实路由\n（已在 portal-shell 补丁中人工执行过：49 条 / 0 不匹配）", shape=note]
+    apps_consume [label="消费方：portal-shell 的 domainDictionary、\n各 app 菜单、（可选）portal-app\n→ 9 份 registry.ts 删除", shape=note]
+    genscript -> ci
+    taxonomy -> ci
+    ci -> apps_consume
+  }
+
+  user -> ps [label="顶层导航（域→子应用）", color=darkgreen]
+  ps -> prefix [label="拼 URL", color=darkgreen]
+  prefix -> routers [label="iframe 加载 /<base>/", color=darkgreen]
+  routers -> user [label="子应用内导航", color=darkgreen]
+
+  reg -> ps [style=dashed, color=gray60, label="重复且部分失真"]
+  menus -> routers [style=dashed, color=gray60, label="第二份 URL 副本"]
+  papp -> ps [style=dashed, color=gray60, label="第三份域清单"]
+  appurls -> routers [style=dashed, color=gray60, label="跨 app 跳转，覆盖不全"]
+  ps -> ci [style=dotted, color=blue, label="改造后由校验保障"]
+}

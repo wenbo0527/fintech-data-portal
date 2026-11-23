@@ -28,6 +28,8 @@
     "verify:external-data": "node scripts/verify-external-data-consistency.js",
     "verify:dec01": "node scripts/verify-dec01-retirement.js",
     "verify:dec01:selftest": "node scripts/verify-dec01-retirement.js --selftest",
+    "verify:entry-registry": "node scripts/verify-entry-registry.js",
+    "verify:entry-registry:selftest": "node scripts/verify-entry-registry.js --selftest",
     "audit": "npm audit --audit-level high",
     "depcheck": "depcheck",
     "clean": "rimraf dist node_modules/.cache"

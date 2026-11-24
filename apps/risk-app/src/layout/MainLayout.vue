@@ -29,7 +29,7 @@
           <a-sub-menu key="risk-factor-group">
             <template #title>风险要素</template>
             <a-menu-item key="/variable-hub">一体化总览</a-menu-item>
-            <a-menu-item key="/variable-management">特征台账</a-menu-item>
+            <a-menu-item key="/variable-management">特征字典</a-menu-item>
             <a-menu-item key="/explore/map">特征全景</a-menu-item>
             <!-- 评估任务与效果任务合入一张任务列表，加上脚本管理共两 Tab；判定配置下沉为任务级配置 -->
             <a-menu-item key="/tasks">任务管理</a-menu-item>

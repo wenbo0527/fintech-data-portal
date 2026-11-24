@@ -1,11 +1,11 @@
 <template>
   <div class="variable-hub-page">
-    <DmtPageHeader title="特征一体化管理" subtitle="以特征台账为中心，把关系探索、评估与治理动作收口在同一资产域中。">
+    <DmtPageHeader title="特征一体化管理" subtitle="以特征字典为中心，把关系探索、评估与治理动作收口在同一资产域中。">
       <template #extra>
         <a-space>
           <a-button @click="router.push('/tasks')">任务管理</a-button>
           <a-button @click="router.push('/runs')">执行记录</a-button>
-          <a-button type="primary" @click="router.push('/variable-management')">进入特征台账</a-button>
+          <a-button type="primary" @click="router.push('/variable-management')">进入特征字典</a-button>
         </a-space>
       </template>
     </DmtPageHeader>
@@ -87,7 +87,7 @@ const route = useRoute()
 const variableStore = useVariableStore()
 
 const entries = [
-  { key: 'ledger', title: '特征台账', desc: '权威台账，状态/分类/详情档案', path: '/variable-management', iconText: '账', color: '#165dff', bg: '#f0f7ff' },
+  { key: 'ledger', title: '特征字典', desc: '权威台账，状态/分类/详情档案', path: '/variable-management', iconText: '账', color: '#165dff', bg: '#f0f7ff' },
   { key: 'task', title: '任务管理', desc: '评估与效果任务一张表 / 脚本管理，判定配置跟任务走', path: '/tasks', iconText: '任', color: '#0fc6c2', bg: '#e6fffb' },
   { key: 'run', title: '执行记录', desc: '两域跑批实例、日志与口径快照', path: '/runs', iconText: '记', color: '#ff7d00', bg: '#fff3e8' },
   // 风险要素侧到外数域的统一入口：以前两个域互不可见，只能靠左侧菜单找

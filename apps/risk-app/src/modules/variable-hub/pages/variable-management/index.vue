@@ -1,6 +1,6 @@
 <template>
   <div class="variable-management-page">
-    <DmtPageHeader title="风险特征列表" subtitle="贷中行为/外数/征信多品类特征统一管理，全生命周期闭环" :show-back="false">
+    <DmtPageHeader title="特征字典" subtitle="贷中行为/外数/征信多品类特征统一管理，全生命周期闭环" :show-back="false">
       <template #extra>
         <a-input
           v-model="globalKeyword"
@@ -17,10 +17,10 @@
     </DmtPageHeader>
 
   <div class="page-content">
-      <!-- Tab 切换：特征台账 / 需求列表 -->
+      <!-- Tab 切换：特征字典 / 需求列表 -->
       <a-tabs v-model:active-key="activeTab" size="large" class="risk-feature-tabs">
         <a-tab-pane key="features">
-          <template #title><a-space :size="6"><icon-apps />特征台账</a-space></template>
+          <template #title><a-space :size="6"><icon-apps />特征字典</a-space></template>
         </a-tab-pane>
         <a-tab-pane key="derivations">
           <template #title><a-space :size="6"><icon-file />需求列表</a-space></template>
@@ -642,10 +642,10 @@
         <a-space class="derivation-toolbar" align="center" wrap>
           <a-space wrap>
             <span class="derivation-tip">
-              <icon-info-circle /> 需求是特征台账的入口。一期聚焦「贷中行为」品类，需求流转：
+              <icon-info-circle /> 需求是特征字典的入口。一期聚焦「贷中行为」品类，需求流转：
               <a-tag color="blue" size="small">需求受理</a-tag>
               <icon-right />
-              <a-tag color="green" size="small">特征台账：需求提出→已提交</a-tag>
+              <a-tag color="green" size="small">特征字典：需求提出→已提交</a-tag>
               <span style="margin: 0 4px; color: var(--color-text-3)">|</span>
               <a-tag color="blue" size="small">需求受理</a-tag>
               <icon-right />
@@ -755,7 +755,7 @@
       >
         <a-alert type="warning" :show-icon="false" style="margin-bottom: 12px">
           <p style="margin: 0; font-size: 13px;">
-            需求 <strong>{{ rejectTarget?.name || '' }}</strong>（{{ rejectTarget?.id || '' }}）驳回后不会创建特征，且不会出现在特征台账中。
+            需求 <strong>{{ rejectTarget?.name || '' }}</strong>（{{ rejectTarget?.id || '' }}）驳回后不会创建特征，且不会出现在特征字典中。
           </p>
         </a-alert>
         <a-form :model="rejectForm" layout="vertical">
@@ -1641,7 +1641,7 @@ function buildBatchTopicPrefill() {
   const inferredTypeId = inferVariableTypeId(selectedRows.value)
   const dsLabel = selectedDataSourceLabel.value || '特征'
   batchTopicForm.name = `${dsLabel}_批量探索_${new Date().toISOString().slice(0, 10)}`
-  batchTopicForm.businessProblem = `当前从特征台账中选中了 ${selectedRows.value.length} 个特征，需统一评估特征口径、可复用性与补充空间。`
+  batchTopicForm.businessProblem = `当前从特征字典中选中了 ${selectedRows.value.length} 个特征，需统一评估特征口径、可复用性与补充空间。`
   batchTopicForm.hypothesis = '已选特征可进一步形成组合方案或衍生规则，需在课题内沉淀实验与决策证据链。'
   batchTopicForm.domain = '风控'
   batchTopicForm.visibility = 'team'
@@ -1652,7 +1652,7 @@ function buildBatchTopicPrefill() {
 function buildBatchEvaluationPrefill() {
   batchEvaluationForm.name = `特征批量评估_${new Date().toISOString().slice(0, 10)}`
   batchEvaluationForm.taskType = 'access'
-  batchEvaluationForm.description = `基于特征台账已选 ${selectedRows.value.length} 个特征创建 mock 评估任务，后续在任务中心执行并沉淀评估结果。`
+  batchEvaluationForm.description = `基于特征字典已选 ${selectedRows.value.length} 个特征创建 mock 评估任务，后续在任务中心执行并沉淀评估结果。`
 }
 
 // 数据源过滤已移除：保留 dataSources 仅用于关联特征来源信息展示
@@ -1904,7 +1904,7 @@ const handleCreateMenuSelect = (val) => {
 const registerDrawerVisible = ref(false)
 // 审核模式：传入 A1 需求数据，预填 B1 注册表单（submit_requirement 触发）
 const registerDrawerRequirementData = ref(null)
-// 抽屉入口：ledger=特征台账注册特征；derivation=需求列表「去注册」（同一个组件，不同预填与提交口径）
+// 抽屉入口：ledger=特征字典注册特征；derivation=需求列表「去注册」（同一个组件，不同预填与提交口径）
 const registerDrawerSource = ref('ledger')
 // 抽屉模式：create=注册新特征；edit=编辑既有特征（与新建完全同构的表单 + 校验）
 const registerDrawerMode = ref('create')
@@ -2014,7 +2014,7 @@ const handleRegisterSaveDraft = (payload) => {
     name: payload.name || `DRAFT_${Date.now()}`,
     featureCnName: payload.featureCnName || '（未命名草稿）'
   })
-  Message.success('草稿已保存到「特征台账」底部，可在台账列表中查看')
+  Message.success('草稿已保存到「特征字典」底部，可在台账列表中查看')
 }
 
 const openBatchTopicModal = () => {
@@ -2394,7 +2394,7 @@ function resetDerivationFilter() {
 }
 
 // 流转动作
-// 「去注册」与特征台账「注册特征」共用 VariableRegisterDrawer（B1 完整表单），
+// 「去注册」与特征字典「注册特征」共用 VariableRegisterDrawer（B1 完整表单），
 // 区别只在 source='derivation'：打开时把 A1 需求已填信息预填到表单，提交后回写需求 + 台账
 function goRegister(record) {
   openRegisterDrawer({ source: 'derivation', requirementData: DerivationStore.get(record.id) || record })

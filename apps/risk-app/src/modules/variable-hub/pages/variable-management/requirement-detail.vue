@@ -246,7 +246,7 @@ const changeRecords = computed(() => {
     items.push({
       time: record.value.registeredAt,
       title: '注册完成',
-      desc: `已提交到特征台账，关联特征ID：${record.value.featureId || '—'}`
+      desc: `已提交到特征字典，关联特征ID：${record.value.featureId || '—'}`
     })
   }
   if (record.value.status === 'rejected' && record.value.rejectedAt) {

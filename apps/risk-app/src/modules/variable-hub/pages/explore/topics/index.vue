@@ -173,7 +173,7 @@ const summary = computed(() => {
 const statItems = computed(() => [
   { title: '课题总数', value: summary.value.total, iconText: '#', iconBg: '#f0f7ff', iconColor: '#165dff', subtitle: '当前可见' },
   { title: '探索中', value: summary.value.statusCounts.exploring, iconText: '○', iconBg: '#e6fffb', iconColor: '#0fc6c2', subtitle: '进行中' },
-  { title: '已采纳', value: summary.value.statusCounts.adopted, iconText: '✓', iconBg: '#e8ffea', iconColor: '#00b42a', subtitle: '进入特征台账' },
+  { title: '已采纳', value: summary.value.statusCounts.adopted, iconText: '✓', iconBg: '#e8ffea', iconColor: '#00b42a', subtitle: '进入特征字典' },
   { title: '已否决/暂缓', value: summary.value.statusCounts.rejected + summary.value.statusCounts.paused, iconText: '×', iconBg: '#fff1f0', iconColor: '#f53f3f', subtitle: '暂不推进' }
 ])
 

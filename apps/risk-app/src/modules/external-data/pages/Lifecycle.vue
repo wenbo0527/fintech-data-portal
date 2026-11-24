@@ -42,7 +42,7 @@
       <!-- 外数上台账后的下一环在风险要素侧：补两个出口，避免两个域互不可见 -->
       <a-grid-item>
         <a-card hoverable class="nav-card" @click="goNav('/variable-management')">
-          <div class="nav-title">特征台账</div>
+          <div class="nav-title">特征字典</div>
           <div class="nav-sub">资产与状态</div>
         </a-card>
       </a-grid-item>

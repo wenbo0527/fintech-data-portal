@@ -5,8 +5,8 @@
  * - 需求受理 (requirement_accepted)：初始状态
  * - 需求驳回 (rejected)：驳回（含原因），不创建特征
  *
- * 特征台账 2 状态（对应 VariableAssetMock.midloanStatus）：
- * - 需求提出 (requirement_proposal)：需求受理后「去注册」时在特征台账生成
+ * 特征字典 2 状态（对应 VariableAssetMock.midloanStatus）：
+ * - 需求提出 (requirement_proposal)：需求受理后「去注册」时在特征字典生成
  * - 已注册 (registered)：注册完成后
  */
 

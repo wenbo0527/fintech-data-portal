@@ -986,7 +986,7 @@
         <template #extra>
           <a-space>
             <a-button @click="openPersistRecord">查看落库记录</a-button>
-            <!-- 落库完成不等于资产已登记：补上通向特征台账的出口，接住「新外数 → 落库 → 上台账」主干的最后一环 -->
+            <!-- 落库完成不等于资产已登记：补上通向特征字典的出口，接住「新外数 → 落库 → 上台账」主干的最后一环 -->
             <a-button @click="goLedgerRegister">登记为特征</a-button>
             <a-button type="primary" @click="goTaskList">查看服务任务列表</a-button>
           </a-space>
@@ -1344,7 +1344,7 @@ const goTaskList = () => {
   router.push({ name: 'RiskExternalDataTaskList' })
 }
 
-/** 落库完成后去特征台账登记新特征：带着落库表名过去，台账侧直接弹注册抽屉（多表先带入第一张） */
+/** 落库完成后去特征字典登记新特征：带着落库表名过去，台账侧直接弹注册抽屉（多表先带入第一张） */
 const goLedgerRegister = () => {
   successVisible.value = false
   router.push({ path: '/variable-management', query: { action: 'register_from_external', table: hiveTables.value[0] ?? '' } })

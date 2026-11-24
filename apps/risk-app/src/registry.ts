@@ -35,7 +35,7 @@ const registry: any = {
       order: 1,
       children: [
         { key: 'risk-factor-workbench', label: '风险要素工作台', path: '/risk/variable-hub' },
-        { key: 'risk-factor-variable-mgmt', label: '特征台账', path: '/risk/variable-management' },
+        { key: 'risk-factor-variable-mgmt', label: '特征字典', path: '/risk/variable-management' },
         { key: 'risk-factor-variable-map', label: '特征全景', path: '/risk/explore/map' },
         // 评估任务 / 效果任务 / 脚本管理 / 判定配置 合入一个任务管理入口
         { key: 'risk-factor-task-center', label: '任务管理', path: '/risk/tasks' },
@@ -79,7 +79,7 @@ const registry: any = {
     },
     // 风险要素（特征一体化）
     { path: 'variable-hub',                  name: 'VariableHub',            component: './modules/variable-hub/pages/workbench/index.vue', meta: { title: '风险要素工作台' } },
-    { path: 'variable-management',           name: 'VariableManagement',     component: './modules/variable-hub/pages/variable-management/index.vue', meta: { title: '特征台账' } },
+    { path: 'variable-management',           name: 'VariableManagement',     component: './modules/variable-hub/pages/variable-management/index.vue', meta: { title: '特征字典' } },
     { path: 'variable-management/detail/:id/:mode?', name: 'VariableAssetDetail', component: './modules/variable-hub/pages/variable-management/detail.vue', meta: { title: '特征详情' } },
     { path: 'explore/topics',                name: 'ExploreTopics',          component: './modules/variable-hub/pages/explore/topics/index.vue', meta: { title: '探索课题' } },
     { path: 'explore/topics/:id',            name: 'ExploreTopicDetail',     component: './modules/variable-hub/pages/explore/topics/detail.vue', meta: { title: '课题详情' } },

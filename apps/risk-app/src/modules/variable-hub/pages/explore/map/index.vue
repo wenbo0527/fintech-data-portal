@@ -2,7 +2,7 @@
   <div class="explore-map-page">
     <DmtPageHeader title="特征全景" subtitle="以特征类型为入口，查看当前类型下的分类汇总与状态分布。">
       <template #extra>
-        <a-button @click="router.push('/variable-management')">特征台账</a-button>
+        <a-button @click="router.push('/variable-management')">特征字典</a-button>
         <a-button type="primary" @click="router.push('/explore/topics')">探索课题</a-button>
       </template>
     </DmtPageHeader>
@@ -486,7 +486,7 @@ const getTopicsByCategory = (baseId) => {
 }
 
 const goToVariableList = (typeId, categoryId) => {
-  // 跳转到特征台账并带预筛选条件（通过 query 实现）
+  // 跳转到特征字典并带预筛选条件（通过 query 实现）
   router.push({
     path: '/variable-management',
     query: {

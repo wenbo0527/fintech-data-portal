@@ -538,7 +538,7 @@ export const getLockedFields = (status: string): FieldEditPolicy[] => {
  * 判断当前状态下，整个特征是否允许编辑入口
  * （用于编辑按钮的 disabled 控制）
  *
- * API 上线后禁止从特征台账发起变更：
+ * API 上线后禁止从特征字典发起变更：
  * 已上线 / 已下线 / 已归档状态下，编辑入口禁用（按钮 disabled），
  * 不再进入编辑抽屉。其余状态正常开放编辑入口。
  */
@@ -553,11 +553,11 @@ export const canEdit = (status: string): boolean => {
 export const getEditLockReason = (status: string): string => {
   switch (status) {
     case 'online':
-      return 'API已上线：禁止从特征台账发起变更。如需修改特征信息，请走变更流程'
+      return 'API已上线：禁止从特征字典发起变更。如需修改特征信息，请走变更流程'
     case 'offline':
-      return 'API已下线：禁止从特征台账发起变更'
+      return 'API已下线：禁止从特征字典发起变更'
     case 'archived':
-      return '已归档：禁止从特征台账发起变更'
+      return '已归档：禁止从特征字典发起变更'
     case 'param_preparing':
     case 'syncing_internal':
     case 'syncing_variable':
@@ -657,7 +657,7 @@ export const tableActionsByStatus = (
     topActions.push({ key: 'submit_online', label: '提交上线', type: 'primary' })
   }
 
-  // 编辑：API上线后（online/offline/archived）禁止从特征台账发起变更，不展示编辑按钮
+  // 编辑：API上线后（online/offline/archived）禁止从特征字典发起变更，不展示编辑按钮
   if (canEdit(status)) {
     topActions.push({ key: 'edit', label: '编辑', type: 'primary' })
   }

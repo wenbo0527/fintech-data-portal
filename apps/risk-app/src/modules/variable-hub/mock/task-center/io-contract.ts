@@ -150,7 +150,7 @@ export function fieldLabel(key: string): string {
 
 /** 字段来源文案 */
 const SOURCE_LABELS: Record<ContractSource, string> = {
-  ledger: '特征台账',
+  ledger: '特征字典',
   sample_table: '样本 / 效果宽表',
   script_output: '脚本产出',
   platform: '平台产出'

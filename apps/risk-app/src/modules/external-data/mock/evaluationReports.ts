@@ -165,7 +165,7 @@ function buildSeedReports(count = 32): EvaluationReportItem[] {
   }
 
   // 台账外数 / 征信特征反查用的三份已完成报告：自动生成区里运营商与核验类产品按 STATUS_PATTERN
-  // 分到的都是 in_progress，而特征台账（VAR-0001 / VAR-0002 / VAR-0004）要能点开已完成结论，
+  // 分到的都是 in_progress，而特征字典（VAR-0001 / VAR-0002 / VAR-0004）要能点开已完成结论，
   // 所以显式补三条固定 id（9001 段，避开 1001+i 自动生成区）的确定种子，时间线对齐准入复评任务 EVAL-2026-001
   list.push({
     id: 9001,

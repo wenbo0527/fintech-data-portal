@@ -62,7 +62,7 @@ export const getVariableList = async (params: any = {}) => {
   let list = [...VariableDraftStore.list(), ...variableAssets]
     .map(withExternalBinding)
     .map(withStatusAndEvaluation)
-    // 需求提出阶段的记录归属「需求列表」Tab，不再混入特征台账
+    // 需求提出阶段的记录归属「需求列表」Tab，不再混入特征字典
     .filter((v: any) => v.midloanStatus !== 'requirement_proposal' && v.status !== 'requirement_proposal')
   if (keyword) {
     list = list.filter((v: any) =>

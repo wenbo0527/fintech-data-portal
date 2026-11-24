@@ -90,7 +90,7 @@
             <template #icon><IconExperiment /></template>
             提交上线申请
           </a-button>
-          <!-- 编辑：API上线后禁止从特征台账发起变更 -->
+          <!-- 编辑：API上线后禁止从特征字典发起变更 -->
           <a-tooltip :content="getEditLockReason(variableData.midloanStatus || variableData.status)">
             <a-button type="primary" :disabled="!canEdit(variableData.midloanStatus || variableData.status)" @click="handleEdit">
               <template #icon><IconEdit /></template>
@@ -131,7 +131,7 @@
 
       <!-- ========== 合成 ID 兜底说明（评估文档 §9-Q3 方案 A）============ -->
       <a-alert v-if="isSynthetic" type="warning" :show-icon="true" style="margin-bottom: 16px">
-        <template #title>演示合成样本 · 不在特征台账内</template>
+        <template #title>演示合成样本 · 不在特征字典内</template>
         <div>
           {{ coverageNote }} 本页基础信息为跑批侧最小档案，因此不提供编辑、上下线与生命周期 Tab；
           效果数据与正式变量同口径。
@@ -1438,7 +1438,7 @@ const buildAnalysisReports = () => {
     id: 'var-eval-001',
     name: '特征质量指标摘要（台账派生）',
     type: '指标摘要',
-    source: '特征台账',
+    source: '特征字典',
     updatedAt: v?.updatedAt || '—',
     preview: {
       findings: [
@@ -1870,7 +1870,7 @@ const coverageNote = computed(() => effectStore.overview().coverageNote)
  * 返回列表：
  * 1) 带 ?from= 且历史里有上一页 → 后退，完整保留列表的页签 / 筛选 / 页码状态；
  * 2) 带 ?from= 但无历史（深链直达）→ 按来路跳转；
- * 3) 无 ?from= → 回特征台账。
+ * 3) 无 ?from= → 回特征字典。
  */
 const handleBackToList = () => {
   const from = String(route.query.from || '')

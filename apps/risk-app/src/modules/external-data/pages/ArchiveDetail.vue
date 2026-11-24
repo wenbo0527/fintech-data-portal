@@ -659,7 +659,7 @@ const avgLatency = ref(120)
 
 const goBackList = () => { router.push({ path: '/variable-hub/external-data/archive' }) }
 
-/** 拿着落库目标表去特征台账登记新特征 */
+/** 拿着落库目标表去特征字典登记新特征 */
 const goLedgerRegister = () => {
   router.push({ path: '/variable-management', query: { action: 'register_from_external', table: header.value?.targetTable || '' } })
 }

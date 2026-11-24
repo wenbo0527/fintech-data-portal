@@ -112,7 +112,7 @@
           <a-divider v-if="topic?.featureId">关联特征档案</a-divider>
 
           <a-alert v-if="topic?.featureId" type="success" :show-icon="false" style="margin-bottom: 12px">
-            该衍生需求已提交到风险数据特征台账，关联特征ID：<a-link @click="goFeatureDetail(topic.featureId)">{{ topic.featureId }}</a-link>
+            该衍生需求已提交到风险数据特征字典，关联特征ID：<a-link @click="goFeatureDetail(topic.featureId)">{{ topic.featureId }}</a-link>
           </a-alert>
         </a-card>
       </a-tab-pane>
@@ -275,7 +275,7 @@
             </a-descriptions-item>
             <a-descriptions-item label="衔接到特征（Demo）">
               <a-space>
-                <a-button size="mini" @click="router.push('/variable-management')">查看特征台账</a-button>
+                <a-button size="mini" @click="router.push('/variable-management')">查看特征字典</a-button>
                 <a-button
                   v-if="topic?.relatedVariableIds?.[0]"
                   size="mini"

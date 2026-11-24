@@ -382,7 +382,7 @@ import {
 import { LIST_TYPES } from '@/modules/variable-hub/constants/riskCategoryMap'
 import { canEditField, getEditLockReason } from '@/modules/variable-hub/constants/midloanStatusMap'
 
-/** 注册入口：ledger = 特征台账（新增/审核）；derivation = 需求列表「去注册」*/
+/** 注册入口：ledger = 特征字典（新增/审核）；derivation = 需求列表「去注册」*/
 type RegisterSource = 'ledger' | 'derivation'
 /** 抽屉模式：create = 注册新特征；edit = 编辑既有特征（复用同一套表单与校验口径）*/
 type RegisterDrawerMode = 'create' | 'edit'
@@ -517,7 +517,7 @@ const alertText = computed(() => {
     return `编辑不会改变特征当前流程状态（${props.editData?.midloanStatus || props.editData?.status || '-'}），仅更新已填写的信息；名单类型（黑/白/灰）任何阶段都可调整，其余锁定字段灰显不可修改。`
   }
   if (isDerivationMode.value) {
-    return '需求受理单中已填写的信息已预填到下方表单，可在此基础上补充/修改。提交后将写入特征台账（状态「已提交」），并在需求列表中关联生成的特征ID。'
+    return '需求受理单中已填写的信息已预填到下方表单，可在此基础上补充/修改。提交后将写入特征字典（状态「已提交」），并在需求列表中关联生成的特征ID。'
   }
   if (isReviewMode.value) {
     return '管理员正在对 A1 需求进行审核+注册。提交后将自动完成：重复备案校验 + 参数映射 + 进入「已提交」状态。所有字段均可编辑修改，流程不做回退。'

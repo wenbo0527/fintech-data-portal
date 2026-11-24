@@ -58,7 +58,7 @@ const routes: RouteRecordRaw[] = [
         path: '/variable-management',
         name: 'VariableManagement',
         component: () => import('./modules/variable-hub/pages/variable-management/index.vue'),
-        meta: { title: '特征台账' }
+        meta: { title: '特征字典' }
       },
       {
         path: '/variable-management/detail/:id/:mode?',

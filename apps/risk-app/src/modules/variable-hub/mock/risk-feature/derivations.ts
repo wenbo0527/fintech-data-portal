@@ -5,8 +5,8 @@
  * - 需求受理 (requirement_accepted)：初始状态
  * - 需求驳回 (rejected)：驳回（含原因），不创建特征
  *
- * 特征台账 2 状态（对应 VariableAssetMock.midloanStatus）：
- * - 需求提出 (requirement_proposal)：需求受理后「去注册」时在特征台账生成
+ * 特征字典 2 状态（对应 VariableAssetMock.midloanStatus）：
+ * - 需求提出 (requirement_proposal)：需求受理后「去注册」时在特征字典生成
  * - 已注册 (registered)：注册完成后
  *
  * 需求ID：DRV-YYYYMMDD-NNNN
@@ -544,7 +544,7 @@ export const DerivationStore = {
     return record
   },
   /**
-   * 特征注册：写入注册信息并关联特征台账资产
+   * 特征注册：写入注册信息并关联特征字典资产
    * @param payload B1 注册表单载荷（由页面完成字段映射后传入）
    *                payload.featureId 优先使用（来自台账已有资产或新建草稿），
    *                未传时兜底生成 MIDLOAN-FEAT-NNNN（避开已有编号）
@@ -563,7 +563,7 @@ export const DerivationStore = {
     }
     d.registeredAt = new Date().toISOString().slice(0, 19).replace('T', ' ')
     d.updatedAt = d.registeredAt
-    // 需求状态保持为 requirement_accepted（注册状态由特征台账的 midloanStatus 跟踪）
+    // 需求状态保持为 requirement_accepted（注册状态由特征字典的 midloanStatus 跟踪）
     persist()
     return d
   },

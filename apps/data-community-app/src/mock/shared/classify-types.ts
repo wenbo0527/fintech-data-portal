@@ -6,6 +6,13 @@
 /** 敏感级别 */
 export type SensitivityLevel = 'L1' | 'L2' | 'L3' | 'L4'
 
+/**
+ * 字段上的敏感级别取值：在 4 级之外额外允许空串。
+ * 空串 = 该字段「待分级」（尚未定级），是「待分级表数」的唯一判定依据，
+ * 由 ClassifyStore 据此派生 coverage，不再依赖表上硬编码的百分比。
+ */
+export type ClassifyLevelValue = SensitivityLevel | ''
+
 /** 分级（业务分级） */
 export type Grade = '一般' | '重要' | '关键'
 
@@ -16,9 +23,11 @@ export type BusinessBelonging = '零售' | '对公' | '风控' | '运营' | '财
 export interface ClassifyField {
   field_name: string
   field_comment: string
-  business_belonging: BusinessBelonging
-  grade: Grade
-  sensitivity_level: SensitivityLevel
+  /** 空串表示待分级（未定级），与 sensitivity_level 一同置空 */
+  business_belonging: BusinessBelonging | ''
+  grade: Grade | ''
+  /** 空串表示待分级（未定级） */
+  sensitivity_level: ClassifyLevelValue
   category_l1: string
   category_l2: string
   category_l3: string
@@ -33,8 +42,12 @@ export interface ClassifyTable {
   table_comment: string
   owner: string
   fields: ClassifyField[]
-  /** 分级覆盖率 0-100 */
-  coverage: number
+  /**
+   * 分级覆盖率 0-100。
+   * 种子数据不再填写该字段：唯一事实源是字段本身，
+   * 由 ClassifyStore 按「已定级字段数 / 总字段数」派生（见 ClassifyTableView.coverage）。
+   */
+  coverage?: number
   updated_at: string
 }
 

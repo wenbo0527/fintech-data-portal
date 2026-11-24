@@ -67,9 +67,14 @@
                   <a-tag>{{ record.totalFields }}</a-tag>
                 </template>
               </a-table-column>
-              <a-table-column title="待分级" :width="80">
+              <a-table-column title="待分级" :width="110">
                 <template #cell="{ record }">
-                  <a-tag color="orange">{{ record.pendingFields }}</a-tag>
+                  <a-space :size="4">
+                    <a-tag color="orange">{{ record.pendingFields }}</a-tag>
+                    <a-tooltip v-if="record.inflight" :content="`该表已有 ${record.inflight} 张分级变更单在审批中`">
+                      <a-tag color="arcoblue">审批中</a-tag>
+                    </a-tooltip>
+                  </a-space>
                 </template>
               </a-table-column>
               <a-table-column title="进度" :width="200">
@@ -188,26 +193,49 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * 分级分类任务
+ *
+ * 2026-11：口径统一到 ClassifyStore —— 待分级字段数/覆盖率均由字段派生
+ * （此前直读 classify-modules 的普通数组，与表列表页容易漂移）；
+ * 同时带上在途分级变更单数，避免同一个表被重复发单。
+ */
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import PageHeader from '@/components-dca/common/PageHeader.vue'
-import { classifySystemsData } from '@/mock-shared/classify-modules'
+import { ClassifyStore } from '@/mock-shared/classify-store'
+import { ClassifyChangeStore } from '@/mock-shared/classify-change-store'
 import { SENSITIVITY_COLORS } from '@/mock-shared/classify-constants'
+import type { SensitivityLevel } from '@/mock-shared/classify-types'
+
+interface TaskRow {
+  key: string
+  system: string
+  systemId: string
+  schema: string
+  table_name: string
+  table_comment: string
+  owner: string
+  updated_at: string
+  totalFields: number
+  pendingFields: number
+  coverage: number
+  dist: Record<SensitivityLevel, number>
+  inflight: number
+  isDone: boolean
+}
 
 const router = useRouter()
 
 // 构造所有表的统一结构（带待分级/已分级判定 + 字段分布）
-const allTables = computed(() => {
-  const arr: any[] = []
-  classifySystemsData.forEach(sys => {
+const allTables = computed<TaskRow[]>(() => {
+  const rows: TaskRow[] = []
+  ClassifyStore.systems().forEach(sys => {
     sys.tables.forEach(t => {
-      const dist: any = { L1: 0, L2: 0, L3: 0, L4: 0 }
-      t.fields.forEach(f => { dist[f.sensitivity_level]++ })
-      const total = t.fields.length
-      const pending = total - (dist.L1 + dist.L2 + dist.L3 + dist.L4)
-      const covered = total - pending
-      const coverage = total === 0 ? 0 : Math.round((covered / total) * 100)
-      arr.push({
+      // 未定级字段不混进 L1–L4，单独计入 pendingFields
+      const dist: Record<SensitivityLevel, number> = { L1: 0, L2: 0, L3: 0, L4: 0 }
+      t.fields.forEach(f => { if (f.sensitivity_level) dist[f.sensitivity_level]++ })
+      rows.push({
         key: `${sys.id}__${t.table_name}`,
         system: sys.name,
         systemId: sys.id,
@@ -216,15 +244,16 @@ const allTables = computed(() => {
         table_comment: t.table_comment,
         owner: t.owner,
         updated_at: t.updated_at,
-        totalFields: total,
-        pendingFields: pending,
-        coverage,
+        totalFields: t.fields.length,
+        pendingFields: t.pendingFields,
+        coverage: t.coverage,
         dist,
-        isDone: coverage === 100
+        inflight: ClassifyChangeStore.pendingOfTable(t.schema, t.table_name).length,
+        isDone: t.coverage === 100
       })
     })
   })
-  return arr
+  return rows
 })
 
 const pendingTasks = computed(() => allTables.value.filter(t => !t.isDone))
@@ -241,7 +270,7 @@ const overallCoverage = computed(() => {
   return Math.round((sum / all.length) * 10) / 10
 })
 
-const goToTable = (t: any) => {
+const goToTable = (t: TaskRow) => {
   router.push(`/management/metadata/classify/table/${t.systemId}/${t.schema}/${t.table_name}`)
 }
 </script>

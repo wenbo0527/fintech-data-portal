@@ -2,18 +2,22 @@
  * F2/F4/F5 系统 + 表 + 字段 Mock 数据集
  * 5 数据源 + 20 张表 + ~100 字段
  * dmt-app（管理）+ dfd-app（消费）双侧共用
+ *
+ * 注意：本文件只提供「种子」，且刻意保留若干 sensitivity_level 为空串的字段 = 真实待分级。
+ * 需要运行时可写 + 派生覆盖率的数据请读 classify-store.ts（ClassifyStore）。
  */
-import type { ClassifySystem, ClassifyTable, ClassifyField, SensitivityLevel } from './classify-types'
+import type { ClassifySystem, ClassifyTable, ClassifyField, ClassifyLevelValue, Grade, BusinessBelonging } from './classify-types'
 
 /**
  * 工具：批量生成字段（同模板 + 自增序号）
+ * level 传空串 = 该字段待分级（用于让「待分级表数」由数据推导，而非硬编码百分比）
  */
 function genFields(
   schema: string,
   table: string,
   specs: Array<{
-    name: string; comment: string; belonging: ClassifyField['business_belonging'];
-    grade: ClassifyField['grade']; level: SensitivityLevel;
+    name: string; comment: string; belonging: BusinessBelonging | '';
+    grade: Grade | ''; level: ClassifyLevelValue;
     l1: string; l2: string; l3: string; l4: string
   }>
 ): ClassifyField[] {
@@ -35,7 +39,7 @@ function genFields(
 const hiveTables: ClassifyTable[] = [
   {
     schema: 'hive_dw', table_name: 'dwd_user_info', table_comment: '用户信息明细表',
-    owner: '张三', coverage: 100, updated_at: '2026-07-03',
+    owner: '张三', updated_at: '2026-07-03',
     fields: genFields('hive_dw', 'dwd_user_info', [
       { name: 'user_id', comment: '用户ID', belonging: '零售', grade: '一般', level: 'L2', l1: '客户信息', l2: '基础属性', l3: '用户标识', l4: '用户ID' },
       { name: 'mobile', comment: '手机号', belonging: '零售', grade: '重要', level: 'L3', l1: '客户信息', l2: '个人PII', l3: '联系方式', l4: '手机号' },
@@ -46,7 +50,7 @@ const hiveTables: ClassifyTable[] = [
   },
   {
     schema: 'hive_dw', table_name: 'dws_risk_score', table_comment: '风控评分汇总表',
-    owner: '李四', coverage: 100, updated_at: '2026-07-02',
+    owner: '李四', updated_at: '2026-07-02',
     fields: genFields('hive_dw', 'dws_risk_score', [
       { name: 'user_id', comment: '用户ID', belonging: '风控', grade: '一般', level: 'L2', l1: '客户信息', l2: '基础属性', l3: '用户标识', l4: '用户ID' },
       { name: 'credit_score', comment: '信用评分', belonging: '风控', grade: '重要', level: 'L3', l1: '风控', l2: '模型输入', l3: '评分特征', l4: '信用评分' },
@@ -56,22 +60,25 @@ const hiveTables: ClassifyTable[] = [
   },
   {
     schema: 'hive_dw', table_name: 'dwd_order_info', table_comment: '订单明细表',
-    owner: '王五', coverage: 80, updated_at: '2026-06-29',
+    owner: '王五', updated_at: '2026-06-29',
     fields: genFields('hive_dw', 'dwd_order_info', [
       { name: 'order_id', comment: '订单号', belonging: '零售', grade: '一般', level: 'L2', l1: '业务交易', l2: '订单', l3: '订单信息', l4: '订单号' },
       { name: 'user_id', comment: '用户ID', belonging: '零售', grade: '一般', level: 'L2', l1: '客户信息', l2: '基础属性', l3: '用户标识', l4: '用户ID' },
       { name: 'pay_amount', comment: '支付金额', belonging: '财务', grade: '重要', level: 'L3', l1: '业务交易', l2: '订单', l3: '支付信息', l4: '支付金额' },
-      { name: 'bank_card_no', comment: '银行卡号', belonging: '财务', grade: '关键', level: 'L4', l1: '业务交易', l2: '订单', l3: '支付信息', l4: '银行卡号' }
+      { name: 'bank_card_no', comment: '银行卡号', belonging: '财务', grade: '关键', level: 'L4', l1: '业务交易', l2: '订单', l3: '支付信息', l4: '银行卡号' },
+      { name: 'refund_amount', comment: '退款金额', belonging: '', grade: '', level: '', l1: '', l2: '', l3: '', l4: '' },
+      { name: 'device_id', comment: '下单设备号', belonging: '', grade: '', level: '', l1: '', l2: '', l3: '', l4: '' }
     ])
   },
   {
     schema: 'hive_dw', table_name: 'dws_user_tag', table_comment: '用户标签汇总表',
-    owner: '赵六', coverage: 100, updated_at: '2026-07-01',
+    owner: '赵六', updated_at: '2026-07-01',
     fields: genFields('hive_dw', 'dws_user_tag', [
       { name: 'user_id', comment: '用户ID', belonging: '运营', grade: '一般', level: 'L2', l1: '客户信息', l2: '基础属性', l3: '用户标识', l4: '用户ID' },
       { name: 'pref_marketing', comment: '营销偏好', belonging: '运营', grade: '一般', level: 'L2', l1: '运营', l2: '营销触达', l3: '客户标签', l4: '营销偏好' },
       { name: 'rfm_level', comment: 'RFM分层', belonging: '运营', grade: '一般', level: 'L2', l1: '运营', l2: '营销触达', l3: '客户标签', l4: 'RFM分层' },
-      { name: 'age_range', comment: '年龄段', belonging: '运营', grade: '一般', level: 'L2', l1: '运营', l2: '客户标签', l3: '人口属性', l4: '年龄段' }
+      { name: 'age_range', comment: '年龄段', belonging: '运营', grade: '一般', level: 'L2', l1: '运营', l2: '客户标签', l3: '人口属性', l4: '年龄段' },
+      { name: 'churn_score', comment: '流失概率评分', belonging: '', grade: '', level: '', l1: '', l2: '', l3: '', l4: '' }
     ])
   }
 ]
@@ -80,7 +87,7 @@ const hiveTables: ClassifyTable[] = [
 const coreTables: ClassifyTable[] = [
   {
     schema: 'crm_db', table_name: 't_user_info', table_comment: '用户主表',
-    owner: '钱七', coverage: 100, updated_at: '2026-07-03',
+    owner: '钱七', updated_at: '2026-07-03',
     fields: genFields('crm_db', 't_user_info', [
       { name: 'user_id', comment: '用户ID', belonging: '零售', grade: '一般', level: 'L2', l1: '客户信息', l2: '基础属性', l3: '用户标识', l4: '用户ID' },
       { name: 'mobile', comment: '手机号', belonging: '零售', grade: '重要', level: 'L3', l1: '客户信息', l2: '个人PII', l3: '联系方式', l4: '手机号' },
@@ -91,7 +98,7 @@ const coreTables: ClassifyTable[] = [
   },
   {
     schema: 'crm_db', table_name: 't_account', table_comment: '账户表',
-    owner: '孙八', coverage: 100, updated_at: '2026-07-02',
+    owner: '孙八', updated_at: '2026-07-02',
     fields: genFields('crm_db', 't_account', [
       { name: 'account_no', comment: '账户号', belonging: '财务', grade: '关键', level: 'L4', l1: '财务', l2: '账户', l3: '账户信息', l4: '账户号' },
       { name: 'balance', comment: '账户余额', belonging: '财务', grade: '关键', level: 'L4', l1: '财务', l2: '账户', l3: '余额信息', l4: '账户余额' },
@@ -101,17 +108,18 @@ const coreTables: ClassifyTable[] = [
   },
   {
     schema: 'core_db', table_name: 't_loan_apply', table_comment: '贷款申请表',
-    owner: '周九', coverage: 75, updated_at: '2026-06-30',
+    owner: '周九', updated_at: '2026-06-30',
     fields: genFields('core_db', 't_loan_apply', [
       { name: 'apply_id', comment: '申请编号', belonging: '零售', grade: '一般', level: 'L2', l1: '业务交易', l2: '订单', l3: '订单信息', l4: '订单号' },
       { name: 'user_id', comment: '用户ID', belonging: '零售', grade: '一般', level: 'L2', l1: '客户信息', l2: '基础属性', l3: '用户标识', l4: '用户ID' },
       { name: 'apply_amount', comment: '申请金额', belonging: '财务', grade: '重要', level: 'L3', l1: '业务交易', l2: '订单', l3: '支付信息', l4: '支付金额' },
-      { name: 'id_card', comment: '身份证号', belonging: '零售', grade: '关键', level: 'L4', l1: '客户信息', l2: '个人PII', l3: '身份信息', l4: '身份证号' }
+      { name: 'id_card', comment: '身份证号', belonging: '零售', grade: '关键', level: 'L4', l1: '客户信息', l2: '个人PII', l3: '身份信息', l4: '身份证号' },
+      { name: 'guarantee_type', comment: '担保方式', belonging: '', grade: '', level: '', l1: '', l2: '', l3: '', l4: '' }
     ])
   },
   {
     schema: 'core_db', table_name: 't_repay_plan', table_comment: '还款计划表',
-    owner: '吴十', coverage: 100, updated_at: '2026-07-01',
+    owner: '吴十', updated_at: '2026-07-01',
     fields: genFields('core_db', 't_repay_plan', [
       { name: 'plan_id', comment: '计划ID', belonging: '财务', grade: '一般', level: 'L1', l1: '业务交易', l2: '订单', l3: '订单信息', l4: '订单号' },
       { name: 'period', comment: '期次', belonging: '财务', grade: '一般', level: 'L1', l1: '财务', l2: '账单', l3: '账单信息', l4: '账单周期' },
@@ -124,7 +132,7 @@ const coreTables: ClassifyTable[] = [
 const collectionTables: ClassifyTable[] = [
   {
     schema: 'coll_db', table_name: 't_case', table_comment: '催收案件表',
-    owner: '郑十一', coverage: 100, updated_at: '2026-07-02',
+    owner: '郑十一', updated_at: '2026-07-02',
     fields: genFields('coll_db', 't_case', [
       { name: 'case_id', comment: '案件ID', belonging: '风控', grade: '一般', level: 'L2', l1: '业务交易', l2: '订单', l3: '订单信息', l4: '订单号' },
       { name: 'user_id', comment: '用户ID', belonging: '零售', grade: '一般', level: 'L2', l1: '客户信息', l2: '基础属性', l3: '用户标识', l4: '用户ID' },
@@ -134,7 +142,7 @@ const collectionTables: ClassifyTable[] = [
   },
   {
     schema: 'coll_db', table_name: 't_action_log', table_comment: '催收行动日志',
-    owner: '王十二', coverage: 100, updated_at: '2026-07-03',
+    owner: '王十二', updated_at: '2026-07-03',
     fields: genFields('coll_db', 't_action_log', [
       { name: 'action_id', comment: '行动ID', belonging: '风控', grade: '一般', level: 'L1', l1: '业务交易', l2: '订单', l3: '交易明细', l4: '交易时间' },
       { name: 'action_type', comment: '行动类型', belonging: '风控', grade: '一般', level: 'L1', l1: '业务交易', l2: '订单', l3: '交易明细', l4: '交易状态' }
@@ -142,15 +150,17 @@ const collectionTables: ClassifyTable[] = [
   },
   {
     schema: 'coll_db', table_name: 't_visit_record', table_comment: '外访记录表',
-    owner: '陈十三', coverage: 60, updated_at: '2026-06-25',
+    owner: '陈十三', updated_at: '2026-06-25',
     fields: genFields('coll_db', 't_visit_record', [
       { name: 'record_id', comment: '记录ID', belonging: '风控', grade: '一般', level: 'L1', l1: '业务交易', l2: '订单', l3: '交易明细', l4: '交易时间' },
-      { name: 'visit_address', comment: '外访地址', belonging: '零售', grade: '重要', level: 'L3', l1: '客户信息', l2: '个人PII', l3: '联系方式', l4: '家庭住址' }
+      { name: 'visit_address', comment: '外访地址', belonging: '零售', grade: '重要', level: 'L3', l1: '客户信息', l2: '个人PII', l3: '联系方式', l4: '家庭住址' },
+      { name: 'visit_time', comment: '外访时间', belonging: '', grade: '', level: '', l1: '', l2: '', l3: '', l4: '' },
+      { name: 'visit_result', comment: '外访结果', belonging: '', grade: '', level: '', l1: '', l2: '', l3: '', l4: '' }
     ])
   },
   {
     schema: 'coll_db', table_name: 't_outbound_call', table_comment: '外呼通话记录',
-    owner: '杨十四', coverage: 100, updated_at: '2026-07-01',
+    owner: '杨十四', updated_at: '2026-07-01',
     fields: genFields('coll_db', 't_outbound_call', [
       { name: 'call_id', comment: '通话ID', belonging: '风控', grade: '一般', level: 'L1', l1: '业务交易', l2: '订单', l3: '交易明细', l4: '交易时间' },
       { name: 'called_mobile', comment: '被叫号码', belonging: '零售', grade: '重要', level: 'L3', l1: '客户信息', l2: '个人PII', l3: '联系方式', l4: '手机号' }
@@ -162,7 +172,7 @@ const collectionTables: ClassifyTable[] = [
 const serviceTables: ClassifyTable[] = [
   {
     schema: 'cs_db', table_name: 't_ticket', table_comment: '工单主表',
-    owner: '黄十五', coverage: 100, updated_at: '2026-07-03',
+    owner: '黄十五', updated_at: '2026-07-03',
     fields: genFields('cs_db', 't_ticket', [
       { name: 'ticket_id', comment: '工单号', belonging: '运营', grade: '一般', level: 'L1', l1: '业务交易', l2: '订单', l3: '交易明细', l4: '交易时间' },
       { name: 'user_id', comment: '用户ID', belonging: '零售', grade: '一般', level: 'L2', l1: '客户信息', l2: '基础属性', l3: '用户标识', l4: '用户ID' },
@@ -171,7 +181,7 @@ const serviceTables: ClassifyTable[] = [
   },
   {
     schema: 'cs_db', table_name: 't_satisfaction', table_comment: '满意度评价',
-    owner: '刘十六', coverage: 100, updated_at: '2026-07-02',
+    owner: '刘十六', updated_at: '2026-07-02',
     fields: genFields('cs_db', 't_satisfaction', [
       { name: 'eval_id', comment: '评价ID', belonging: '运营', grade: '一般', level: 'L1', l1: '业务交易', l2: '订单', l3: '交易明细', l4: '交易时间' },
       { name: 'score', comment: '评分', belonging: '运营', grade: '一般', level: 'L1', l1: '运营', l2: '客户标签', l3: '人口属性', l4: '年龄段' }
@@ -179,7 +189,7 @@ const serviceTables: ClassifyTable[] = [
   },
   {
     schema: 'cs_db', table_name: 't_agent', table_comment: '坐席信息表',
-    owner: '徐十七', coverage: 100, updated_at: '2026-06-30',
+    owner: '徐十七', updated_at: '2026-06-30',
     fields: genFields('cs_db', 't_agent', [
       { name: 'agent_id', comment: '坐席ID', belonging: '运营', grade: '一般', level: 'L1', l1: '客户信息', l2: '基础属性', l3: '用户标识', l4: '用户ID' },
       { name: 'agent_name', comment: '坐席姓名', belonging: '运营', grade: '一般', level: 'L1', l1: '客户信息', l2: '基础属性', l3: '用户标识', l4: '客户编号' }
@@ -187,10 +197,11 @@ const serviceTables: ClassifyTable[] = [
   },
   {
     schema: 'cs_db', table_name: 't_call_recording', table_comment: '通话录音',
-    owner: '马十八', coverage: 80, updated_at: '2026-06-28',
+    owner: '马十八', updated_at: '2026-06-28',
     fields: genFields('cs_db', 't_call_recording', [
       { name: 'rec_id', comment: '录音ID', belonging: '运营', grade: '一般', level: 'L1', l1: '业务交易', l2: '订单', l3: '交易明细', l4: '交易时间' },
-      { name: 'user_mobile', comment: '用户手机', belonging: '零售', grade: '重要', level: 'L3', l1: '客户信息', l2: '个人PII', l3: '联系方式', l4: '手机号' }
+      { name: 'user_mobile', comment: '用户手机', belonging: '零售', grade: '重要', level: 'L3', l1: '客户信息', l2: '个人PII', l3: '联系方式', l4: '手机号' },
+      { name: 'rec_duration', comment: '录音时长(秒)', belonging: '', grade: '', level: '', l1: '', l2: '', l3: '', l4: '' }
     ])
   }
 ]
@@ -199,7 +210,7 @@ const serviceTables: ClassifyTable[] = [
 const riskTables: ClassifyTable[] = [
   {
     schema: 'risk_db', table_name: 't_decision', table_comment: '决策结果表',
-    owner: '胡十九', coverage: 100, updated_at: '2026-07-03',
+    owner: '胡十九', updated_at: '2026-07-03',
     fields: genFields('risk_db', 't_decision', [
       { name: 'decision_id', comment: '决策ID', belonging: '风控', grade: '一般', level: 'L2', l1: '风控', l2: '模型输出', l3: '决策结果', l4: '授信额度' },
       { name: 'user_id', comment: '用户ID', belonging: '零售', grade: '一般', level: 'L2', l1: '客户信息', l2: '基础属性', l3: '用户标识', l4: '用户ID' },
@@ -210,7 +221,7 @@ const riskTables: ClassifyTable[] = [
   },
   {
     schema: 'risk_db', table_name: 't_rule_hit', table_comment: '规则命中日志',
-    owner: '朱二十', coverage: 100, updated_at: '2026-07-02',
+    owner: '朱二十', updated_at: '2026-07-02',
     fields: genFields('risk_db', 't_rule_hit', [
       { name: 'hit_id', comment: '命中ID', belonging: '风控', grade: '一般', level: 'L1', l1: '业务交易', l2: '订单', l3: '交易明细', l4: '交易时间' },
       { name: 'rule_id', comment: '规则ID', belonging: '风控', grade: '一般', level: 'L1', l1: '风控', l2: '模型输入', l3: '评分特征', l4: '信用评分' }
@@ -218,7 +229,7 @@ const riskTables: ClassifyTable[] = [
   },
   {
     schema: 'risk_db', table_name: 't_feature', table_comment: '特征表',
-    owner: '秦廿一', coverage: 100, updated_at: '2026-07-01',
+    owner: '秦廿一', updated_at: '2026-07-01',
     fields: genFields('risk_db', 't_feature', [
       { name: 'feature_id', comment: '特征ID', belonging: '风控', grade: '一般', level: 'L1', l1: '风控', l2: '模型输入', l3: '评分特征', l4: '信用评分' },
       { name: 'feature_name', comment: '特征名', belonging: '风控', grade: '一般', level: 'L1', l1: '风控', l2: '模型输入', l3: '评分特征', l4: '欺诈评分' }
@@ -226,7 +237,7 @@ const riskTables: ClassifyTable[] = [
   },
   {
     schema: 'risk_db', table_name: 't_strategy', table_comment: '策略配置表',
-    owner: '尤廿二', coverage: 100, updated_at: '2026-06-30',
+    owner: '尤廿二', updated_at: '2026-06-30',
     fields: genFields('risk_db', 't_strategy', [
       { name: 'strategy_id', comment: '策略ID', belonging: '风控', grade: '一般', level: 'L1', l1: '风控', l2: '模型输出', l3: '决策结果', l4: '授信额度' },
       { name: 'strategy_name', comment: '策略名', belonging: '风控', grade: '一般', level: 'L1', l1: '风控', l2: '模型输出', l3: '决策结果', l4: '利率' }
@@ -273,12 +284,25 @@ export const classifyAllTables: Array<ClassifyTable & { system_id: string; syste
   sys.tables.map(t => ({ ...t, system_id: sys.id, system_name: sys.name }))
 )
 
-/** 统计卡数据（入口页顶部） */
-export const classifyStats = {
-  totalTables: classifyAllTables.length,
-  classifiedTables: classifyAllTables.filter(t => t.coverage === 100).length,
-  pendingTables: classifyAllTables.filter(t => t.coverage < 100).length,
-  coverageRate: Math.round(
-    (classifyAllTables.reduce((s, t) => s + t.coverage, 0) / classifyAllTables.length) * 10
-  ) / 10
+/**
+ * 派生分级覆盖率：已定级字段数 / 总字段数。
+ * 种子不再写 coverage，避免「硬编码百分比 vs 字段实况」两套口径漂移。
+ */
+export function deriveCoverage(t: ClassifyTable): number {
+  if (!t.fields.length) return 0
+  const classified = t.fields.filter(f => f.sensitivity_level !== '').length
+  return Math.round((classified / t.fields.length) * 100)
 }
+
+/** 统计卡数据（入口页顶部；运行时可写的口径请走 ClassifyStore.statsFor） */
+export const classifyStats = (() => {
+  const coverages = classifyAllTables.map(deriveCoverage)
+  return {
+    totalTables: classifyAllTables.length,
+    classifiedTables: coverages.filter(c => c === 100).length,
+    pendingTables: coverages.filter(c => c < 100).length,
+    coverageRate: Math.round(
+      (coverages.reduce((s, c) => s + c, 0) / classifyAllTables.length) * 10
+    ) / 10
+  }
+})()

@@ -115,6 +115,9 @@ const handleSceneClick = (scene: any) => {
     router.push({ name: 'RiskExternalDataOnlineCallApplication' })
   } else if (scene.serviceType === '外数回溯落库申请') {
     router.push({ name: 'RiskExternalDataBacktrackPersist' })
+  } else if (scene.serviceType === '外数离线回溯申请') {
+    // 离线回溯已参照回溯落库向导重构为独立申请页：持牌机构 + 样本 + 申请说明 → 样本库/CSV → 参数列绑定校验
+    router.push({ name: 'RiskExternalDataOfflineBacktrackApplication' })
   } else {
     currentServiceType.value = scene.serviceType
     drawerVisible.value = true

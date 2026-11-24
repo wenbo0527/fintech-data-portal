@@ -297,6 +297,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '外数线上调用服务申请' }
       },
       {
+        path: '/variable-hub/external-data/offline-backtrack-application',
+        name: 'RiskExternalDataOfflineBacktrackApplication',
+        component: () => import('./modules/external-data/pages/OfflineBacktrackApplication.vue'),
+        meta: { title: '外数离线回溯申请' }
+      },
+      {
         path: '/variable-hub/external-data/backtrack-persist',
         name: 'RiskExternalDataBacktrackPersist',
         component: () => import('./modules/external-data/pages/BacktrackPersist.vue'),

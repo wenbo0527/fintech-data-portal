@@ -39,6 +39,11 @@ function simulateDelay(min = 300, max = 1000) {
  * 特征中心相关API
  */
 export const featureAPI = {
+  // 特征业务类别标准口径枚举（外数 / 征信 / 行为 / 其他），同步返回
+  getFeatureBizTypes() {
+    return featureMock.FEATURE_BIZ_TYPES
+  },
+
   // 获取特征列表
   async getFeatures(params) {
     await simulateDelay()

@@ -327,9 +327,10 @@ function seedBulkInputMappings(count = 700) {
       midloanFeatureIds: ['MIDLOAN-FEAT-0001'],
       // 底表来源：从变量中心 modelBaseMonthlyTableName 联动
       midloanBaseTable: 'risk_dw.ads_midloan_bigtxn_30d_m',
+      // 入参映射：user_age/user_income 属「其他」大类，必须携带关联口径（hasDataDt + dateField/cacheDays 或全量关联），复制任务时才能直接闭环
       inputMappings: [
-        { input: 'age', target: 'user_age', from: '当前模型', source: 'feature' },
-        { input: 'income', target: 'user_income', from: '当前模型', source: 'feature' },
+        { input: 'age', target: 'user_age', from: '当前模型', source: 'feature', hasDataDt: true, dateField: 'data_dt', cacheDays: 7 },
+        { input: 'income', target: 'user_income', from: '当前模型', source: 'feature', hasDataDt: false, dateField: '', cacheDays: null },
         { input: 'credit_history', target: 'credit_history', from: '当前模型', source: 'sample' }
       ],
       outputs: seedOutputs,
@@ -381,8 +382,8 @@ function seedBulkInputMappings(count = 700) {
       sqlWhere: "dt >= '2026-08-01' AND status = 'active'",
       featurePersist: false,
       inputMappings: [
-        { input: 'age', target: 'user_age', from: '当前模型', source: 'feature' },
-        { input: 'income', target: 'user_income', from: '当前模型', source: 'feature' }
+        { input: 'age', target: 'user_age', from: '当前模型', source: 'feature', hasDataDt: true, dateField: 'watch_dt', cacheDays: 30 },
+        { input: 'income', target: 'user_income', from: '当前模型', source: 'feature', hasDataDt: false, dateField: '', cacheDays: null }
       ],
       outputs: seedOutputs,
       requiredFieldMappings: seedRequiredMappings({ business_code: 'risk_biz', session_number: '' }),
@@ -464,9 +465,10 @@ function seedBulkInputMappings(count = 700) {
       taskName: '信用评分V3-全量回溯',
       sqlWhere: "dt >= '2026-07-01' AND dt <= '2026-07-31' AND cert_no IS NOT NULL",
       featurePersist: true,
+      // 「其他」大类关联口径示范：此任务用反方向搭配（age 全量、income 带缓存），与任务1对照
       inputMappings: [
-        { input: 'age', target: 'user_age', from: '当前模型', source: 'feature' },
-        { input: 'income', target: 'user_income', from: '当前模型', source: 'feature' },
+        { input: 'age', target: 'user_age', from: '当前模型', source: 'feature', hasDataDt: false, dateField: '', cacheDays: null },
+        { input: 'income', target: 'user_income', from: '当前模型', source: 'feature', hasDataDt: true, dateField: 'data_dt', cacheDays: 15 },
         { input: 'credit_history', target: 'credit_history', from: '当前模型', source: 'sample' }
       ],
       outputs: seedOutputs,
@@ -527,9 +529,11 @@ function seedBulkInputMappings(count = 700) {
       taskName: '风险评分V1-周期回溯',
       sqlWhere: "dt >= '2026-08-01' AND dt <= '2026-08-14' AND status = 'active'",
       featurePersist: false,
+      // 故意保留一行口径变更前保存的历史映射（user_gender 属 ACTIVE「其他」大类且无 hasDataDt 系字段）：复制该任务时此行回「待确认关联口径」态，验证向后兼容；
+      // 注：user_income 在特征字典中是 PENDING 状态，不在创建页 ACTIVE 清单内，不会触发口径门槛，不能用作历史演示位
       inputMappings: [
-        { input: 'age', target: 'user_age', from: '当前模型', source: 'feature' },
-        { input: 'income', target: 'user_income', from: '当前模型', source: 'feature' }
+        { input: 'age', target: 'user_age', from: '当前模型', source: 'feature', hasDataDt: true, dateField: 'data_dt', cacheDays: 3 },
+        { input: 'gender', target: 'user_gender', from: '当前模型', source: 'feature' }
       ],
       outputs: seedOutputs,
       requiredFieldMappings: seedRequiredMappings({ business_code: '', session_number: '' }),

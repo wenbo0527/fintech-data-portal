@@ -573,9 +573,10 @@
             请先完成步骤三：拉取样本表数据
           </a-alert>
           <div class="section-tip">
-            为每个模型入参选择取值来源：<b>优先样本表</b>——入参名与步骤三拉取的样本字段同名时自动命中样本表、无需关联配置；「特征中心」映射已配置特征（支持搜索），「样本表」直接映射样本字段；
-            已匹配 {{ matchedCount }} / {{ inputMappings.length }}，未匹配 {{ inputMappings.length - matchedCount }}；未匹配行置顶，匹配完成后沉底
+            模型入参的取值来源分两张表展示：<b>需手动匹配</b>——先看第一张表，系统命中不了的入参在这里人工选择或用「一键入参匹配」批量处理；命中「其他」大类特征后需确认关联方式：存在 data_dt 关联 → 选日期字段与缓存天数，无 → 全量关联；
+            <b>系统后端自动匹配</b>——第二张表只读汇总由系统按样本表 / 特征底表同名字段直接命中的行（数量多，分页展示），特征类型统一按业务类别口径（外数 / 征信 / 行为 / 其他）标注；已匹配 {{ matchedCount }} / {{ inputMappings.length }}（系统 {{ autoRows.length }}、手动 {{ matchedCount - autoRows.length }}），待手动匹配 {{ manualUnmatchedCount }}
           </div>
+          <div class="group-title">需手动匹配<span class="group-title-count">{{ manualRows.length }} 条（未匹配 {{ manualUnmatchedCount }} 置顶，完成后沉底）</span></div>
           <div class="table-search-row">
             <a-input-search
               v-model="mappingSearch"
@@ -601,7 +602,7 @@
             </a-tooltip>
           </div>
           <a-table
-            :data="filteredInputMappings"
+            :data="filteredManualMappings"
             :columns="mappingDefs"
             row-key="rowKey"
             size="small"
@@ -611,6 +612,9 @@
               <a-tooltip :content="`入参来自模型服务：${record.from || '当前模型'}`">
                 <span class="expr-anchor">{{ record.name }}</span>
               </a-tooltip>
+            </template>
+            <template #bizCell="{ record }">
+              <span>{{ autoBizLabel(record) || '—' }}</span>
             </template>
             <template #sourceCell="{ record }">
               <a-select
@@ -655,7 +659,7 @@
                 :not-found-content="featureSearchLoading && featureSearchActiveRowKey === record.rowKey ? '搜索中…' : '无匹配特征'"
                 @popup-visible-change="(v) => v && triggerFeatureSearch(record.rowKey, '')"
                 @search="(kw) => triggerFeatureSearch(record.rowKey, kw)"
-                @change="(v) => { record.target = v; updateInputStatus(record); }"
+                @change="(v) => { record.target = v; resetInputAssoc(record); updateInputStatus(record); }"
               >
                 <a-option
                   v-for="f in (featureSearchActiveRowKey === record.rowKey ? featureSearchResults : (record.target ? [{ name: record.target, code: record.target, description: '当前已选' }] : []))"
@@ -663,16 +667,82 @@
                   :value="f.code || f.name"
                   :label="f.code || f.name"
                 >
-                  {{ f.name }} <span class="col-type">{{ f.type || '' }}</span>
+                  {{ f.name }} <span class="col-type">{{ bizLabelOfOption(f) }}</span>
                 </a-option>
               </a-select>
+              <!-- 「其他」大类（非标准）特征：系统不知道关联口径，必须由人工确认 data_dt 关联 or 全量关联 -->
+              <div v-if="isOtherFeatureRow(record)" class="other-assoc">
+                <a-radio-group
+                  v-model="record.hasDataDt"
+                  size="mini"
+                  type="button"
+                  @change="() => onHasDataDtChange(record)"
+                >
+                  <a-radio :value="true">存在 data_dt 关联</a-radio>
+                  <a-radio :value="false">无 · 全量关联</a-radio>
+                </a-radio-group>
+                <template v-if="record.hasDataDt === true">
+                  <a-select
+                    v-model="record.dateField"
+                    size="mini"
+                    placeholder="关联日期字段"
+                    :trigger-props="dropdownFitContent"
+                    style="width: 148px;"
+                    @change="() => updateInputStatus(record)"
+                  >
+                    <a-option v-for="d in OTHER_ASSOC_DATE_FIELDS" :key="d" :value="d">{{ d }}</a-option>
+                  </a-select>
+                  <a-input-number
+                    v-model="record.cacheDays"
+                    size="mini"
+                    :min="0"
+                    :max="365"
+                    :precision="0"
+                    hide-button
+                    placeholder="缓存天数"
+                    style="width: 118px;"
+                    @change="() => updateInputStatus(record)"
+                  >
+                    <template #suffix>天</template>
+                  </a-input-number>
+                </template>
+                <a-tag v-if="record.hasDataDt === false" color="gray" size="small">全量关联</a-tag>
+              </div>
             </template>
             <template #statusCell="{ record }">
-              <a-tag :color="record.status === 'matched' ? 'green' : 'red'" class="status-tag">
-                {{ record.status === 'matched' ? '已匹配' : '未匹配' }}
-              </a-tag>
+              <a-tooltip :content="inputRowMissing(record).length ? '待补：' + inputRowMissing(record).join('、') : '映射完整'">
+                <a-tag :color="record.status === 'matched' ? 'green' : 'red'" class="status-tag">
+                  {{ record.status === 'matched' ? '已匹配' : '未匹配' }}
+                </a-tag>
+              </a-tooltip>
             </template>
           </a-table>
+          <!-- 系统同名命中行：命中量大，置于手动表之后，固定五列只读 + 分页汇总展示 -->
+          <template v-if="autoRows.length">
+            <div class="group-title" style="margin-top: 16px;">系统后端自动匹配（样本表 / 特征底表同名字段命中）<span class="group-title-count">{{ autoRows.length }} 条</span></div>
+            <a-table
+              :data="filteredAutoRows"
+              :columns="autoMappingDefs"
+              row-key="rowKey"
+              size="small"
+              :pagination="{ defaultPageSize: 50, pageSizeOptions: [20, 50, 100, 200], showPageSize: true, showTotal: true }"
+            >
+              <template #nameCell="{ record }">
+                <a-tooltip :content="`入参来自模型服务：${record.from || '当前模型'}`">
+                  <span class="expr-anchor">{{ record.name }}</span>
+                </a-tooltip>
+              </template>
+              <template #autoBizCell="{ record }">
+                <span>{{ autoBizLabel(record) || '—' }}</span>
+              </template>
+              <template #autoSourceCell="{ record }">
+                <a-tag :color="record.source === 'sample' ? 'arcoblue' : 'green'" size="small">{{ inputSources[record.source] || record.source }}</a-tag>
+              </template>
+              <template #autoStatusCell>
+                <a-tag color="green" class="status-tag">已匹配</a-tag>
+              </template>
+            </a-table>
+          </template>
         </a-collapse-item>
 
         <!-- 步骤六：输出信息 -->
@@ -885,13 +955,67 @@ const onSourceTableChange = (record, val) => {
 
 // ============ 步骤五：入参匹配（取值来源：特征中心 / 样本表） ============
 const inputSources = ref({})
+// 特征业务类别标准口径（外数 / 征信 / 行为 / 其他），由特征中心枚举接口下发
+const featureBizTypes = ref({})
+// 按映射目标反查特征业务类别：自动表来源标签与下拉选项共用同一口径
+const bizLabelOfTarget = (target) => {
+  const f = featureTargets.value.find(x => (x.code || x.name) === target)
+  return f ? (featureBizTypes.value[f.featureType] || '') : ''
+}
+const bizLabelOfOption = (f) => (f && featureBizTypes.value[f.featureType]) || bizLabelOfTarget(f && (f.code || f.name))
+// 自动表「特征类型」列：特征中心行按 code 反查业务类别，样本表行按样本字段元数据 featureType 口径
+const autoBizLabel = (record) => {
+  if (record.source === 'sample') {
+    const c = tableColumns.value.find(x => x.name === record.target)
+    return c?.featureType ? (featureBizTypes.value[c.featureType] || '') : ''
+  }
+  return bizLabelOfTarget(record.target)
+}
+
+// 「其他」大类（非标准）特征的关联口径：存在 data_dt 关联 → 选日期字段（watch_dt 锚点系）+ 缓存天数；无 → 全量关联
+const OTHER_ASSOC_DATE_FIELDS = ['data_dt', 'watch_dt', 'report_dt', 'update_time']
+const INPUT_ASSOC_DEFAULTS = { hasDataDt: null, dateField: '', cacheDays: null }
+const isOtherFeatureRow = (record) => {
+  if (record.source !== 'feature' || !record.target) return false
+  const f = featureTargets.value.find(x => (x.code || x.name) === record.target)
+  return f?.featureType === 'other'
+}
+// 换特征/换来源即重置关联配置：口径跟着具体特征走，不得残留旧值
+const resetInputAssoc = (record) => {
+  record.hasDataDt = null
+  record.dateField = ''
+  record.cacheDays = null
+}
+const onHasDataDtChange = (record) => {
+  if (record.hasDataDt === false) {
+    record.dateField = ''
+    record.cacheDays = null
+  }
+  updateInputStatus(record)
+}
+// 行完整性：映射目标必选；「其他」大类特征还要关联口径闭环（未选 data_dt / 选了但缺日期字段或缓存天数均算待补）
+const inputRowMissing = (record) => {
+  if (!record.target) return ['映射目标']
+  if (isOtherFeatureRow(record)) {
+    if (record.hasDataDt !== true && record.hasDataDt !== false) return ['是否存在data_dt关联']
+    if (record.hasDataDt === true) {
+      const missing = []
+      if (!record.dateField) missing.push('关联日期字段')
+      if (isNil(record.cacheDays)) missing.push('缓存天数')
+      return missing
+    }
+  }
+  return []
+}
 // N = 未匹配入参数（按全量行统计，与搜索过滤无关）
 const unmatchedInputCount = computed(() => inputMappings.value.filter(r => !r.target).length)
 
-// 切换取值来源：两个通道取值空间不同，清空已选映射避免脏数据
+// 切换取值来源：两个通道取值空间不同，清空已选映射避免脏数据；人工介入即脱离系统自动口径
 const onInputSourceChange = (record, val) => {
   record.source = val === 'sample' ? 'sample' : 'feature'
   record.target = ''
+  record.autoMatched = false
+  resetInputAssoc(record)
   updateInputStatus(record)
 }
 
@@ -909,24 +1033,56 @@ const applySamplePriority = () => {
     r.source = 'sample'
     r.target = same.name
     r.status = 'matched'
+    r.autoMatched = true
     hit += 1
   })
   return hit
 }
 
 /**
- * 入参行初始映射种子：优先样本表（已拉取且同名）→ 特征中心同名 → 空。
+ * 特征底表同名补漏：特征全量清单异步加载完成后，对未匹配行按入参名=特征 code 自动命中特征中心通道；
+ * 不触碰已人工/已样本命中的行，覆盖列表晚于模型选择到达的竞态
+ */
+const applyFeaturePriority = () => {
+  if (!featureTargets.value.length) return { hit: 0, other: 0 }
+  let hit = 0
+  let other = 0
+  inputMappings.value.forEach((r) => {
+    if (r.target) return
+    const same = featureTargets.value.find(f => (f.code || f.name) === r.name)
+    if (!same) return
+    r.source = 'feature'
+    r.target = same.code || same.name
+    // 「其他」大类仅同名预填：关联口径待人工确认，留在手动表
+    if (same.featureType === 'other') {
+      r.autoMatched = false
+      other += 1
+    } else {
+      r.autoMatched = true
+      hit += 1
+    }
+    updateInputStatus(r)
+  })
+  return { hit, other }
+}
+
+/**
+ * 入参行初始映射种子：优先样本表（已拉取且同名）→ 特征中心同名（入参为英文字段名，按特征 code 匹配）→ 空。
  * 与「优先匹配样本表字段，样本表存在则无需关联」的需求一致：
  * 样本表已有则直接取，不占特征中心通道
  */
 const pickInitialInputMapping = (name) => {
   if (sampleReady.value) {
     const sampleCol = tableColumns.value.find(c => c.name === name)
-    if (sampleCol) return { source: 'sample', target: sampleCol.name, status: 'matched' }
+    if (sampleCol) return { source: 'sample', target: sampleCol.name, status: 'matched', autoMatched: true, ...INPUT_ASSOC_DEFAULTS }
   }
-  const feature = featureTargets.value.find(f => f.name === name)
-  if (feature) return { source: 'feature', target: feature.name, status: 'matched' }
-  return { source: 'feature', target: '', status: 'unmatched' }
+  const feature = featureTargets.value.find(f => (f.code || f.name) === name)
+  if (feature) {
+    // 「其他」大类特征口径不确定：同名预填但留在手动表，需人工确认 data_dt 关联或全量关联
+    if (feature.featureType === 'other') return { source: 'feature', target: feature.code || feature.name, status: 'unmatched', autoMatched: false, ...INPUT_ASSOC_DEFAULTS }
+    return { source: 'feature', target: feature.code || feature.name, status: 'matched', autoMatched: true, ...INPUT_ASSOC_DEFAULTS }
+  }
+  return { source: 'feature', target: '', status: 'unmatched', autoMatched: false, ...INPUT_ASSOC_DEFAULTS }
 }
 
 /**
@@ -948,13 +1104,14 @@ const autoMatchFromSample = () => {
     const same = tableColumns.value.find(c => c.name === r.name)
     if (same) {
       r.target = same.name
+      r.autoMatched = true
       hit += 1
     } else {
       miss += 1
     }
     updateInputStatus(r)
   })
-  const tips = [`已按同名字段匹配 ${hit} 个入参`]
+  const tips = [`已按同名字段匹配 ${hit} 个入参（移入「系统后端自动匹配」表）`]
   if (miss) {
     tips.push(`${miss} 个入参样本表无同名字段，来源已置为样本表，请手动选择`)
   }
@@ -1103,14 +1260,27 @@ const featureSearchResults = ref([])        // 当前激活行的搜索结果
 const featureSearchLoading = ref(false)
 const featureSearchActiveRowKey = ref('')   // 当前展开搜索的行 rowKey
 const featureSearchTimers = new Map()       // 防抖：每行一个 timer
+// 手动表与系统表同口径五列：入参名 / 特征类型（随已选目标联动，未匹配显 —）/ 来源 / 映射目标 / 状态
 const mappingDefs = [
   { title: '入参名', dataIndex: 'name', slotName: 'nameCell', width: 150 },
-  { title: '类型', dataIndex: 'type', width: 100 },
+  { title: '特征类型', slotName: 'bizCell', width: 96, align: 'center' },
   { title: '来源', dataIndex: 'source', slotName: 'sourceCell', width: 120 },
   { title: '映射到特征/字段', dataIndex: 'target', slotName: 'targetCell', width: 300 },
   { title: '状态', dataIndex: 'status', slotName: 'statusCell', width: 90, align: 'center' }
 ]
+// 系统自动匹配表只读五列：入参名 / 特征类型（外数·征信·行为·其他标准口径）/ 来源 / 映射目标 / 状态
+const autoMappingDefs = [
+  { title: '入参名', dataIndex: 'name', slotName: 'nameCell', width: 150 },
+  { title: '特征类型', slotName: 'autoBizCell', width: 96, align: 'center' },
+  { title: '来源', dataIndex: 'source', slotName: 'autoSourceCell', width: 110 },
+  { title: '映射到特征/字段', dataIndex: 'target', width: 300, ellipsis: true, tooltip: true },
+  { title: '状态', dataIndex: 'status', slotName: 'autoStatusCell', width: 90, align: 'center' }
+]
 const matchedCount = computed(() => inputMappings.value.filter(i => i.status === 'matched').length)
+// 步骤五双表拆分：系统同名命中行（autoMatched 且已有映射）只读上表，其余进「需手动匹配」可编辑下表
+const autoRows = computed(() => inputMappings.value.filter(r => r.autoMatched && !!r.target))
+const manualRows = computed(() => inputMappings.value.filter(r => !(r.autoMatched && !!r.target)))
+const manualUnmatchedCount = computed(() => manualRows.value.filter(r => r.status !== 'matched').length)
 
 // 步骤三/四/五：按名称列前端搜索过滤（不区分大小写）
 const requiredSearch = ref('')
@@ -1121,13 +1291,14 @@ const filteredRequiredMappings = computed(() => {
   if (!kw) return requiredMappings.value
   return requiredMappings.value.filter(r => (r.name || '').toLowerCase().includes(kw))
 })
-// 步骤五排序：待办队列式——未匹配行置顶、已匹配沉底（组内保持原顺序），配合分页可逐页处理大入参；
-// 行匹配完成的瞬间会离开当前视野，由后续未匹配行补位
-const filteredInputMappings = computed(() => {
+// 搜索关键词对两张表同时生效；手动表保持待办队列式——未匹配置顶、已匹配沉底（组内原序），匹配完成瞬间离开视野由后续行补位
+const byNameKw = (rows) => {
   const kw = (mappingSearch.value || '').trim().toLowerCase()
-  const rows = kw
-    ? inputMappings.value.filter(r => (r.name || '').toLowerCase().includes(kw))
-    : inputMappings.value
+  return kw ? rows.filter(r => (r.name || '').toLowerCase().includes(kw)) : rows
+}
+const filteredAutoRows = computed(() => byNameKw(autoRows.value))
+const filteredManualMappings = computed(() => {
+  const rows = byNameKw(manualRows.value)
   return [...rows.filter(r => r.status !== 'matched'), ...rows.filter(r => r.status === 'matched')]
 })
 const filteredModelOutputs = computed(() => {
@@ -1218,12 +1389,12 @@ const handleTableValidate = async () => {
       { name: 'data_dt', type: 'date', comment: '数据日期' },
       { name: 'business_code', type: 'varchar(20)', comment: '业务编码' },
       { name: 'session_number', type: 'varchar(32)', comment: '会话编号' },
-      { name: 'cert_no', type: 'varchar(18)', comment: '证件号码' },
-      { name: 'user_id', type: 'bigint', comment: '用户ID' },
-      { name: 'mobile', type: 'varchar(11)', comment: '手机号' },
-      { name: 'age', type: 'int', comment: '年龄' },
-      { name: 'income', type: 'decimal(18,2)', comment: '收入' },
-      { name: 'credit_history', type: 'varchar(10)', comment: '信用历史' },
+      { name: 'cert_no', type: 'varchar(18)', comment: '证件号码', featureType: 'other' },
+      { name: 'user_id', type: 'bigint', comment: '用户ID', featureType: 'other' },
+      { name: 'mobile', type: 'varchar(11)', comment: '手机号', featureType: 'other' },
+      { name: 'age', type: 'int', comment: '年龄', featureType: 'other' },
+      { name: 'income', type: 'decimal(18,2)', comment: '收入', featureType: 'other' },
+      { name: 'credit_history', type: 'varchar(10)', comment: '信用历史', featureType: 'credit' },
       { name: 'status', type: 'varchar(10)', comment: '状态' },
       { name: 'update_time', type: 'datetime', comment: '更新时间' }
     ]
@@ -1347,6 +1518,13 @@ const loadEnumOptions = () => {
   sourceTableTypes.value = backtrackAPI.getSourceTableTypes() || {}
   watchDateField.value = backtrackAPI.getWatchDateField() || 'watch_dt'
   inputSources.value = backtrackAPI.getInputMatchSources() || { feature: '特征中心', sample: '样本表' }
+  featureBizTypes.value = featureAPI.getFeatureBizTypes() || { external: '外数', credit: '征信', behavior: '行为', other: '其他' }
+  // 特征中心已配置特征全量清单：步骤五「特征底表同名自动命中」的种子数据源；异步到达后对已选模型的未匹配行做同名补漏
+  featureAPI.getFeatures({ status: 'active', pageSize: 200 }).then((res) => {
+    featureTargets.value = res?.success ? (res.data?.data || []) : []
+    const { hit, other } = applyFeaturePriority()
+    if (hit + other) Message.info(`特征底表同名命中 ${hit + other} 个入参${other ? `，其中 ${other} 个「其他」大类需确认关联口径` : ''}`)
+  })
 }
 loadEnumOptions()
 
@@ -1382,8 +1560,19 @@ const prefillFromCopy = async (copyFromId) => {
         const fromSvc = m.from === '当前模型' ? modelForm.value.serviceName : m.from
         const found = cfg.inputMappings.find(x => x.input === m.name && (!x.serviceName || x.serviceName === fromSvc))
         const target = found?.target || ''
-        // 历史数据无 source 时按特征中心口径回填
-        return { ...m, target, source: found?.source === 'sample' ? 'sample' : 'feature', status: target ? 'matched' : 'unmatched' }
+        // 历史数据无 source 时按特征中心口径回填；复制任务映射来自历史配置，不算本次系统同名命中，一律进手动表
+        const row = {
+          ...m,
+          target,
+          source: found?.source === 'sample' ? 'sample' : 'feature',
+          autoMatched: false,
+          // 「其他」大类关联配置随源任务回填；历史数据无此字段时回到待确认态
+          hasDataDt: found?.hasDataDt ?? null,
+          dateField: found?.dateField || '',
+          cacheDays: isNil(found?.cacheDays) ? null : found.cacheDays
+        }
+        row.status = inputRowMissing(row).length ? 'unmatched' : 'matched'
+        return row
       })
     }
     if (Array.isArray(cfg.requiredFieldMappings) && cfg.requiredFieldMappings.length) {
@@ -1538,7 +1727,7 @@ const updateRequiredStatus = (record) => {
   record.status = isRequiredRowComplete(record) ? 'matched' : 'unmatched'
 }
 const updateInputStatus = (record) => {
-  record.status = record.target ? 'matched' : 'unmatched'
+  record.status = inputRowMissing(record).length ? 'unmatched' : 'matched'
 }
 
 const onTaskDateRangeChange = (dateString, date) => {
@@ -1587,7 +1776,11 @@ const handleSubmit = async () => {
       target: m.target,
       // 取值来源：feature=特征中心已配置特征，sample=直接取样本表字段；无来源历史数据按 feature 口径
       source: m.source === 'sample' ? 'sample' : 'feature',
-      from: m.from
+      from: m.from,
+      // 「其他」大类特征的关联口径（data_dt 关联 + 缓存 / 全量），其余行为默认空值
+      hasDataDt: m.hasDataDt ?? null,
+      dateField: m.dateField || '',
+      cacheDays: isNil(m.cacheDays) ? null : m.cacheDays
     }))
     const payload = {
       table: sampleForm.value.tableNameInput,
@@ -1786,6 +1979,13 @@ const handleCancel = () => {
   color: var(--color-text-3);
   margin-bottom: 10px;
 }
+
+/* 步骤五双表分组标题 */
+.group-title { font-size: 13px; font-weight: 600; color: var(--color-text-1); margin: 4px 0 8px; }
+.group-title-count { font-weight: 400; color: var(--color-text-3); margin-left: 6px; }
+
+/* 「其他」大类特征的关联口径配置行 */
+.other-assoc { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
 
 /* 表格上方工具行：搜索框居左，快捷按钮居右（两者高度不同，按垂直居中对齐） */
 .table-search-row {

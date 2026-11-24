@@ -6,6 +6,9 @@ import mockAPI from '@/modules/offline-model/mock'
 
 // 特征中心相关API
 export const featureAPI = {
+  // 特征业务类别标准口径枚举（外数 / 征信 / 行为 / 其他）
+  getFeatureBizTypes: () => mockAPI.feature.getFeatureBizTypes(),
+
   // 获取特征列表
   getFeatures: (params) => mockAPI.feature.getFeatures(params),
   

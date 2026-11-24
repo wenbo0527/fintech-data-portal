@@ -194,22 +194,34 @@
             </a-table>
           </a-collapse-item>
 
-          <!-- 步骤五：入参匹配 -->
+          <!-- 步骤五：入参匹配（与创建页同口径五列：入参名/特征类型/来源/映射到特征字段/状态；「其他」大类另展示关联口径） -->
           <a-collapse-item key="match" header="步骤五：入参匹配">
             <div class="section-tip">
-              已匹配 {{ matchedInputCount }} / {{ (detail.config?.inputMappings || []).length }}，未匹配 {{ (detail.config?.inputMappings || []).length - matchedInputCount }}
+              已匹配 {{ matchedInputCount }} / {{ (detail.config?.inputMappings || []).length }}，未匹配 {{ (detail.config?.inputMappings || []).length - matchedInputCount }}<template v-if="assocPendingCount">，<b class="assoc-pending">{{ assocPendingCount }} 条「其他」大类关联口径待确认</b></template>（特征类型按标准口径：外数 / 征信 / 行为 / 其他）
             </div>
             <a-table
               :data="detail.config?.inputMappings || []"
               :columns="inputCols"
+              :scroll="{ x: inputTableWidth }"
               row-key="input"
               size="small"
               :pagination="false"
             >
+              <template #bizCell="{ record }">
+                <a-tag v-if="inputBizLabel(record)" :color="record.source === 'sample' ? 'gray' : 'green'" size="small">{{ inputBizLabel(record) }}</a-tag>
+                <span v-else class="cell-na">—</span>
+              </template>
               <template #sourceTagCell="{ record }">
                 <a-tag :color="record.source === 'sample' ? 'green' : 'arcoblue'" size="small">
                   {{ inputSourceLabel(record.source) }}
                 </a-tag>
+              </template>
+              <template #targetCell="{ record }">
+                <span v-if="!record.target" class="cell-na">—</span>
+                <template v-else>
+                  <span class="cell-mono">{{ record.target }}</span>
+                  <a-tag v-if="assocLabel(record)" :color="assocColor(record)" size="small">{{ assocLabel(record) }}</a-tag>
+                </template>
               </template>
               <template #statusCell="{ record }">
                 <a-tag :color="record.target ? 'green' : 'red'">
@@ -288,7 +300,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
-import { backtrackAPI } from '@/modules/offline-model/api'
+import { backtrackAPI, featureAPI } from '@/modules/offline-model/api'
 import {
   getBacktrackRouteParams,
   isFromRiskModule,
@@ -350,12 +362,48 @@ const requiredTableWidth = computed(() => requiredCols.value.reduce((sum, c) => 
 const inputMatchSources = backtrackAPI.getInputMatchSources() || { feature: '特征中心', sample: '样本表' }
 const inputSourceLabel = (s) => inputMatchSources[s === 'sample' ? 'sample' : 'feature']
 
+// 特征类型标准口径（外数/征信/行为/其他）：与创建页同源——枚举同步取，ACTIVE 清单异步取后反查
+const featureBizTypes = ref(featureAPI.getFeatureBizTypes?.() || { external: '外数', credit: '征信', behavior: '行为', other: '其他' })
+const featureTypeByCode = ref({})
+const loadFeatureTypes = async () => {
+  try {
+    const res = await featureAPI.getFeatures({ status: 'active', pageSize: 200 })
+    if (res?.success) {
+      const map = {}
+      ;(res.data?.data || []).forEach((f) => { if (f.featureType) map[f.code || f.name] = f.featureType })
+      featureTypeByCode.value = map
+    }
+  } catch { /* 清单加载失败时特征类型列降级为 —，不阻断详情展示 */ }
+}
+// 行级业务类别：仅特征中心通道按 code 反查；样本表字段类型随样本元数据、任务配置未落盘，历史任务不补标签
+const inputBizLabel = (record) => {
+  if (!record.target || record.source === 'sample') return ''
+  const t = featureTypeByCode.value[record.target]
+  return t ? (featureBizTypes.value[t] || '') : ''
+}
+const isOtherRow = (record) => record.source !== 'sample' && !!record.target && featureTypeByCode.value[record.target] === 'other'
+// 「其他」大类关联口径回显：存在 data_dt 关联→日期字段+缓存天数；无→全量；历史无口径字段→待确认
+const assocLabel = (record) => {
+  if (!isOtherRow(record) || !record.target) return ''
+  if (record.hasDataDt === true) return `${record.dateField || '—'} 关联${record.cacheDays === null || record.cacheDays === undefined ? '' : ` · 缓存${record.cacheDays}天`}`
+  if (record.hasDataDt === false) return '全量关联'
+  return '口径待确认'
+}
+const assocColor = (record) => {
+  const l = assocLabel(record)
+  if (l === '口径待确认') return 'orange'
+  if (l === '全量关联') return 'gray'
+  return 'arcoblue'
+}
+
 const inputCols = [
-  { title: '入参', dataIndex: 'input', width: 150 },
+  { title: '入参名', dataIndex: 'input', width: 150 },
+  { title: '特征类型', slotName: 'bizCell', width: 96, align: 'center' },
   { title: '来源', dataIndex: 'source', slotName: 'sourceTagCell', width: 110, align: 'center' },
-  { title: '映射到特征/字段', dataIndex: 'target', width: 220 },
+  { title: '映射到特征/字段', dataIndex: 'target', slotName: 'targetCell', width: 260 },
   { title: '状态', slotName: 'statusCell', width: 110, align: 'center' }
 ]
+const inputTableWidth = computed(() => inputCols.reduce((sum, c) => sum + (c.width || 0), 0))
 const outputCols = [
   { title: '出参名', dataIndex: 'name', width: 180 },
   { title: '类型', dataIndex: 'type', width: 140 },
@@ -364,6 +412,10 @@ const outputCols = [
 
 const matchedInputCount = computed(() => {
   return (detail.value.config?.inputMappings || []).filter(m => m.target).length
+})
+// 口径待确认计数（历史映射无 hasDataDt 系字段）
+const assocPendingCount = computed(() => {
+  return (detail.value.config?.inputMappings || []).filter(m => isOtherRow(m) && m.hasDataDt !== true && m.hasDataDt !== false).length
 })
 
 const statusColor = computed(() => {
@@ -448,7 +500,10 @@ const handleStop = async () => {
   }
 }
 
-onMounted(loadDetail)
+onMounted(() => {
+  loadDetail()
+  loadFeatureTypes()
+})
 </script>
 
 <style scoped>
@@ -495,5 +550,7 @@ onMounted(loadDetail)
   padding: 2px 6px;
   border-radius: 4px;
 }
+/* 入参匹配（步骤五）：口径待确认强提示 */
+.assoc-pending { color: rgb(var(--orange-6)); }
 :deep(.arco-collapse-item-header) { font-weight: 500; }
 </style>

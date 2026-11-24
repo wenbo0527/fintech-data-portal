@@ -544,6 +544,30 @@ const platformModels = [
     fileSize: '68MB'
   }
   ,
+  // 双表命中演示服务：步骤五「系统后端自动匹配 / 需手动匹配」双表拆分的标准样本，入参名与 mock 口径强耦合，勿随意改名
+  {
+    serviceName: 'dual_match_demo_service',
+    name: '双表命中演示模型服务',
+    code: 'dual_match_demo_model',
+    version: 'v1.0.0',
+    framework: FRAMEWORKS.SKLEARN,
+    type: MODEL_TYPES.CLASSIFICATION,
+    description: '入参含样本表同名(age/income)、特征底表同名(overdue_count 外数自动命中、loan_amount 其他大类同名预填待确认关联口径)、需手动匹配(device_risk_tag/custom_ind)，演示步骤五双表拆分与「其他」大类口径级联',
+    pkFields: ['cert_no', 'flow_id'],
+    inputs: [
+      { name: 'age', type: 'number', description: '与样本表同名字段 → 系统自动匹配' },
+      { name: 'income', type: 'number', description: '与样本表同名字段 → 系统自动匹配' },
+      { name: 'loan_amount', type: 'number', description: '与特征底表「其他」大类特征同名 → 同名预填，需人工确认关联口径（data_dt 或全量）' },
+      { name: 'overdue_count', type: 'number', description: '与特征底表已配置特征同名 → 系统自动匹配' },
+      { name: 'device_risk_tag', type: 'number', description: '无任何同名 → 需手动匹配' },
+      { name: 'custom_ind', type: 'number', description: '无任何同名 → 需手动匹配' }
+    ],
+    outputs: [
+      { name: 'demo_score', type: 'number', description: '演示模型分' }
+    ],
+    fileUrl: '/platform/models/dual_match_demo_model_v1.pkl'
+  }
+  ,
   // 大入参演示模型：700 个入参，用于验证步骤五『入参匹配』长列表渲染/搜索/一键入参匹配
   {
     serviceName: 'bulk_feature_score_service',

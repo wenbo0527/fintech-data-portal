@@ -48,10 +48,15 @@
           </a-table-column>
           <a-table-column title="机构名称" data-index="agencyName" ellipsis tooltip />
           <a-table-column title="社会统一征信编号" data-index="licenseNo" :width="200" ellipsis tooltip />
-          <a-table-column title="SFTP 连接" :width="230">
+          <a-table-column title="SFTP 连接" :width="280">
             <template #cell="{ record }">
               <div class="mono sftp-cell">{{ record.sftp.host }}:{{ record.sftp.port }}</div>
-              <div class="mono sftp-cell dim">{{ record.sftp.directory }}</div>
+              <div class="mono sftp-cell dim">
+                <span class="sftp-dir-tag is-download">下载</span>{{ record.sftp.downloadDirectory || '—' }}
+              </div>
+              <div class="mono sftp-cell dim">
+                <span class="sftp-dir-tag is-upload">上传</span>{{ record.sftp.uploadDirectory || '—' }}
+              </div>
             </template>
           </a-table-column>
           <a-table-column title="路径管理策略" :width="150">
@@ -93,7 +98,8 @@
       :width="720"
       :title="isEdit ? '编辑合作机构' : '新增合作机构'"
       :ok-loading="submitting"
-      @ok="handleSubmit"
+      @before-ok="handleSubmit"
+      @cancel="submitting = false"
     >
       <a-form ref="formRef" :model="form" :rules="rules" layout="vertical">
         <a-divider orientation="left">基础信息</a-divider>
@@ -129,6 +135,7 @@
         <a-divider orientation="left">SFTP 连接配置</a-divider>
         <a-alert type="info" style="margin-bottom: 16px">
           保存前必须通过 SFTP 连接测试；修改任一 SFTP 参数后需重新测试（R05 / R09）。
+          同一台 SFTP 上两个方向各占一个目录：下载目录取机构回传文件，上传目录交我方样本文件。
         </a-alert>
         <a-row :gutter="16">
           <a-col :span="16">
@@ -154,9 +161,34 @@
             </a-form-item>
           </a-col>
         </a-row>
-        <a-form-item label="目录路径" field="sftp.directory" required help="末尾可省略 /，系统自动补齐">
-          <a-input v-model="form.sftp.directory" placeholder="如 /sftp/external_retro/baihang/download/" allow-clear />
-        </a-form-item>
+        <!-- 目标路径分两个方向：机构往下载目录回传，我方往上传目录提交 -->
+        <a-row :gutter="16">
+          <a-col :span="12">
+            <a-form-item
+              label="下载目录（机构回传）"
+              field="sftp.downloadDirectory"
+              required
+              help="外数回溯落库向导从该目录拉取结果文件；末尾可省略 /，系统自动补齐"
+            >
+              <a-input
+                v-model="form.sftp.downloadDirectory"
+                placeholder="如 /sftp/external_retro/baihang/download/"
+                allow-clear
+                @change="onDownloadDirChange"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item
+              label="上传目录（我方提交）"
+              field="sftp.uploadDirectory"
+              required
+              help="我方上传样本文件 / 申请清单到这里等机构取数；机构未单独告知时按同一根目录下的 upload 子目录填写"
+            >
+              <a-input v-model="form.sftp.uploadDirectory" placeholder="如 /sftp/external_retro/baihang/upload/" allow-clear />
+            </a-form-item>
+          </a-col>
+        </a-row>
         <a-form-item>
           <a-space>
             <a-button :loading="testing" @click="handleTestConnection">
@@ -192,8 +224,18 @@
         <a-descriptions-item label="SFTP 用户名">
           <span class="mono">{{ current.sftp?.username }}</span>
         </a-descriptions-item>
-        <a-descriptions-item label="SFTP 目录">
-          <span class="mono">{{ current.sftp?.directory }}</span>
+        <!-- 目标路径区分两个方向，避免把拉取目录当成提交目录用 -->
+        <a-descriptions-item label="SFTP 目标路径">
+          <div class="sftp-path">
+            <a-tag size="small" color="green">下载</a-tag>
+            <span class="mono">{{ current.sftp?.downloadDirectory || '—' }}</span>
+            <span class="sftp-path-tip">机构回传文件，外数回溯落库从此目录拉取</span>
+          </div>
+          <div class="sftp-path">
+            <a-tag size="small" color="orange">上传</a-tag>
+            <span class="mono">{{ current.sftp?.uploadDirectory || '—' }}</span>
+            <span class="sftp-path-tip">我方提交样本 / 申请清单，等机构取数</span>
+          </div>
         </a-descriptions-item>
         <a-descriptions-item label="备注">{{ current.remark || '—' }}</a-descriptions-item>
         <a-descriptions-item label="创建信息">{{ current.createdBy }} · {{ current.createdAt }}</a-descriptions-item>
@@ -225,7 +267,7 @@ const emptyForm = (): Partial<CreditAgency> & { sftp: CreditAgency['sftp'] } => 
   licenseNo: '',
   status: '启用',
   pathStrategy: 'fixed',
-  sftp: { host: '', port: 22, username: '', password: '', directory: '' },
+  sftp: { host: '', port: 22, username: '', password: '', downloadDirectory: '', uploadDirectory: '' },
   /** 联系人与电话业务上不涉及，已从表单与列表移除，仅保留字段以兼容存量数据 */
   contactPerson: '',
   contactPhone: '',
@@ -299,7 +341,8 @@ const rules = {
   'sftp.port': [{ required: true, message: '请输入 SFTP 端口' }],
   'sftp.username': [{ required: true, message: '请输入 SFTP 用户名' }],
   'sftp.password': [{ required: true, message: '请输入 SFTP 密码 / 密钥' }],
-  'sftp.directory': [{ required: true, message: '请输入 SFTP 目录路径' }],
+  'sftp.downloadDirectory': [{ required: true, message: '请输入 SFTP 下载目录（机构回传）' }],
+  'sftp.uploadDirectory': [{ required: true, message: '请输入 SFTP 上传目录（我方提交）' }],
 }
 
 /** 连接测试结果标记 */
@@ -322,6 +365,16 @@ const openEdit = (record: CreditAgency) => {
   testPassed.value = false
   testFailed.value = false
   drawerVisible.value = true
+}
+
+/**
+ * 下载目录变化时顺手推一个上传目录候选
+ * 机构实际普遍按同一根目录下的 download / upload 成对配置，已填过上传目录则不覆盖
+ */
+const onDownloadDirChange = () => {
+  const download = String(form.sftp.downloadDirectory || '')
+  if (form.sftp.uploadDirectory || !download.includes('download')) {return}
+  form.sftp.uploadDirectory = download.replace('download', 'upload')
 }
 
 /** 查看详情 */
@@ -352,11 +405,15 @@ const handleTestConnection = async () => {
   }
 }
 
-/** 提交保存（E2 编码重复 / E3 必填缺失由表单与 mock 层校验） */
-const handleSubmit = async () => {
+/**
+ * 提交保存（E2 编码重复 / E3 必填缺失由表单与 mock 层校验）
+ * 走 before-ok 而不是 ok：抽屉默认页脚点「确定」后无条件收起，校验没过或保存
+ * 报错时整张表单直接丢失、只能重头再填；返回 false 才能把抽屉留在原地。
+ */
+const handleSubmit = async (): Promise<boolean> => {
   // Arco validate() 校验通过时 resolve undefined、失败时 resolve errors 对象，不能按布尔语义反着判
   const errors = await formRef.value?.validate()
-  if (errors) return
+  if (errors) return false
   submitting.value = true
   try {
     if (isEdit.value) {
@@ -366,10 +423,11 @@ const handleSubmit = async () => {
       await addCreditAgency(form)
       Message.success('机构新增成功，状态为「启用」')
     }
-    drawerVisible.value = false
     await loadAgencies()
+    return true
   } catch (e: any) {
     Message.error(e?.message ?? '保存失败')
+    return false
   } finally {
     submitting.value = false
   }
@@ -424,6 +482,41 @@ onMounted(loadAgencies)
 }
 
 .dim {
+  color: var(--color-text-3);
+}
+
+/* 列表里的目录方向标签（下载 / 上传） */
+.sftp-dir-tag {
+  display: inline-block;
+  min-width: 32px;
+  margin-right: 4px;
+  padding: 0 4px;
+  font-size: 11px;
+  text-align: center;
+  border-radius: 2px;
+}
+
+.sftp-dir-tag.is-download {
+  color: var(--green-6);
+  background: var(--color-success-light-1);
+}
+
+.sftp-dir-tag.is-upload {
+  color: var(--orange-6);
+  background: var(--color-warning-light-1);
+}
+
+/* 详情里的目标路径行：方向标签 + 路径 + 用途说明 */
+.sftp-path {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  line-height: 22px;
+}
+
+.sftp-path-tip {
+  font-size: 12px;
   color: var(--color-text-3);
 }
 </style>

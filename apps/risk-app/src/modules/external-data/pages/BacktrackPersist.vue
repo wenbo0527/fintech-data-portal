@@ -98,8 +98,13 @@
                     <a-descriptions-item label="用户名">
                       <span class="mono">{{ sftpParams.username }}</span>
                     </a-descriptions-item>
-                    <a-descriptions-item label="目录">
-                      <span class="mono">{{ sftpParams.directory }}</span>
+                    <a-descriptions-item label="下载目录">
+                      <span class="mono">{{ sftpParams.downloadDirectory }}</span>
+                      <span class="table-tip">（机构回传文件，我方在此拉取）</span>
+                    </a-descriptions-item>
+                    <a-descriptions-item label="上传目录">
+                      <span class="mono">{{ sftpParams.uploadDirectory }}</span>
+                      <span class="table-tip">（我方提交样本，等机构取数）</span>
                     </a-descriptions-item>
                   </a-descriptions>
                   <span v-else class="table-tip">请先选择机构</span>
@@ -120,7 +125,7 @@
             <a-form :model="formModel" layout="vertical">
               <a-row :gutter="16">
                 <a-col :span="14">
-                  <a-form-item label="SFTP 目录路径" required help="R13：选择机构后自动带入，末尾自动补 /">
+                  <a-form-item label="SFTP 下载目录" required help="R13：取机构回传文件的目录，选机构后自动带入，末尾自动补 /">
                     <a-input v-model="sftpDir" placeholder="如 /sftp/external_retro/baihang/download/" allow-clear />
                   </a-form-item>
                 </a-col>

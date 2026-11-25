@@ -3,7 +3,7 @@
  * 需求文档《外数文件落库》B1（R13-R27）
  *
  * 数据来源说明：
- *   1. 目录根路径取自 mock/creditAgencies.ts 各机构的 sftp.directory（download 目录）；
+ *   1. 目录根路径取自 mock/creditAgencies.ts 各机构的 sftp.downloadDirectory（机构回传的下载目录）；
  *   2. 文件名沿用 BacktrackPersist.vue 既有命名（BH_RETRO_* / PD_BACK_* / QT_resp_*），
  *      扩展为统一 CSV 格式以符合 R17「全链路只接受 CSV」；
  *   3. 文件结构（编码 / 分隔符 / 字段数）按各机构返回文件的常见形态构造，供 R20 文件结构识别展示；
@@ -349,7 +349,7 @@ export const archiveContentCatalog: Record<string, RetroTreeNode[]> = {
 /**
  * 各机构 SFTP 目录树（支持文件夹 / CSV / 压缩包三级节点）
  * 数据来源说明：
- *   1. 根路径为各机构 sftp.directory（download 目录），由页面自动带入（R13）；
+ *   1. 根路径为各机构 sftp.downloadDirectory（下载目录），由页面自动带入（R13）；
  *   2. 目录下按「月份子目录 + 历史归档目录」组织，贴近机构实际回传习惯；
  *   3. 压缩包节点不带 children，包内文件由 archiveContentCatalog 在解压后下发；
  *   4. 压缩包节点 encrypted 表示「压缩包加密」，需先解密再解压（R17/R19）。

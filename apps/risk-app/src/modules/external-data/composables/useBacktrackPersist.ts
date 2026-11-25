@@ -385,7 +385,7 @@ export function useBacktrackPersist() {
   const fullFilePath = computed(() => {
     const a = selectedAgency.value
     if (!a) return ''
-    const dir = (sftpDir.value || a.sftp.directory).replace(/\/+$/, '')
+    const dir = (sftpDir.value || a.sftp.downloadDirectory).replace(/\/+$/, '')
     const node = selectedTreeNode.value
     if (!node) return `${dir}/`
     return `${dir}/${node.path}`
@@ -427,7 +427,7 @@ export function useBacktrackPersist() {
 
   /** 切换机构：重置目录树，自动带出 SFTP 配置（R13） */
   const onAgencyChange = async () => {
-    sftpDir.value = selectedAgency.value?.sftp.directory ?? ''
+    sftpDir.value = selectedAgency.value?.sftp.downloadDirectory ?? ''
     retroTree.value = []
     selectedTreeNode.value = null
     extractedArchive.value = null
@@ -1796,7 +1796,7 @@ ${stackArgs}
   const restoreFromResumeContext = async (ctx: TaskResumeContext): Promise<number> => {
     // 1. 机构：切换机构后需重载该机构的产品与前置外发任务，否则映射区无可选项
     selectedAgencyId.value = ctx.agencyId
-    sftpDir.value = selectedAgency.value?.sftp.directory ?? ''
+    sftpDir.value = selectedAgency.value?.sftp.downloadDirectory ?? ''
     dataSourceMode.value = 'sftp'
     await loadRetroTree()
     await loadProducts()

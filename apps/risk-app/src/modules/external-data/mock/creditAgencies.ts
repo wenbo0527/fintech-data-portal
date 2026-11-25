@@ -10,6 +10,7 @@
  *   1. 机构名单以 R09 列出的十二家工商登记全称为准（本文件是唯一事实源），
  *      档案的「合作机构」下拉、回溯落库的机构选项都仍从本文件取，不得另写一份常量；
  *   2. SFTP 连接参数、路径管理策略为文档 R04/R07 新增字段，无历史来源，按业务约定构造；
+ *      下载目录（机构回传）与上传目录（我方提交样本）按同一根目录下的 download / upload 两个子目录成对配置；
  *   3. 业务上不区分个人征信 / 企业征信，机构主数据不再维护「机构类型」维度（字段已整体下线）。
  *
  * 本文件充当「内存数据库」，供 api/creditAgency.ts 在 VITE_USE_MOCK=true 时短路调用。
@@ -21,14 +22,21 @@ export type AgencyStatus = '启用' | '停用'
 /** 路径管理策略（R07：钱塘等机构定期自动清理历史路径文件） */
 export type PathStrategy = 'fixed' | 'auto_clean'
 
-/** SFTP 连接配置（R04：IP、端口、用户名、密码、目录路径均为必填） */
+/**
+ * SFTP 连接配置（R04：IP、端口、用户名、密码、目录路径均为必填）
+ * 同一台 SFTP 上机构与我方各占一个目录，两个方向不能混用：
+ *   - downloadDirectory：机构回传目录，我方从这里「下载」回溯结果文件（R13/R14 拉取入口）；
+ *   - uploadDirectory：我方提交目录，样本文件 / 申请清单「上传」到这里等机构取数。
+ */
 export interface AgencySftpConfig {
   host: string
   port: number
   username: string
   password: string
-  /** SFTP 目录路径，末尾自动补 '/'（R14） */
-  directory: string
+  /** 下载目录（机构回传文件所在目录），末尾自动补 '/'（R14） */
+  downloadDirectory: string
+  /** 上传目录（我方提交样本文件的目录），末尾自动补 '/' */
+  uploadDirectory: string
 }
 
 /** 合作机构主数据 */
@@ -65,7 +73,7 @@ export const creditAgenciesMock: CreditAgency[] = [
     status: '启用',
     pathStrategy: 'fixed',
     pathStrategyDesc: '返回文件固定保存在 download 目录，历史文件不会自动清理',
-    sftp: { host: '10.21.8.31', port: 22, username: 'bh_sftp', password: '****', directory: '/sftp/external_retro/baihang/download/' },
+    sftp: { host: '10.21.8.31', port: 22, username: 'bh_sftp', password: '****', downloadDirectory: '/sftp/external_retro/baihang/download/', uploadDirectory: '/sftp/external_retro/baihang/upload/' },
     contactPerson: '张明',
     contactPhone: '021-98765432',
     remark: '多头借贷类回溯数据主要来源',
@@ -82,7 +90,7 @@ export const creditAgenciesMock: CreditAgency[] = [
     status: '启用',
     pathStrategy: 'fixed',
     pathStrategyDesc: '返回文件固定保存在 download 目录，历史文件不会自动清理',
-    sftp: { host: '10.21.8.42', port: 22, username: 'pd_sftp', password: '****', directory: '/sftp/external_retro/pudao/download/' },
+    sftp: { host: '10.21.8.42', port: 22, username: 'pd_sftp', password: '****', downloadDirectory: '/sftp/external_retro/pudao/download/', uploadDirectory: '/sftp/external_retro/pudao/upload/' },
     contactPerson: '李慧',
     contactPhone: '0755-11223344',
     remark: '逾期明细类回溯数据来源',
@@ -99,7 +107,7 @@ export const creditAgenciesMock: CreditAgency[] = [
     status: '启用',
     pathStrategy: 'auto_clean',
     pathStrategyDesc: '会定期自动清理历史路径文件，请及时处理最新返回文件',
-    sftp: { host: '10.21.8.57', port: 22, username: 'qt_sftp', password: '****', directory: '/sftp/external_retro/qiantang/download/' },
+    sftp: { host: '10.21.8.57', port: 22, username: 'qt_sftp', password: '****', downloadDirectory: '/sftp/external_retro/qiantang/download/', uploadDirectory: '/sftp/external_retro/qiantang/upload/' },
     contactPerson: '王强',
     contactPhone: '0571-55667788',
     remark: '授信评分回溯数据来源；解密密钥随机生成，需线下向渠道对接方获取',
@@ -116,7 +124,7 @@ export const creditAgenciesMock: CreditAgency[] = [
     status: '启用',
     pathStrategy: 'fixed',
     pathStrategyDesc: '返回文件固定保存在 download 目录，历史文件不会自动清理',
-    sftp: { host: '10.21.8.61', port: 22, username: 'pbcc_sftp', password: '****', directory: '/sftp/external_retro/pbcc/download/' },
+    sftp: { host: '10.21.8.61', port: 22, username: 'pbcc_sftp', password: '****', downloadDirectory: '/sftp/external_retro/pbcc/download/', uploadDirectory: '/sftp/external_retro/pbcc/upload/' },
     contactPerson: '刘敏',
     contactPhone: '010-62345678',
     remark: '公共基础征信信息来源',
@@ -137,7 +145,7 @@ export const creditAgenciesMock: CreditAgency[] = [
     status: '启用',
     pathStrategy: 'fixed',
     pathStrategyDesc: '返回文件固定保存在 download 目录，历史文件不会自动清理',
-    sftp: { host: '10.21.8.73', port: 22, username: 'shgj_sftp', password: '****', directory: '/sftp/external_retro/shgj/download/' },
+    sftp: { host: '10.21.8.73', port: 22, username: 'shgj_sftp', password: '****', downloadDirectory: '/sftp/external_retro/shgj/download/', uploadDirectory: '/sftp/external_retro/shgj/upload/' },
     contactPerson: '陈昊',
     contactPhone: '021-55667788',
     remark: '上数金科外数数据来源',
@@ -154,7 +162,7 @@ export const creditAgenciesMock: CreditAgency[] = [
     status: '停用',
     pathStrategy: 'auto_clean',
     pathStrategyDesc: '会定期自动清理历史路径文件，请及时处理最新返回文件',
-    sftp: { host: '10.21.8.88', port: 22, username: 'xmxx_sftp', password: '****', directory: '/sftp/external_retro/xmxx/download/' },
+    sftp: { host: '10.21.8.88', port: 22, username: 'xmxx_sftp', password: '****', downloadDirectory: '/sftp/external_retro/xmxx/download/', uploadDirectory: '/sftp/external_retro/xmxx/upload/' },
     contactPerson: '赵磊',
     contactPhone: '0592-22334455',
     remark: '合作到期已停用；已有落库记录保留机构信息快照（R10）',
@@ -171,7 +179,7 @@ export const creditAgenciesMock: CreditAgency[] = [
     status: '启用',
     pathStrategy: 'fixed',
     pathStrategyDesc: '返回文件固定保存在 download 目录，历史文件不会自动清理',
-    sftp: { host: '10.21.8.91', port: 22, username: 'zgbx_sftp', password: '****', directory: '/sftp/external_retro/zgbx/download/' },
+    sftp: { host: '10.21.8.91', port: 22, username: 'zgbx_sftp', password: '****', downloadDirectory: '/sftp/external_retro/zgbx/download/', uploadDirectory: '/sftp/external_retro/zgbx/upload/' },
     contactPerson: '吴静',
     contactPhone: '010-88990011',
     remark: '银保行业共享平台数据来源',
@@ -188,7 +196,7 @@ export const creditAgenciesMock: CreditAgency[] = [
     status: '启用',
     pathStrategy: 'auto_clean',
     pathStrategyDesc: '会定期自动清理历史路径文件，请及时处理最新返回文件',
-    sftp: { host: '10.21.8.92', port: 22, username: 'rqn_sftp', password: '****', directory: '/sftp/external_retro/rqn/download/' },
+    sftp: { host: '10.21.8.92', port: 22, username: 'rqn_sftp', password: '****', downloadDirectory: '/sftp/external_retro/rqn/download/', uploadDirectory: '/sftp/external_retro/rqn/upload/' },
     contactPerson: '孙倩',
     contactPhone: '010-77889900',
     remark: '多头与行为类特征数据',
@@ -205,7 +213,7 @@ export const creditAgenciesMock: CreditAgency[] = [
     status: '启用',
     pathStrategy: 'fixed',
     pathStrategyDesc: '返回文件固定保存在 download 目录，历史文件不会自动清理',
-    sftp: { host: '10.21.8.93', port: 22, username: 'shlx_sftp', password: '****', directory: '/sftp/external_retro/shlx/download/' },
+    sftp: { host: '10.21.8.93', port: 22, username: 'shlx_sftp', password: '****', downloadDirectory: '/sftp/external_retro/shlx/download/', uploadDirectory: '/sftp/external_retro/shlx/upload/' },
     contactPerson: '郑爱丽',
     contactPhone: '021-66778899',
     remark: '运营商与位置类数据',
@@ -222,7 +230,7 @@ export const creditAgenciesMock: CreditAgency[] = [
     status: '停用',
     pathStrategy: 'auto_clean',
     pathStrategyDesc: '会定期自动清理历史路径文件，请及时处理最新返回文件',
-    sftp: { host: '10.21.8.94', port: 22, username: 'bjyd_sftp', password: '****', directory: '/sftp/external_retro/bjyd/download/' },
+    sftp: { host: '10.21.8.94', port: 22, username: 'bjyd_sftp', password: '****', downloadDirectory: '/sftp/external_retro/bjyd/download/', uploadDirectory: '/sftp/external_retro/bjyd/upload/' },
     contactPerson: '冯洋',
     contactPhone: '010-55667788',
     remark: '在网时长核验合作已到期',
@@ -239,7 +247,7 @@ export const creditAgenciesMock: CreditAgency[] = [
     status: '启用',
     pathStrategy: 'fixed',
     pathStrategyDesc: '返回文件固定保存在 download 目录，历史文件不会自动清理',
-    sftp: { host: '10.21.8.95', port: 22, username: 'yljz_sftp', password: '****', directory: '/sftp/external_retro/yljz/download/' },
+    sftp: { host: '10.21.8.95', port: 22, username: 'yljz_sftp', password: '****', downloadDirectory: '/sftp/external_retro/yljz/download/', uploadDirectory: '/sftp/external_retro/yljz/upload/' },
     contactPerson: '许岚',
     contactPhone: '010-44556677',
     remark: '模型分与风险评级类数据',
@@ -260,7 +268,7 @@ export const creditAgenciesMock: CreditAgency[] = [
     status: '启用',
     pathStrategy: 'fixed',
     pathStrategyDesc: '返回文件固定保存在 download 目录，历史文件不会自动清理',
-    sftp: { host: '10.21.8.96', port: 22, username: 'xuexin_sftp', password: '****', directory: '/sftp/external_retro/xuexin/download/' },
+    sftp: { host: '10.21.8.96', port: 22, username: 'xuexin_sftp', password: '****', downloadDirectory: '/sftp/external_retro/xuexin/download/', uploadDirectory: '/sftp/external_retro/xuexin/upload/' },
     contactPerson: '苗雨',
     contactPhone: '010-62515053',
     remark: '运营主体：教育部学生服务与素质发展中心；学籍/学历核验数据唯一来源',
@@ -299,7 +307,7 @@ export async function createCreditAgency(payload: Partial<CreditAgency>) {
     status: payload.status || '启用',
     pathStrategy: payload.pathStrategy || 'fixed',
     pathStrategyDesc: payload.pathStrategy === 'auto_clean' ? '会定期自动清理历史路径文件，请及时处理最新返回文件' : '返回文件固定保存在 download 目录，历史文件不会自动清理',
-    sftp: payload.sftp || { host: '', port: 22, username: '', password: '', directory: '' },
+    sftp: payload.sftp || { host: '', port: 22, username: '', password: '', downloadDirectory: '', uploadDirectory: '' },
     contactPerson: payload.contactPerson || '',
     contactPhone: payload.contactPhone || '',
     remark: payload.remark || '',
@@ -325,21 +333,27 @@ export async function updateCreditAgency(id: string, payload: Partial<CreditAgen
 
 /**
  * SFTP 连接测试（R05 / R09 保存前必须通过）
+ * 两个目录分别验证权限：下载目录要可读（拉取回传文件），上传目录要可写（提交样本文件）
  * mock 实现：按主机名规则模拟三类失败场景，便于演示 E1 异常提示
  */
 export async function testAgencySftpConnection(payload: Partial<AgencySftpConfig>) {
   const host = (payload.host || '').trim()
   const port = payload.port || 22
-  const directory = (payload.directory || '').trim()
+  const downloadDirectory = (payload.downloadDirectory || '').trim()
+  const uploadDirectory = (payload.uploadDirectory || '').trim()
   if (!host) throw new Error('SFTP 连接测试失败：IP 不能为空（E3 必填字段缺失）')
   if (!payload.username) throw new Error('SFTP 连接测试失败：用户名不能为空（E3 必填字段缺失）')
   if (!payload.password) throw new Error('SFTP 连接测试失败：密码 / 密钥不能为空（E3 必填字段缺失）')
-  if (!directory) throw new Error('SFTP 连接测试失败：目录路径不能为空（E3 必填字段缺失）')
+  if (!downloadDirectory) throw new Error('SFTP 连接测试失败：下载目录不能为空（E3 必填字段缺失）')
+  if (!uploadDirectory) throw new Error('SFTP 连接测试失败：上传目录不能为空（E3 必填字段缺失）')
   // 演示用：10.21.8.99 模拟认证失败，10.21.8.98 模拟超时，其余正常
   if (host.endsWith('.99')) throw new Error('SFTP 连接测试失败：认证失败，请检查用户名与密码（E1）')
   if (host.endsWith('.98')) throw new Error('SFTP 连接测试失败：连接超时（>30s），请检查网络与端口（E1）')
   if (port < 1 || port > 65535) throw new Error('SFTP 连接测试失败：端口号非法（E1）')
-  return { success: true, message: `连接成功：${host}:${port}，目录 ${directory} 可读写` }
+  return {
+    success: true,
+    message: `连接成功：${host}:${port}，下载目录 ${downloadDirectory} 可读，上传目录 ${uploadDirectory} 可写`,
+  }
 }
 
 /** 获取可用（启用）机构列表（R11 仅显示启用机构） */

@@ -23,14 +23,14 @@
 
     <a-card class="apply-card">
       <div class="step-content">
-        <!-- ============ 步骤1：持牌机构与样本、申请说明 ============ -->
+        <!-- ============ 步骤1：合作机构与样本、申请说明 ============ -->
         <div v-show="currentStep === 0">
-          <a-divider orientation="left" style="margin-top: 0">1.1 选择持牌机构</a-divider>
+          <a-divider orientation="left" style="margin-top: 0">1.1 选择合作机构</a-divider>
           <a-form :model="formModel" layout="vertical">
             <a-row :gutter="16">
               <a-col :span="10">
-                <a-form-item label="持牌机构" required help="仅展示合作机构管理中状态为「启用」的持牌机构">
-                  <a-select v-model="form.agencyId" placeholder="请选择持牌机构" @change="onAgencyChange">
+                <a-form-item label="合作机构" required help="仅展示合作机构管理中状态为「启用」的机构">
+                  <a-select v-model="form.agencyId" placeholder="请选择合作机构" @change="onAgencyChange">
                     <a-option v-for="a in agencies" :key="a.id" :value="a.id">
                       {{ a.agencyName }}（{{ a.agencyCode }}）
                     </a-option>
@@ -44,27 +44,134 @@
                       <span class="mono">{{ selectedAgency.licenseNo }}</span>
                     </a-descriptions-item>
                   </a-descriptions>
-                  <span v-else class="table-tip">请先选择持牌机构</span>
+                  <span v-else class="table-tip">请先选择合作机构</span>
                 </a-form-item>
               </a-col>
             </a-row>
           </a-form>
 
-          <a-divider orientation="left">1.2 选择样本</a-divider>
-          <a-form :model="formModel" layout="vertical">
-            <a-form-item label="样本来源" required>
-              <a-radio-group v-model="form.sampleMode" type="button" @change="onSampleModeChange">
-                <a-radio value="library">样本库（选库选表）</a-radio>
-                <a-radio value="upload">上传 CSV 文件</a-radio>
-              </a-radio-group>
-            </a-form-item>
-            <a-alert v-if="form.sampleMode === 'library'" type="info">
-              从固定外数库的样本表中选取，进入下一步时自动读取表结构，仅展示字段数与行数概要。
-            </a-alert>
-            <a-alert v-else type="info">
-              上传本地 CSV 样本文件（UTF-8，单文件上限 100 万行），进入下一步时自动解析表头与数据行。
-            </a-alert>
-          </a-form>
+          <a-divider orientation="left">1.2 添加样本（可多个）</a-divider>
+          <a-alert type="info" style="margin-bottom: 12px">
+            一次回溯申请可挂多个样本：从样本库添加多张表、上传多个 CSV，两种来源可混用。
+            样本逐个独立解析，参数列绑定默认按同名共用，个别样本缺列时再在第二步单独补选。
+          </a-alert>
+          <a-row :gutter="16">
+            <a-col :span="13">
+              <div class="sample-entry">
+                <div class="sample-entry-title">从样本库添加</div>
+                <a-row :gutter="8">
+                  <a-col :span="9">
+                    <a-form :model="formModel" layout="vertical">
+                      <a-form-item label="样本库">
+                        <a-select v-model="picker.database" placeholder="请选择样本库" @change="onDatabaseChange">
+                          <a-option v-for="db in databaseOptions" :key="db" :value="db">{{ db }}</a-option>
+                        </a-select>
+                      </a-form-item>
+                    </a-form>
+                  </a-col>
+                  <a-col :span="15">
+                    <a-form :model="formModel" layout="vertical">
+                      <a-form-item label="样本表">
+                        <a-select
+                          v-model="picker.table"
+                          :placeholder="picker.database ? '请选择样本表' : '请先选择样本库'"
+                          :disabled="!picker.database"
+                          allow-search
+                        >
+                          <a-option v-for="t in tableOptions" :key="t.fullName" :value="t.fullName">
+                            {{ t.table }}（{{ t.description }}）
+                          </a-option>
+                        </a-select>
+                      </a-form-item>
+                    </a-form>
+                  </a-col>
+                </a-row>
+                <a-space>
+                  <a-button type="outline" size="small" :disabled="!picker.table" @click="addLibrarySample">
+                    <template #icon><icon-plus /></template>
+                    添加为样本
+                  </a-button>
+                  <span v-if="!tableOptions.length && picker.database" class="table-tip">该库下暂无可用样本表</span>
+                </a-space>
+              </div>
+            </a-col>
+            <a-col :span="11">
+              <div class="sample-entry">
+                <div class="sample-entry-title">上传 CSV 样本（可一次选多个）</div>
+                <a-upload
+                  draggable
+                  multiple
+                  :auto-upload="false"
+                  :limit="0"
+                  accept=".csv"
+                  :show-file-list="false"
+                  @change="onUploadChange"
+                >
+                  <!-- a-upload 不渲染外层默认插槽，自定义拖拽区必须放进 #upload-button -->
+                  <template #upload-button>
+                    <div class="upload-drop">
+                      <p class="arco-upload-drag-icon"><icon-upload /></p>
+                      <div style="margin-top: 8px; font-weight: 500">点击或拖拽 CSV 文件到此处</div>
+                      <div class="table-tip" style="margin-top: 4px">仅支持 UTF-8 编码 CSV，可一次选多个</div>
+                    </div>
+                  </template>
+                </a-upload>
+              </div>
+            </a-col>
+          </a-row>
+
+          <!-- 已添加样本：本页不展示明细数据，只给来源 / 字段数 / 行数与解析状态 -->
+          <template v-if="samples.length">
+            <div class="sample-list-head">
+              <span class="table-tip">
+                已添加 {{ samples.length }} 个样本，已就绪 {{ readySamples.length }} 个，合计 {{ totalSampleRows.toLocaleString() }} 行
+              </span>
+              <a-button type="text" size="mini" status="danger" @click="clearAllSamples">清空全部</a-button>
+            </div>
+            <a-table :data="samples" :pagination="false" size="small" row-key="uid">
+              <template #columns>
+                <a-table-column title="#" :width="46">
+                  <template #cell="{ rowIndex }">{{ rowIndex + 1 }}</template>
+                </a-table-column>
+                <a-table-column title="样本名称" data-index="name" :width="230" ellipsis tooltip />
+                <a-table-column title="来源" :width="96">
+                  <template #cell="{ record }">
+                    <a-tag size="small" :color="record.kind === 'library' ? 'arcoblue' : 'purple'">
+                      {{ record.kind === 'library' ? '样本库表' : 'CSV 上传' }}
+                    </a-tag>
+                  </template>
+                </a-table-column>
+                <a-table-column title="字段数" :width="76">
+                  <template #cell="{ record }">{{ record.status === 'ready' ? record.columns.length : '—' }}</template>
+                </a-table-column>
+                <a-table-column title="数据行数" :width="92">
+                  <template #cell="{ record }">{{ record.status === 'ready' ? record.rows.length.toLocaleString() : '—' }}</template>
+                </a-table-column>
+                <a-table-column title="解析状态">
+                  <template #cell="{ record }">
+                    <a-space :size="6">
+                      <icon-loading v-if="record.status === 'loading'" spin />
+                      <a-tag v-if="record.status === 'loading'" size="small" color="arcoblue">解析中</a-tag>
+                      <a-tag v-else-if="record.status === 'ready'" size="small" color="green">
+                        已就绪{{ record.skipped ? `，跳过 ${record.skipped} 行` : '' }}
+                      </a-tag>
+                      <a-tag v-else size="small" color="red">解析失败</a-tag>
+                    </a-space>
+                    <div v-if="record.error" class="table-tip sample-error">{{ record.error }}</div>
+                  </template>
+                </a-table-column>
+                <a-table-column title="操作" :width="70">
+                  <template #cell="{ record }">
+                    <a-button type="text" size="mini" status="danger" @click="removeSample(record)">移除</a-button>
+                  </template>
+                </a-table-column>
+              </template>
+            </a-table>
+            <div v-if="!schemaAligned && readySamples.length > 1" class="table-tip sample-error">
+              各样本列名不完全一致，第二步里未命中共用列的样本需要单独补选参数列。
+            </div>
+          </template>
+          <a-empty v-else description="尚未添加样本：可从样本库添加表，或上传一个 / 多个 CSV 文件" />
 
           <a-divider orientation="left">1.3 申请说明</a-divider>
           <a-form :model="formModel" layout="vertical">
@@ -80,78 +187,25 @@
           </a-form>
         </div>
 
-        <!-- ============ 步骤2：样本获取（样本库选表 / CSV 上传解析） ============ -->
+        <!-- ============ 步骤2：样本确认 + 外部数据选择 + 参数列绑定与校验 ============ -->
         <div v-show="currentStep === 1">
-          <template v-if="form.sampleMode === 'library'">
-            <a-divider orientation="left" style="margin-top: 0">2.1 选择样本库（库 → 表）</a-divider>
-            <a-form :model="formModel" layout="vertical">
-              <a-row :gutter="16">
-                <a-col :span="8">
-                  <a-form-item label="样本库" required>
-                    <a-select v-model="form.database" placeholder="请选择样本库" @change="onDatabaseChange">
-                      <a-option v-for="db in databaseOptions" :key="db" :value="db">{{ db }}</a-option>
-                    </a-select>
-                  </a-form-item>
-                </a-col>
-                <a-col :span="10">
-                  <a-form-item label="样本表" required>
-                    <a-select
-                      v-model="form.table"
-                      :placeholder="form.database ? '请选择样本表' : '请先选择样本库'"
-                      :disabled="!form.database"
-                      allow-search
-                      @change="loadLibrarySample"
-                    >
-                      <a-option v-for="t in tableOptions" :key="t.fullName" :value="t.fullName">
-                        {{ t.table }}（{{ t.description }}）
-                      </a-option>
-                    </a-select>
-                  </a-form-item>
-                </a-col>
-              </a-row>
-            </a-form>
-            <a-alert v-if="!tableOptions.length && form.database" type="warning">
-              该库下暂无可用样本表，请更换样本库或改用上传 CSV 文件。
-            </a-alert>
-          </template>
+          <a-divider orientation="left" style="margin-top: 0">2.1 样本确认</a-divider>
+          <a-descriptions :column="4" size="small" bordered>
+            <a-descriptions-item label="合作机构">{{ selectedAgency?.agencyName || '—' }}</a-descriptions-item>
+            <a-descriptions-item label="样本数">{{ readySamples.length }}</a-descriptions-item>
+            <a-descriptions-item label="合计行数">{{ totalSampleRows.toLocaleString() }}</a-descriptions-item>
+            <a-descriptions-item label="列名并集">{{ unionColumns.length }} 列</a-descriptions-item>
+          </a-descriptions>
+          <div class="sample-chips">
+            <a-tag v-for="s in readySamples" :key="s.uid" size="small" :color="s.kind === 'library' ? 'arcoblue' : 'purple'">
+              {{ s.name }} · {{ s.columns.length }} 列 / {{ s.rows.length.toLocaleString() }} 行
+            </a-tag>
+          </div>
+          <div class="table-tip">本页不展示样本明细数据；需要增删样本请回到第一步。</div>
 
-          <template v-else>
-            <a-divider orientation="left" style="margin-top: 0">2.1 上传 CSV 样本文件</a-divider>
-            <a-upload
-              draggable
-              :auto-upload="false"
-              :limit="1"
-              accept=".csv"
-              :file-list="uploadFileList"
-              @change="onUploadChange"
-              @remove="onUploadRemove"
-            >
-              <div class="upload-drop">
-                <p class="arco-upload-drag-icon"><icon-upload /></p>
-                <div style="margin-top: 8px; font-weight: 500">点击或拖拽 CSV 文件到此处上传</div>
-                <div class="table-tip" style="margin-top: 4px">仅支持 UTF-8 编码 CSV 格式</div>
-              </div>
-            </a-upload>
-          </template>
-
-          <!-- 2.2 样本概要：只展示字段数与行数，不提供明细数据预览 -->
-          <template v-if="sampleColumns.length">
-            <a-divider orientation="left">2.2 样本概要</a-divider>
-            <a-descriptions :column="3" size="small" bordered>
-              <a-descriptions-item label="样本来源">{{ sampleSourceText }}</a-descriptions-item>
-              <a-descriptions-item label="数据行数">{{ sampleRows.length.toLocaleString() }}</a-descriptions-item>
-              <a-descriptions-item label="字段数">{{ sampleColumns.length }}</a-descriptions-item>
-            </a-descriptions>
-            <div class="table-tip">样本已读取成功，本页不展示明细数据；确认可后进入下一步绑定参数列。</div>
-          </template>
-          <a-empty v-else :description="form.sampleMode === 'library' ? '请选择样本库与样本表，选择后自动读取样本内容' : '请先上传 CSV 样本文件，上传后自动解析样本内容'" />
-        </div>
-
-        <!-- ============ 步骤3：外部数据参数列绑定与校验 ============ -->
-        <div v-show="currentStep === 2">
-          <a-divider orientation="left" style="margin-top: 0">3.1 选择外部数据（可多选）</a-divider>
+          <a-divider orientation="left">2.2 选择外部数据（可多选）</a-divider>
           <a-form :model="formModel" layout="vertical">
-            <a-form-item label="外部数据" required help="一个样本可同时回溯多个外部数据；参数列绑定取全部所选产品必填入参的并集">
+            <a-form-item label="外部数据" required help="多个样本共用同一批外部数据；参数列绑定取全部所选产品必填入参的并集">
               <a-select
                 v-model="form.externalData"
                 multiple
@@ -174,23 +228,23 @@
             </div>
           </template>
 
-          <a-divider orientation="left">3.2 绑定参数列</a-divider>
+          <a-divider orientation="left">2.3 绑定参数列</a-divider>
           <a-alert type="info" style="margin-bottom: 12px">
             <template v-if="activeDefs.length">
-              将样本列与外部数据查询入参逐项绑定，多个外部数据共用同一套参数绑定；本次需绑定
-              <b>{{ activeDefs.map((d) => d.label).join(' / ') }}</b>，全部绑定并通过格式校验后方可提交。
+              多个样本默认共用同一个列名；某样本没有该列时，在该样本上单独补选一列。本次需绑定
+              <b>{{ activeDefs.map((d) => d.label).join(' / ') }}</b>，全部样本绑定并通过格式校验后方可提交。
             </template>
-            <template v-else>请先在 3.1 选择外部数据（可多选），绑定项将按所选产品的必填入参自动生成。</template>
+            <template v-else>请先在 2.2 选择外部数据（可多选），绑定项将按所选产品的必填入参自动生成。</template>
           </a-alert>
           <a-table v-if="activeDefs.length" :data="bindingRows" :pagination="false" size="small" row-key="key">
             <template #columns>
-              <a-table-column title="参数" data-index="label" :width="140" />
-              <a-table-column title="格式要求" :width="240">
+              <a-table-column title="参数" data-index="label" :width="104" />
+              <a-table-column title="格式要求" :width="190">
                 <template #cell="{ record }">
                   <span class="mono">{{ record.rule }}</span>
                 </template>
               </a-table-column>
-              <a-table-column title="绑定样本列" :width="260">
+              <a-table-column title="共用样本列" :width="220">
                 <template #cell="{ record }">
                   <a-select
                     v-model="bindings[record.key]"
@@ -200,18 +254,28 @@
                     size="small"
                     @change="onBindingChange"
                   >
-                    <a-option v-for="c in sampleColumns" :key="c" :value="c">{{ c }}</a-option>
+                    <a-option v-for="c in unionColumns" :key="c" :value="c">
+                      {{ c }}{{ columnCoverage.get(c) ? `（${columnCoverage.get(c)}/${readySamples.length} 样本）` : '' }}
+                    </a-option>
                   </a-select>
+                </template>
+              </a-table-column>
+              <a-table-column title="覆盖情况" :width="150">
+                <template #cell="{ record }">
+                  <a-tag v-if="!bindings[record.key]" size="small">未绑定</a-tag>
+                  <a-tag v-else-if="!uncoveredSamples(record.key).length" size="small" color="green">
+                    {{ readySamples.length }} 个样本全部命中
+                  </a-tag>
+                  <a-tag v-else size="small" color="orange">
+                    {{ sharedCoverage(record.key) }} 命中 / {{ uncoveredSamples(record.key).length }} 需补选
+                  </a-tag>
                 </template>
               </a-table-column>
               <a-table-column title="校验结果">
                 <template #cell="{ record }">
                   <template v-if="validation === 'success' || validation === 'error'">
-                    <a-tag v-if="results[record.key].ok && !results[record.key].errors.length" color="green" size="small">
-                      通过（{{ results[record.key].hitCount }} / {{ sampleRows.length }} 行格式命中）
-                    </a-tag>
-                    <a-tag v-else-if="results[record.key].ok" color="orange" size="small">
-                      通过（{{ results[record.key].errors.join('；') }}）
+                    <a-tag v-if="results[record.key].ok" color="green" size="small">
+                      通过（{{ results[record.key].perSample.length }} 个样本）
                     </a-tag>
                     <span v-else class="binding-error">{{ results[record.key].errors.join('；') }}</span>
                   </template>
@@ -221,29 +285,59 @@
             </template>
           </a-table>
 
-          <a-divider orientation="left">3.3 样本校验</a-divider>
+          <!-- 逐样本补选：只在共用列没覆盖到的样本上出现 -->
+          <div v-for="p in pendingPicks" :key="`pick-${p.def.key}`" class="pick-block">
+            <div class="pick-title">
+              「{{ p.def.label }}」共用列
+              <span class="mono">{{ bindings[p.def.key] || '（未选）' }}</span>
+              在以下 {{ p.picks.length }} 个样本中不存在，请逐个补选：
+            </div>
+            <div v-for="s in p.picks" :key="s.uid" class="pick-row">
+              <span class="mono pick-name" :title="s.name">{{ s.name }}</span>
+              <a-select
+                size="small"
+                :model-value="sampleBindings[s.uid]?.[p.def.key] || ''"
+                placeholder="为该样本选择一列"
+                allow-search
+                allow-clear
+                @change="(v) => pickSampleColumn(s.uid, p.def.key, (v as string) || '')"
+              >
+                <a-option v-for="c in s.columns" :key="c" :value="c">{{ c }}</a-option>
+              </a-select>
+            </div>
+          </div>
+
+          <a-divider orientation="left">2.4 样本校验</a-divider>
           <a-space style="margin-bottom: 12px">
             <a-button type="outline" :loading="validating" @click="runValidation">
               <template #icon><icon-safe /></template>
               执行参数列校验
             </a-button>
-            <a-tag v-if="validation === 'success'" color="green" size="medium">全部参数列校验通过</a-tag>
+            <a-tag v-if="validation === 'success'" color="green" size="medium">
+              {{ readySamples.length }} 个样本的参数列全部校验通过
+            </a-tag>
             <a-tag v-else-if="validation === 'error'" color="red" size="medium">
-              {{ resultsSummary.failCount }} / {{ activeDefs.length }} 项未通过
+              {{ resultsSummary.failCount }} / {{ activeDefs.length }} 项存在未通过样本
             </a-tag>
           </a-space>
           <a-descriptions v-if="resultsSummary.detailRows.length" :column="1" size="small" bordered>
-            <a-descriptions-item v-for="d in resultsSummary.detailRows" :key="d.label" :label="d.label">
-              <a-space wrap :size="4">
-                <a-tag v-if="d.ok" color="orange" size="small">{{ d.hit }} / {{ d.total }} 行通过</a-tag>
-                <a-tag v-else color="red" size="small">{{ d.errors.join('；') }}</a-tag>
-                <span v-for="(e, i) in d.samples.slice(0, 3)" :key="i" class="mono table-tip">失败行：第 {{ e }} 行{{ i === Math.min(d.samples.length, 3) - 1 && d.samples.length > 3 ? ' 等' : '' }}</span>
-              </a-space>
+            <a-descriptions-item v-for="d in resultsSummary.detailRows" :key="d.key" :label="d.label">
+              <div v-for="item in d.perSample" :key="item.uid" class="check-row">
+                <a-tag v-if="item.ok && !item.errors.length" color="green" size="small">
+                  {{ item.name }}：{{ item.hit }} / {{ item.total }} 行通过（{{ item.col }}）
+                </a-tag>
+                <a-tag v-else-if="item.ok" color="orange" size="small">
+                  {{ item.name }}：{{ item.errors.join('；') }}（{{ item.hit }} / {{ item.total }}，{{ item.col }}）
+                </a-tag>
+                <a-tag v-else color="red" size="small">{{ item.name }}：{{ item.errors.join('；') }}</a-tag>
+                <span v-if="item.badRows.length" class="mono table-tip">失败行：{{ item.badRows.join(', ') }}</span>
+              </div>
             </a-descriptions-item>
           </a-descriptions>
           <div class="table-tip">
             校验口径：身份证号按 18 位（末位允许 X）逐行校验，手机号按 1 开头 3~9 段 11 位逐行校验，姓名按中文（含「·」）或英文名逐行校验；
-            空值与格式不符行会计入失败样例，绑定列与其他参数重复时整体拦截；多个外部数据必填入参不一致时取并集统一校验。
+            空值与格式不符行会计入失败样例，同一样本内绑定列与其他参数重复时拦截；校验逐样本独立执行，任一样本未通过则该参数整体不通过；
+            多个外部数据必填入参不一致时取并集统一校验。
           </div>
         </div>
       </div>
@@ -273,8 +367,8 @@
     <a-modal v-model:visible="successVisible" title="申请已提交" :footer="false">
       <a-result status="success" title="外数离线回溯申请已提交，状态为「审批中」">
         <template #subtitle>
-          样本 {{ sampleSourceText }} · 数据行数 {{ sampleRows.length.toLocaleString() }} ·
-          外部数据 {{ form.externalData.length }} 个 · 参数列绑定 {{ boundCount }} / {{ activeDefs.length }}，校验通过。审批与执行进度可在「服务任务列表」查看。
+          {{ readySamples.length }} 个样本（{{ sampleSourceText }}）· 合计 {{ totalSampleRows.toLocaleString() }} 行 ·
+          外部数据 {{ form.externalData.length }} 个 · 参数列绑定 {{ boundCount }} / {{ activeDefs.length }}，逐样本校验通过。审批与执行进度可在「服务任务列表」查看。
         </template>
         <template #extra>
           <a-space>
@@ -292,13 +386,14 @@ import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import type { UploadFile } from '@arco-design/web-vue'
-import { IconUpload, IconSafe, IconCheckCircle } from '@arco-design/web-vue/es/icon'
+import { IconUpload, IconSafe, IconCheckCircle, IconPlus, IconLoading } from '@arco-design/web-vue/es/icon'
 import { fetchEnabledAgencies } from '../api/creditAgency'
 import type { CreditAgency } from '../mock/creditAgencies'
 import { listOnlineSampleTables, listHiveTableColumns } from '../mock/hiveTables'
 import type { HiveTableItem } from '../mock/hiveTables'
 import { externalDataCatalogMock, unionRequiredParams } from '../mock/externalDataCatalog'
 import type { ParamKey } from '../mock/externalDataCatalog'
+import { makeStableRng } from '../mock/stableHash'
 import { useExternalDataStore } from '@/modules/external-data/stores'
 
 const router = useRouter()
@@ -309,19 +404,15 @@ const currentStep = ref(0)
 const formModel = reactive<Record<string, unknown>>({})
 
 const stepsList = [
-  { title: '机构与样本', sections: ['1.1 选择持牌机构', '1.2 选择样本', '1.3 申请说明'] },
-  { title: '样本获取', sections: ['2.1 样本库选表 / CSV 上传', '2.2 样本概要（字段数 / 行数）'] },
-  { title: '参数列绑定与提交', sections: ['3.1 选择外部数据（可多选）', '3.2 绑定参数列', '3.3 样本校验'] },
+  { title: '机构与样本', sections: ['1.1 选择合作机构', '1.2 添加样本（可多个）', '1.3 申请说明'] },
+  { title: '确认与参数绑定', sections: ['2.1 样本确认', '2.2 选择外部数据（可多选）', '2.3 绑定参数列', '2.4 样本校验'] },
 ]
 
-/* ---------- 步骤1：持牌机构与样本 ---------- */
+/* ---------- 步骤1：合作机构 ---------- */
 const agencies = ref<CreditAgency[]>([])
 const form = reactive({
   agencyId: '',
-  sampleMode: 'library' as 'library' | 'upload',
   description: '',
-  database: '',
-  table: '',
   externalData: [] as string[],
 })
 
@@ -331,54 +422,65 @@ const loadAgencies = async () => {
   agencies.value = await fetchEnabledAgencies()
 }
 
-/** 切换机构：与回溯落库口径一致，机构仅用于出数主体登记，不影响样本来源 */
+/** 切换机构仅登出数主体，不抖掉已添加的样本（样本本身没变，只需重新校验） */
 const onAgencyChange = () => {
-  resetSample()
+  clearValidation()
 }
 
-/* ---------- 步骤2：样本获取 ---------- */
+/* ---------- 步骤1：样本列表（库表与 CSV 可混合、可多个） ---------- */
+type SampleKind = 'library' | 'upload'
+interface SampleEntry {
+  uid: string
+  kind: SampleKind
+  /** 列表展示名：库表取 fullName，CSV 取文件名 */
+  name: string
+  database?: string
+  table?: string
+  columns: string[]
+  rows: Record<string, string>[]
+  status: 'loading' | 'ready' | 'failed'
+  error?: string
+  /** CSV 中与表头列数不符、已跳过的行数 */
+  skipped?: number
+}
+
+const samples = ref<SampleEntry[]>([])
+/** 样本库选择器：只是「待添加」的候选，不代表已选定样本 */
+const picker = reactive({ database: '', table: '' })
 const sampleTables = ref<HiveTableItem[]>([])
-const uploadFileList = ref<UploadFile[]>([])
-const sampleColumns = ref<string[]>([])
-const sampleRows = ref<Record<string, string>[]>([])
 
 /** 样本库列表（库级去重，来自固定外数库的线上样本表） */
 const databaseOptions = computed(() => Array.from(new Set(sampleTables.value.map((t) => t.database))))
 /** 当前库下可选样本表 */
-const tableOptions = computed(() => sampleTables.value.filter((t) => t.database === form.database))
+const tableOptions = computed(() => sampleTables.value.filter((t) => t.database === picker.database))
+const readySamples = computed(() => samples.value.filter((s) => s.status === 'ready' && s.rows.length))
+const loadingSamples = computed(() => samples.value.filter((s) => s.status === 'loading'))
+const failedSamples = computed(() => samples.value.filter((s) => s.status === 'failed'))
+const totalSampleRows = computed(() => readySamples.value.reduce((n, s) => n + s.rows.length, 0))
+/** 就绪样本列名并集：共用绑定列的下拉候选 */
+const unionColumns = computed(() => Array.from(new Set(readySamples.value.flatMap((s) => s.columns))))
+/** 某列名在多少个就绪样本里存在，用于判断共用绑定要不要逐样本补选 */
+const columnCoverage = computed(() => {
+  const m = new Map<string, number>()
+  for (const s of readySamples.value) {
+    for (const c of new Set(s.columns)) m.set(c, (m.get(c) || 0) + 1)
+  }
+  return m
+})
+const sampleSourceText = computed(() => readySamples.value.map((s) => s.name).join('、') || '—')
 
 const loadSampleTables = async () => {
   sampleTables.value = await listOnlineSampleTables()
-  if (!form.database && databaseOptions.value.length) form.database = databaseOptions.value[0]
+  if (!picker.database && databaseOptions.value.length) {
+    picker.database = databaseOptions.value[0]
+  }
 }
 
 const onDatabaseChange = () => {
-  form.table = ''
-  resetSample()
+  picker.table = ''
 }
 
-/** 清空已读取样本与绑定结果（样本来源变化后必须重新校验） */
-const resetSample = () => {
-  sampleColumns.value = []
-  sampleRows.value = []
-  validation.value = 'idle'
-}
-
-/* ---------- 样本库读取（mock：按表列清单生成确定性样例数据） ---------- */
-/** 固定种子伪随机，保证同一张表两次读取结果一致 */
-const makeRng = (seedStr: string) => {
-  let h = 2166136261
-  for (let i = 0; i < seedStr.length; i++) {
-    h ^= seedStr.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
-  return () => {
-    h = Math.imul(h ^ (h >>> 15), 2246822507)
-    h = Math.imul(h ^ (h >>> 13), 3266489909)
-    return ((h ^= h >>> 16) >>> 0) / 4294967296
-  }
-}
-
+/* ---------- 样本库读取（mock：随机流复用 mock/stableHash 的 makeStableRng，不在此另起散列实现） ---------- */
 const GEN_NAMES = ['张伟', '王芳', '李娜', '刘洋', '陈静', '赵磊', '孙七', '周涛', '吴霞', '郑强']
 const GEN_PROV = ['110', '310', '440', '510', '330', '420', '320', '610']
 
@@ -404,14 +506,10 @@ const genMobile = (rng: () => number) => {
   return `1${seg}${rest}`
 }
 
-/** 库模式读取：列清单来自表结构 mock，另补 cust_name（样本库存量姓名列）与 sample_date */
-const loadLibrarySample = () => {
-  resetSample()
-  if (!form.table) return
-  const meta = sampleTables.value.find((t) => t.fullName === form.table)
-  if (!meta) return
-  const cols = Array.from(new Set(['cust_name', ...listHiveTableColumns(meta.fullName)]))
-  const rng = makeRng(meta.fullName)
+/** 库样本数据：列清单来自表结构 mock，另补 cust_name（样本库存量姓名列），按表名固定种子生成确定性数据 */
+const buildLibraryRows = (fullName: string): { columns: string[]; rows: Record<string, string>[] } => {
+  const cols = Array.from(new Set(['cust_name', ...listHiveTableColumns(fullName)]))
+  const rng = makeStableRng(fullName)
   const rowCount = 50
   const rows: Record<string, string>[] = []
   for (let r = 0; r < rowCount; r++) {
@@ -430,10 +528,28 @@ const loadLibrarySample = () => {
     }
     rows.push(row)
   }
-  sampleColumns.value = cols
-  sampleRows.value = rows
-  autoBind()
-  Message.success(`已读取样本 ${meta.fullName}，${cols.length} 列、${rowCount} 行`)
+  return { columns: cols, rows }
+}
+
+/** 把选择器里的库表加进样本列表，同一张表不重复添加 */
+const addLibrarySample = () => {
+  const fullName = picker.table
+  if (!fullName) {
+    Message.warning('请先选择样本库与样本表')
+    return
+  }
+  const meta = sampleTables.value.find((t) => t.fullName === fullName)
+  if (!meta) {
+    return
+  }
+  if (samples.value.some((s) => s.uid === fullName)) {
+    Message.warning(`样本「${fullName}」已在列表中`)
+    return
+  }
+  const { columns, rows } = buildLibraryRows(fullName)
+  samples.value.push({ uid: fullName, kind: 'library', name: fullName, database: meta.database, table: meta.table, columns, rows, status: 'ready' })
+  onSamplesChanged()
+  Message.success(`已添加样本 ${fullName}，${columns.length} 列、${rows.length} 行`)
 }
 
 /* ---------- CSV 上传解析 ---------- */
@@ -472,54 +588,77 @@ const parseCsvText = (text: string): { columns: string[]; rows: Record<string, s
   return { columns, rows, skipped }
 }
 
-const onUploadChange = (fileList: UploadFile[]) => {
-  uploadFileList.value = fileList
-  resetSample()
-  const file = fileList[0]?.file
-  if (!file) return
-  if (!/\.csv$/i.test(file.name)) {
-    Message.error('仅支持 CSV 格式样本文件')
-    uploadFileList.value = []
+/* ---------- 样本列表维护 ---------- */
+/** 改写样本条目要走数组代理，直接改 push 前的原始对象不触发视图更新 */
+const patchSample = (uid: string, patch: Partial<SampleEntry>) => {
+  const s = samples.value.find((x) => x.uid === uid)
+  if (s) {
+    Object.assign(s, patch)
+  }
+}
+
+/** 样本增删后：作废上次校验、按新列集补空绑定、清掉已移除样本的逐样本补选 */
+const onSamplesChanged = () => {
+  clearValidation()
+  autoBindShared()
+  const alive = new Set(samples.value.map((s) => s.uid))
+  for (const id of Object.keys(sampleBindings)) {
+    if (!alive.has(id)) {
+      delete sampleBindings[id]
+    }
+  }
+}
+
+const removeSample = (s: SampleEntry) => {
+  samples.value = samples.value.filter((x) => x.uid !== s.uid)
+  onSamplesChanged()
+}
+
+const clearAllSamples = () => {
+  samples.value = []
+  onSamplesChanged()
+}
+
+/* ---------- CSV 上传解析（多文件） ---------- */
+// 不维护 Arco 自己的 file-list（show-file-list 已关），samples 就是已选文件的唯一事实源
+const onUploadChange = (fileList: UploadFile[], fileItem?: UploadFile) => {
+  const uid = fileItem?.uid
+  const name = fileItem?.name || '未命名 CSV'
+  const raw = fileItem?.file
+  if (!uid || samples.value.some((s) => s.uid === uid)) {
+    return
+  }
+  if (!/\.csv$/i.test(name)) {
+    Message.error(`「${name}」不是 CSV 文件，已忽略`)
+    return
+  }
+  samples.value.push({ uid, kind: 'upload', name, columns: [], rows: [], status: 'loading' })
+  if (!raw) {
+    patchSample(uid, { status: 'failed', error: '未取到文件内容，请重新选择' })
+    onSamplesChanged()
     return
   }
   const reader = new FileReader()
   reader.onload = () => {
     const { columns, rows, skipped } = parseCsvText(String(reader.result || '').replace(/^\uFEFF/, ''))
     if (!columns.length) {
-      Message.error('未能解析出表头，请确认首行为列名')
-      return
+      patchSample(uid, { status: 'failed', error: '未能解析出表头，请确认首行为列名' })
+    } else if (!rows.length) {
+      patchSample(uid, { status: 'failed', error: `文件无有效数据行${skipped ? `（${skipped} 行与表头列数不符已跳过）` : ''}` })
+    } else {
+      patchSample(uid, { columns, rows, skipped, status: 'ready' })
+      Message.success(`「${name}」解析成功：${columns.length} 列、${rows.length} 行${skipped ? `，${skipped} 行与表头列数不符已跳过` : ''}`)
     }
-    if (!rows.length) {
-      Message.error('文件无有效数据行（列数与表头不一致的行已跳过）')
-      return
-    }
-    sampleColumns.value = columns
-    sampleRows.value = rows
-    autoBind()
-    let tip = `解析成功：${columns.length} 列、${rows.length} 行`
-    if (skipped) tip += `，${skipped} 行与表头列数不符已跳过`
-    Message.success(tip)
+    onSamplesChanged()
   }
-  reader.onerror = () => Message.error('文件读取失败，请确认文件未被占用')
-  reader.readAsText(file, 'UTF-8')
+  reader.onerror = () => {
+    patchSample(uid, { status: 'failed', error: '文件读取失败，请确认文件未被占用' })
+    onSamplesChanged()
+  }
+  reader.readAsText(raw, 'UTF-8')
 }
 
-const onUploadRemove = () => {
-  uploadFileList.value = []
-  resetSample()
-}
-
-const onSampleModeChange = () => {
-  resetSample()
-  uploadFileList.value = []
-  form.table = ''
-}
-
-const sampleSourceText = computed(() =>
-  form.sampleMode === 'library' ? form.table || '—' : uploadFileList.value[0]?.name || '—'
-)
-
-/* ---------- 步骤3：外部数据（多选）与参数列绑定 ---------- */
+/* ---------- 步骤2：外部数据（多选）与参数列绑定 ---------- */
 /** 外部数据候选目录（含接口号与必填入参，见 mock/externalDataCatalog.ts） */
 const externalDataOptions = externalDataCatalogMock
 
@@ -531,12 +670,15 @@ const selectedProducts = computed(() =>
 const paramLabel = (k: ParamKey) => PARAM_LABELS[k]
 const PARAM_LABELS: Record<ParamKey, string> = { name: '姓名', mobile: '手机号', certNo: '身份证号' }
 
-/** 参数列候选全集：姓名 / 手机号 / 身份证号，按所选产品必填入参并集激活 */
-interface ParamDef { key: ParamKey; label: string; rule: string; re: RegExp }
+/**
+ * 参数列候选全集：姓名 / 手机号 / 身份证号，按所选产品必填入参并集激活。
+ * re 是逐行格式校验口径，match 是列名启发式（原先 autoBind 与 autoBindOne 各写一份，合一至此）
+ */
+interface ParamDef { key: ParamKey; label: string; rule: string; re: RegExp; match: RegExp[] }
 const PARAM_DEFS: ParamDef[] = [
-  { key: 'name', label: '姓名', rule: '中文（含·）或英文名', re: /^([\u4e00-\u9fa5]{2,}(?:·[\u4e00-\u9fa5]{2,})*)|([A-Za-z]+(?:\s+[A-Za-z.]+)*)$/ },
-  { key: 'mobile', label: '手机号', rule: '1[3-9] 开头 11 位数字', re: /^1[3-9]\d{9}$/ },
-  { key: 'certNo', label: '身份证号', rule: '18 位（末位允许 X）', re: /^\d{17}[\dXx]$/ },
+  { key: 'name', label: '姓名', rule: '中文（含·）或英文名', re: /^([\u4e00-\u9fa5]{2,}(?:·[\u4e00-\u9fa5]{2,})*)|([A-Za-z]+(?:\s+[A-Za-z.]+)*)$/, match: [/^cust_name$/i, /^name$/i, /^user_?name$/i, /姓名/] },
+  { key: 'mobile', label: '手机号', rule: '1[3-9] 开头 11 位数字', re: /^1[3-9]\d{9}$/, match: [/^mobile$/i, /(^|_)phone($|_)/i, /^phone$/i, /手机/] },
+  { key: 'certNo', label: '身份证号', rule: '18 位（末位允许 X）', re: /^\d{17}[\dXx]$/, match: [/^cert_?no$/i, /^id_?no$/i, /^id_?card$/i, /身份证/] },
 ]
 
 /** 当前生效的参数列（所选外部数据必填入参的并集） */
@@ -546,109 +688,196 @@ const activeDefs = computed(() => {
 })
 
 const bindingRows = computed(() => activeDefs.value.map((d) => ({ key: d.key, label: d.label, rule: d.rule })))
+/** 共用绑定：一个参数对一个列名，多样本按同名自动命中 */
 const bindings = reactive<Record<string, string>>({ name: '', mobile: '', certNo: '' })
+/**
+ * 逐样本补选：sampleBindings[样本uid][参数key] = 该样本自己的列名。
+ * 只在共用列在该样本不存在时生效，避免把用户为某个文件选的列静默覆盖掉
+ */
+const sampleBindings = reactive<Record<string, Record<string, string>>>({})
 
-/** 按列名启发式自动预绑定，人工可改 */
-const autoBind = () => {
-  const find = (pats: RegExp[]) => sampleColumns.value.find((c) => pats.some((p) => p.test(c))) || ''
-  bindings.name = find([/^cust_name$/i, /^name$/i, /姓名/])
-  bindings.mobile = find([/^mobile$/i, /(^|_)phone($|_)/i, /手机/])
-  bindings.certNo = find([/^cert_no$/i, /^id_?no$/i, /^idcard$/i, /身份证/])
+/**
+ * 共用绑定预填：优先取覆盖样本数最多的候选列（交集列天然零补选），
+ * 只在当前值为空或已不在列并集里时重填，不覆盖人工选择
+ */
+const autoBindShared = () => {
+  if (!readySamples.value.length) {
+    for (const d of PARAM_DEFS) {
+      bindings[d.key] = ''
+    }
+    return
+  }
+  for (const d of PARAM_DEFS) {
+    if (bindings[d.key] && columnCoverage.value.has(bindings[d.key])) {
+      continue
+    }
+    const hit = [...columnCoverage.value.entries()]
+      .filter(([c]) => d.match.some((p) => p.test(c)))
+      .sort((a, b) => b[1] - a[1])
+    bindings[d.key] = hit.length ? hit[0][0] : ''
+  }
 }
 
-const boundCount = computed(() => activeDefs.value.filter((d) => bindings[d.key]).length)
+/** 某参数在某样本上真正生效的列：共用列在该样本存在就用，否则退到该样本的补选值 */
+const effectiveColumn = (key: ParamKey, s: SampleEntry) => {
+  const shared = bindings[key]
+  if (shared && s.columns.includes(shared)) {
+    return shared
+  }
+  return sampleBindings[s.uid]?.[key] || ''
+}
 
-/* ---------- 校验 ---------- */
+/** 既没用上共用列、也还没补选的就绪样本，这些样本需要在 2.3 单独选列 */
+const uncoveredSamples = (key: ParamKey) => readySamples.value.filter((s) => !effectiveColumn(key, s))
+
+/** 共用列直接覆盖了多少个就绪样本，用于绑定行右侧的覆盖提示 */
+const sharedCoverage = (key: ParamKey) => {
+  const shared = bindings[key]
+  if (!shared) {
+    return 0
+  }
+  return readySamples.value.filter((s) => s.columns.includes(shared)).length
+}
+
+/** 完全就绪（共用列覆盖全部样本且无需补选）的参数数 */
+const boundCount = computed(() =>
+  activeDefs.value.filter((d) => bindings[d.key] && !uncoveredSamples(d.key).length).length
+)
+
+/** 待逐样本补选的参数及其未覆盖样本 */
+const pendingPicks = computed(() =>
+  activeDefs.value
+    .map((d) => ({ def: d, picks: uncoveredSamples(d.key) }))
+    .filter((x) => x.picks.length)
+)
+
+/** 就绪样本列名是否完全同构：不同构时提前告知可能要逐样本补选 */
+const schemaAligned = computed(() => {
+  const ready = readySamples.value
+  if (ready.length < 2) {
+    return true
+  }
+  const fingerprint = (s: SampleEntry) => [...new Set(s.columns)].sort().join('|')
+  return new Set(ready.map(fingerprint)).size === 1
+})
+
+/* ---------- 校验（逐样本 × 逐参数） ---------- */
 type ValidationState = 'idle' | 'processing' | 'success' | 'error'
 const validation = ref<ValidationState>('idle')
 const validating = ref(false)
 
-interface ParamResult { ok: boolean; errors: string[]; hitCount: number; samples: string[] }
-const emptyResult = (): ParamResult => ({ ok: false, errors: [], hitCount: 0, samples: [] })
-/** samples 只记失败行号不记字段值，避免页面回显样本明细 */
+/** 单个样本在某个参数上的校验明细；badRows 只记行号不记字段值，避免页面回显样本明细 */
+interface SampleCheck {
+  uid: string
+  name: string
+  col: string
+  ok: boolean
+  hit: number
+  total: number
+  errors: string[]
+  badRows: string[]
+}
+interface ParamResult { ok: boolean; errors: string[]; perSample: SampleCheck[] }
+const emptyResult = (): ParamResult => ({ ok: false, errors: [], perSample: [] })
 const results = reactive<Record<string, ParamResult>>({ name: emptyResult(), mobile: emptyResult(), certNo: emptyResult() })
 
-/** 任一绑定变更即作废上次校验结果 */
+/** 作废上次校验结果：样本、绑定、外部数据任一变化都必须重新跑 */
+const clearValidation = () => {
+  validation.value = 'idle'
+  for (const d of PARAM_DEFS) {
+    results[d.key] = emptyResult()
+  }
+}
+
+/** 共用绑定列变更：补选值保留，它们只在共用列缺失时生效 */
 const onBindingChange = () => {
-  validation.value = 'idle'
+  clearValidation()
 }
 
-/** 外部数据多选变更：作废上次校验，并重算激活项的预绑定 */
+/** 逐样本补选写入 */
+const pickSampleColumn = (uid: string, key: ParamKey, col: string) => {
+  if (!sampleBindings[uid]) {
+    sampleBindings[uid] = {}
+  }
+  sampleBindings[uid][key] = col
+  clearValidation()
+}
+
+/** 外部数据多选变更：作废上次校验，并按新并集补空绑定 */
 const onExternalDataChange = () => {
-  validation.value = 'idle'
-  for (const d of activeDefs.value) {
-    if (!bindings[d.key]) autoBindOne(d.key)
-  }
-}
-
-/** 单项启发式预绑定（多选场景下只补空不覆盖人工选择） */
-const autoBindOne = (key: ParamKey) => {
-  const pats: Record<ParamKey, RegExp[]> = {
-    name: [/^cust_name$/i, /^name$/i, /姓名/],
-    mobile: [/^mobile$/i, /(^|_)phone($|_)/i, /手机/],
-    certNo: [/^cert_no$/i, /^id_?no$/i, /^idcard$/i, /身份证/],
-  }
-  bindings[key] = sampleColumns.value.find((c) => pats[key].some((p) => p.test(c))) || ''
+  clearValidation()
+  autoBindShared()
 }
 
 /** 激活项集合变化（如新选了一个需要姓名的产品）时重算空绑定并作废校验结果 */
 watch(activeDefs, () => {
-  validation.value = 'idle'
-  for (const d of activeDefs.value) {
-    if (!bindings[d.key]) autoBindOne(d.key)
-  }
+  clearValidation()
+  autoBindShared()
 })
 
-const validateOne = (def: ParamDef): ParamResult => {
-  const r = emptyResult()
-  const col = bindings[def.key]
-  if (!col) {
-    r.errors.push('未绑定样本列')
-    return r
-  }
-  const dup = activeDefs.value.find((d) => d.key !== def.key && bindings[d.key] === col)
-  if (dup) {
-    r.errors.push(`与「${dup.label}」绑定同一列，不允许重复`)
-    return r
-  }
-  if (!sampleColumns.value.includes(col)) {
-    r.errors.push('该列不在样本中')
-    return r
-  }
+/** 单样本单列逐行校验：命中行占比不足 95% 视为未通过 */
+const checkSampleColumn = (def: ParamDef, s: SampleEntry, col: string): SampleCheck => {
+  const base = { uid: s.uid, name: s.name, col, total: s.rows.length }
+  if (!s.columns.includes(col)) return { ...base, ok: false, hit: 0, errors: ['该列不在样本中'], badRows: [] }
   let hit = 0
-  const badRows: string[] = []
   let empty = 0
-  for (const row of sampleRows.value) {
+  const badRows: string[] = []
+  for (const row of s.rows) {
     const v = (row[col] ?? '').trim()
     if (!v) { empty++; continue }
     if (def.re.test(v)) hit++
     else if (badRows.length < 5) badRows.push(row.__rowNo)
   }
-  const total = sampleRows.value.length
-  if (empty === total) {
-    r.errors.push('该列全部为空值')
+  const total = s.rows.length
+  if (total && empty === total) return { ...base, ok: false, hit: 0, errors: ['该列全部为空值'], badRows: [] }
+  if (hit === 0) return { ...base, ok: false, hit: 0, errors: [`无一行符合「${def.rule}」，疑似绑错列`], badRows }
+  const errors: string[] = []
+  if (badRows.length) errors.push(`${badRows.length} 行格式不符`)
+  if (empty) errors.push(`${empty} 行为空值`)
+  const ok = total > 0 && hit / total >= 0.95
+  if (!ok && !errors.length) errors.push(`格式命中率 ${Math.round((hit / total) * 100)}% 低于 95%`)
+  return { ...base, ok, hit, errors, badRows }
+}
+
+/**
+ * 逐样本校验一个参数：共用列命中的样本直接算，未命中的用该样本自己补选的列；
+ * 全部就绪样本都通过才算该参数通过
+ */
+const validateOne = (def: ParamDef): ParamResult => {
+  const r: ParamResult = { ok: false, errors: [], perSample: [] }
+  const ready = readySamples.value
+  if (!ready.length) {
+    r.errors.push('无已就绪样本')
     return r
   }
-  if (hit === 0) {
-    r.errors.push(`无一行符合「${def.rule}」，疑似绑错列`)
-    r.samples = badRows
+  if (!bindings[def.key] && ready.every((s) => !sampleBindings[s.uid]?.[def.key])) {
+    r.errors.push('未绑定样本列')
     return r
   }
-  if (badRows.length) {
-    r.errors.push(`${badRows.length} 行格式不符`)
-    r.samples = badRows
+  for (const s of ready) {
+    const col = effectiveColumn(def.key, s)
+    if (!col) {
+      r.perSample.push({ uid: s.uid, name: s.name, col: '', ok: false, hit: 0, total: s.rows.length, errors: ['该样本无同名列，请在下方补选'], badRows: [] })
+      continue
+    }
+    const dup = activeDefs.value.find((d) => d.key !== def.key && effectiveColumn(d.key, s) === col)
+    if (dup) {
+      r.perSample.push({ uid: s.uid, name: s.name, col, ok: false, hit: 0, total: s.rows.length, errors: [`与「${dup.label}」绑定同一列，不允许重复`], badRows: [] })
+      continue
+    }
+    r.perSample.push(checkSampleColumn(def, s, col))
   }
-  if (empty) r.errors.push(`${empty} 行为空值`)
-  r.hitCount = hit
-  // 口径：逐行校验，格式不符/空值行给出样例；命中行占比不足 95% 视为未通过
-  r.ok = hit / total >= 0.95
-  if (!r.ok && !r.errors.length) r.errors.push(`格式命中率 ${Math.round((hit / total) * 100)}% 低于 95%`)
+  r.ok = r.perSample.every((x) => x.ok)
+  if (!r.ok) {
+    const bad = r.perSample.filter((x) => !x.ok).map((x) => x.name)
+    r.errors.push(`${bad.length} / ${ready.length} 个样本未通过：${bad.join('、')}`)
+  }
   return r
 }
 
 const runValidation = async () => {
-  if (!sampleRows.value.length) {
-    Message.warning('请先完成样本获取')
+  if (!readySamples.value.length) {
+    Message.warning('请先在第一步添加已完成读取的样本')
     return
   }
   if (!activeDefs.value.length) {
@@ -662,52 +891,51 @@ const runValidation = async () => {
   validating.value = false
   const fail = activeDefs.value.filter((d) => !results[d.key].ok).length
   validation.value = fail ? 'error' : 'success'
-  if (fail) Message.warning(`${fail} 项参数列校验未通过，请修正后重新校验`)
-  else Message.success(`${activeDefs.value.map((d) => d.label).join(' / ')} 全部校验通过`)
+  if (fail) Message.warning(`${fail} 项参数列在部分样本上未通过，请修正后重新校验`)
+  else Message.success(`${activeDefs.value.map((d) => d.label).join(' / ')} 在 ${readySamples.value.length} 个样本上全部校验通过`)
 }
 
 const resultsSummary = computed(() => {
   const list = activeDefs.value.map((d) => ({
+    key: d.key,
     label: d.label,
     ok: results[d.key].ok,
-    hit: results[d.key].hitCount,
-    total: sampleRows.value.length,
     errors: results[d.key].errors,
-    samples: results[d.key].samples,
+    perSample: results[d.key].perSample,
   }))
-  // 明细仅在校验后展示：未通过或有告警的行展开，全部通过时收口为绿色标签
+  // 明细仅在校验后展示：未通过或含告警的行展开，全部通过时收口为绿色标签
   return {
     failCount: list.filter((x) => !x.ok).length,
-    detailRows: list.filter((x) => !x.ok || x.errors.length),
+    detailRows: list.filter((x) => !x.ok || x.perSample.some((p) => p.errors.length)),
   }
 })
 
 /* ---------- 步骤流转 ---------- */
+/** 只剩两步：步骤1 收齐机构 + 多样本 + 说明，步骤2 确认、绑定、校验并提交 */
 const nextStep = () => {
   if (currentStep.value === 0) {
     if (!form.agencyId) {
-      Message.warning('请选择持牌机构')
+      Message.warning('请选择合作机构')
       return
     }
-    if (form.sampleMode === 'library' && !form.table) {
-      Message.warning('样本来源为样本库时，请在本步或下一步完成样本表选择')
+    if (!samples.value.length) {
+      Message.warning('请至少添加一个样本（从样本库选表或上传 CSV）')
+      return
+    }
+    if (loadingSamples.value.length) {
+      Message.warning('有样本正在解析，请等待完成')
+      return
+    }
+    if (failedSamples.value.length) {
+      Message.warning(`${failedSamples.value.length} 个样本解析失败，请移除或重新上传`)
+      return
+    }
+    if (!readySamples.value.length) {
+      Message.warning('没有含有效数据行的样本，请检查文件内容或换表')
+      return
     }
     if (!form.description.trim()) {
       Message.warning('请填写申请说明')
-      return
-    }
-  } else if (currentStep.value === 1) {
-    // 外部数据多选位于步骤 3，不在这里拦截流转（否则永远无法进入 3.1）；提交与校验处已有守卫
-    if (form.sampleMode === 'library' && !form.table) {
-      Message.warning('请选择样本库与样本表')
-      return
-    }
-    if (!sampleColumns.value.length) {
-      Message.warning(form.sampleMode === 'library' ? '请先选择样本表完成样本读取' : '请上传 CSV 样本文件并完成解析')
-      return
-    }
-    if (!sampleRows.value.length) {
-      Message.warning('样本无有效数据行')
       return
     }
   }
@@ -739,23 +967,31 @@ const submitApplication = async () => {
     relatedProduct: form.externalData,
     applyData: {
       agency: { id: form.agencyId, name: selectedAgency.value?.agencyName, code: selectedAgency.value?.agencyCode, licenseNo: selectedAgency.value?.licenseNo },
-      sample: {
-        mode: form.sampleMode,
-        source: sampleSourceText.value,
-        database: form.sampleMode === 'library' ? form.database : undefined,
-        table: form.sampleMode === 'library' ? form.table : undefined,
-        rows: sampleRows.value.length,
-        columns: sampleColumns.value.length,
-      },
+      /** 多样本：一个申请可带多个样本，逐个记录来源与规模 */
+      samples: readySamples.value.map((s) => ({
+        kind: s.kind,
+        name: s.name,
+        database: s.kind === 'library' ? s.database : undefined,
+        table: s.kind === 'library' ? s.table : undefined,
+        rows: s.rows.length,
+        columns: s.columns.length,
+        skipped: s.skipped,
+      })),
+      sampleSummary: { count: readySamples.value.length, rows: totalSampleRows.value },
       externalData: form.externalData.map((n) => {
         const p = externalDataOptions.find((e) => e.name === n)
         return { name: n, interfaceId: p?.interfaceId, agency: p?.agency, requiredParams: p?.requiredParams }
       }),
+      /** 绑定按共用列 + 逐样本补选两层记录，回看时能知道哪个文件用的哪一列 */
       bindings: activeDefs.value.map((d) => ({
         element: d.label,
-        sampleField: bindings[d.key],
-        hitCount: results[d.key].hitCount,
-        total: sampleRows.value.length,
+        sharedField: bindings[d.key] || undefined,
+        perSample: results[d.key].perSample.map((p) => ({
+          sample: p.name,
+          sampleField: p.col,
+          hitCount: p.hit,
+          total: p.total,
+        })),
       })),
     },
     status: 'approving',
@@ -872,8 +1108,23 @@ onMounted(() => {
 }
 
 .upload-drop {
-  padding: 12px;
+  padding: 16px 12px;
   text-align: center;
+  border: 1px dashed var(--color-neutral-3);
+  border-radius: 4px;
+  background: var(--color-fill-1);
+  transition: border-color 0.2s;
+}
+
+.upload-drop:hover {
+  border-color: rgb(var(--primary-6));
+}
+
+/* UploadButton 会把 #upload-button 的内容包一层 span，不撑满则 hover 区只剩文字 */
+.sample-entry :deep(.arco-upload),
+.sample-entry :deep(.arco-upload > span) {
+  display: block;
+  width: 100%;
 }
 
 .binding-error {
@@ -887,5 +1138,74 @@ onMounted(() => {
   gap: 6px;
   flex-wrap: wrap;
   margin-bottom: 6px;
+}
+
+/* 步骤1 的两个样本添加入口平级并列，各自带小标题避免混为一谈 */
+.sample-entry {
+  padding: 12px;
+  border: 1px solid var(--color-neutral-3);
+  border-radius: 4px;
+  height: 100%;
+}
+
+.sample-entry-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.sample-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 12px 0 6px;
+}
+
+.sample-error {
+  color: rgb(var(--danger-6));
+  margin-top: 6px;
+}
+
+.sample-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+
+/* 逐样本补选区：只在共用列没覆盖时出现 */
+.pick-block {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--color-fill-1);
+  border-radius: 4px;
+}
+
+.pick-title {
+  font-size: 12px;
+  color: var(--color-text-2);
+  margin-bottom: 8px;
+}
+
+.pick-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.pick-name {
+  flex: 0 0 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
 }
 </style>

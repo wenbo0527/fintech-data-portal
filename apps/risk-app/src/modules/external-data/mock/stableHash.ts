@@ -35,3 +35,19 @@ export function hashPick<T>(list: T[], seed: string): T | undefined {
   if (!list || !list.length) {return undefined}
   return list[fnv1a(seed) % list.length]
 }
+
+/**
+ * 按 seed 派生一条确定性随机流，用于给 mock 样例数据连续铺行/铺列。
+ *
+ * 存在的理由：散点取值靠 hashUnit 就够，但「按表名生成 50 行 × N 列」需要每次调用
+ * 都推进状态，各页面若各自再抄一份 FNV + 同余生成器，就会出现同一张表在不同入口
+ * 取到不同数据、且散列实现失控（G9 单一事实源）。统一到这里，页面只认 makeStableRng。
+ */
+export function makeStableRng(seed: string): () => number {
+  let h = fnv1a(seed)
+  return () => {
+    h = Math.imul(h ^ (h >>> 15), 2246822507)
+    h = Math.imul(h ^ (h >>> 13), 3266489909)
+    return ((h ^= h >>> 16) >>> 0) / 4294967296
+  }
+}

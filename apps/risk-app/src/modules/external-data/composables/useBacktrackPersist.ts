@@ -7,6 +7,7 @@ import {
   fetchRetroTree,
   decryptArchivePackage,
   fetchArchiveContent,
+  fetchArchiveManifest,
   fetchPreviewRows,
   fetchProcessedRecords,
   fetchOutboundTasks,
@@ -32,7 +33,7 @@ import {
   fetchTasksByBackid,
   fetchBatchStage,
 } from '../api/backtrack'
-import type { RetroFile, RetroTreeNode, PreviewRow, ProcessedFileRecord } from '../mock/retroFiles'
+import type { RetroFile, RetroTreeNode, PreviewRow, ProcessedFileRecord, ArchiveExtractProgress } from '../mock/retroFiles'
 import type { OutboundTask } from '../mock/outboundTasks'
 import type { BacktrackProduct } from '../mock/backtrackProducts'
 import type { HiveTableItem } from '../mock/hiveTables'
@@ -118,6 +119,23 @@ interface RequiredFieldRule {
 }
 
 /**
+ * 解压过程阶段（R17/R19）
+ * idle 未开始 / decrypting 加密包密码校验中 / extracting 逐文件解压中
+ * identifying 包内 CSV 结构识别中 / done 解压完成 / failed 解压失败
+ */
+export type ExtractPhase = 'idle' | 'decrypting' | 'extracting' | 'identifying' | 'done' | 'failed'
+
+/** 包内单文件的解压状态，驱动解压面板里的逐文件进展列表 */
+export interface ExtractFileState {
+  /** 包内文件名 */
+  name: string
+  /** 解压后字节数（mock 侧按包内清单下发） */
+  size: number
+  /** pending 待解压 / doing 解压中 / done 已解压 */
+  status: 'pending' | 'doing' | 'done'
+}
+
+/**
  * 创建外数回溯落库的流程状态容器
  * @returns 流程状态与业务方法集合
  */
@@ -191,6 +209,149 @@ export function useBacktrackPersist() {
 
   /** 压缩包解压中 */
   const extractingArchive = ref(false)
+
+  /**
+   * 解压过程阶段（R17）
+   * 加密包先走 decrypting，再逐文件 extracting，收尾 identifying 识别包内 CSV 结构
+   */
+  const extractPhase = ref<ExtractPhase>('idle')
+
+  /** 包内单文件的解压状态 */
+  const extractFiles = ref<ExtractFileState[]>([])
+
+  /** 当前解压过程的累计字节进展（包内口径，非压缩包原始大小） */
+  const extractBytes = reactive({ done: 0, total: 0 })
+
+  /** 当前解压的压缩包（key + name），进度面板只跟随这一个包 */
+  const extractTarget = reactive({ key: '', name: '' })
+
+  /** 解压进度百分比（解压中最大 99，结构识别完成置 100） */
+  const extractPercent = ref(0)
+
+  /** 正在解压的包内文件名与序号 */
+  const extractCurrent = reactive({ fileName: '', fileIndex: 0, fileCount: 0 })
+
+  /** 解压结果摘要（完成或失败时留档，供面板展示耗时与产出） */
+  const extractSummary = reactive({ csvCount: 0, startedAt: 0, finishedAt: 0, error: '' })
+
+  /** 耗时秒级心跳：进行中让「已耗时」实时跳动，结束即停 */
+  const extractTick = ref(0)
+  let extractTimer: ReturnType<typeof setInterval> | null = null
+
+  /** 开启 / 停止耗时心跳 */
+  const startExtractTicker = () => {
+    stopExtractTicker()
+    extractTimer = setInterval(() => { extractTick.value += 1 }, 1000)
+  }
+  const stopExtractTicker = () => {
+    if (extractTimer) {
+      clearInterval(extractTimer)
+      extractTimer = null
+    }
+  }
+
+  /** 解压失败时所处步骤（0 起），避免步骤条把错误归到下一步 */
+  const extractFailedStep = ref(0)
+
+  /** 重置解压过程状态（换机构、换包重开时调用） */
+  const resetExtractProgress = () => {
+    extractPhase.value = 'idle'
+    extractFailedStep.value = 0
+    extractFiles.value = []
+    extractBytes.done = 0
+    extractBytes.total = 0
+    extractTarget.key = ''
+    extractTarget.name = ''
+    extractPercent.value = 0
+    extractCurrent.fileName = ''
+    extractCurrent.fileIndex = 0
+    extractCurrent.fileCount = 0
+    extractSummary.csvCount = 0
+    extractSummary.startedAt = 0
+    extractSummary.finishedAt = 0
+    extractSummary.error = ''
+    stopExtractTicker()
+  }
+
+  /** 解压是否进行中（含解密与结构识别） */
+  const extractRunning = computed(() =>
+    extractPhase.value === 'decrypting' || extractPhase.value === 'extracting' || extractPhase.value === 'identifying')
+
+  /**
+   * 面板是否针对某个压缩包节点展示
+   * 只匹配当前 key，避免切到别的压缩包还挂着上一个包的进度
+   */
+  const extractVisibleFor = (node: RetroTreeNode) => extractTarget.key === node.key && extractPhase.value !== 'idle'
+
+  /**
+   * 目录树节点是否处于解压过程中（含解密与结构识别）
+   * 除压缩包本身外，其祖先目录节点一并命中（key 为路径前缀），
+   * 让目录树上层也能看到 loading，避免用户滚到目录处看不到进展
+   */
+  const isNodeExtracting = (node: RetroTreeNode) => {
+    if (!extractRunning.value || !extractTarget.key) return false
+    if (node.nodeType === 'archive') return extractTarget.key === node.key
+    return node.nodeType === 'folder' && extractTarget.key.startsWith(`${node.key}/`)
+  }
+
+  /** 目录树节点是否为本次解压失败的压缩包 */
+  const isNodeExtractFailed = (node: RetroTreeNode) =>
+    node.nodeType === 'archive' && extractTarget.key === node.key && extractPhase.value === 'failed'
+
+  /** 解压阶段对应的步骤序号（0 起，供页面 a-steps 高亮） */
+  const extractStepIndex = computed(() => {
+    if (extractPhase.value === 'failed') return extractFailedStep.value
+    return ({ idle: 0, decrypting: 0, extracting: 1, identifying: 2, done: 3 })[extractPhase.value]
+  })
+
+  /** 已耗时毫秒数（进行中按心跳刷新，结束后定格在 finishedAt） */
+  const extractElapsedMs = computed(() => {
+    void extractTick.value
+    const start = extractSummary.startedAt
+    if (!start) return 0
+    return (extractSummary.finishedAt || Date.now()) - start
+  })
+
+  /** 已耗时文案（秒，保留 1 位小数） */
+  const extractElapsedText = computed(() => `${(extractElapsedMs.value / 1000).toFixed(1)}s`)
+
+  /**
+   * 开始跟踪某个包的解压过程：先拉包内清单，让文件列表以「待解压」态立即出现
+   * @param node 压缩包节点
+   * @param phase 起始阶段（加密包为 decrypting，明文包直接 extracting）
+   */
+  const beginExtractProgress = async (node: RetroTreeNode, phase: ExtractPhase) => {
+    // 同一个包重开（如解压失败后重试）保留起点时间，解密 → 解压整段耗时才连贯
+    const keepStartedAt = extractTarget.key === node.key ? extractSummary.startedAt : 0
+    resetExtractProgress()
+    const entries = await fetchArchiveManifest(node.key)
+    extractTarget.key = node.key
+    extractTarget.name = node.name
+    extractPhase.value = phase
+    extractFiles.value = entries.map((e) => ({ name: e.name, size: e.size || 0, status: 'pending' as const }))
+    extractBytes.total = entries.reduce((sum, e) => sum + (e.size || 0), 0)
+    extractCurrent.fileCount = entries.length
+    extractSummary.startedAt = keepStartedAt || Date.now()
+    startExtractTicker()
+  }
+
+  /**
+   * 接收 mock 侧逐段上报的解压进展，驱动进度条与包内文件状态
+   * @param progress 当前累计字节与所处文件
+   */
+  const onExtractProgress = (progress: ArchiveExtractProgress) => {
+    extractPercent.value = progress.percent
+    extractBytes.done = progress.extractedBytes
+    extractBytes.total = progress.totalBytes || extractBytes.total
+    extractCurrent.fileName = progress.fileName
+    extractCurrent.fileIndex = progress.fileIndex
+    extractCurrent.fileCount = progress.fileCount
+    extractFiles.value.forEach((f, i) => {
+      if (i < progress.fileIndex - 1) f.status = 'done'
+      else if (i === progress.fileIndex - 1) f.status = 'doing'
+      else f.status = 'pending'
+    })
+  }
 
   /** 压缩包解密弹窗可见性 */
   const archiveDecryptVisible = ref(false)
@@ -270,6 +431,7 @@ export function useBacktrackPersist() {
     retroTree.value = []
     selectedTreeNode.value = null
     extractedArchive.value = null
+    resetExtractProgress()
     decryptedArchives.value = []
     extractedArchives.value = []
     selectedFile.value = null
@@ -346,6 +508,7 @@ export function useBacktrackPersist() {
   /**
    * 解压压缩包（R17：包内仍只接受 CSV）
    * 加密包必须先通过密码解密，否则拒绝解压
+   * 全程把阶段 / 百分比 / 当前文件 / 累计字节写进解压状态，供页面实时展示解压过程
    * @param node 压缩包节点
    */
   const extractArchive = async (node: RetroTreeNode) => {
@@ -359,12 +522,28 @@ export function useBacktrackPersist() {
     }
     extractingArchive.value = true
     try {
-      const inner = await fetchArchiveContent(node.key)
+      // 解压前先拿包内清单，进度面板能立即列出待解压文件与总字节数
+      await beginExtractProgress(node, 'extracting')
+      extractPhase.value = 'extracting'
+      const inner = await fetchArchiveContent(node.key, onExtractProgress)
       const csvFiles = inner.filter((c) => c.nodeType === 'csv')
       if (!csvFiles.length) {
+        extractFailedStep.value = 1
+        Object.assign(extractSummary, {
+          csvCount: 0,
+          finishedAt: Date.now(),
+          error: '压缩包内没有可落库的 CSV 文件',
+        })
+        extractPhase.value = 'failed'
+        stopExtractTicker()
         Message.warning('压缩包内没有可落库的 CSV 文件')
         return
       }
+      // 字节全部解完进入结构识别收尾，让进度条有一段可见的「最后一公里」
+      extractPhase.value = 'identifying'
+      extractPercent.value = 100
+      extractFiles.value.forEach((f) => { f.status = 'done' })
+      await new Promise((r) => setTimeout(r, 400))
       // 将包内文件挂回树节点，解压后可展开选择
       node.children = inner
       extractedArchive.value = node
@@ -375,7 +554,17 @@ export function useBacktrackPersist() {
       if (!expandedKeys.value.includes(node.key)) {
         expandedKeys.value = [...expandedKeys.value, node.key]
       }
+      Object.assign(extractSummary, { csvCount: csvFiles.length, finishedAt: Date.now(), error: '' })
+      extractPhase.value = 'done'
+      stopExtractTicker()
       Message.success(`已解压 ${node.name}，内含 ${csvFiles.length} 个 CSV 文件，请选择其一拉取`)
+    } catch {
+      // 失败发生在哪一步就停在哪一步（字节未走完属解压，已走完属结构识别）
+      extractFailedStep.value = extractBytes.total > 0 && extractBytes.done >= extractBytes.total ? 2 : 1
+      Object.assign(extractSummary, { finishedAt: Date.now(), error: '解压中断，可重新点击「解压压缩包」重试' })
+      extractPhase.value = 'failed'
+      stopExtractTicker()
+      Message.error(`${node.name} 解压失败，请重新发起解压`)
     } finally {
       extractingArchive.value = false
     }
@@ -403,9 +592,15 @@ export function useBacktrackPersist() {
     try {
       const target = archiveDecryptTarget
       if (!target) return false
+      // 解密也归入解压过程展示：面板先以「密码解密」阶段出现，后续解压接管同一 key
+      await beginExtractProgress(target, 'decrypting')
       const ok = await decryptArchivePackage(target.key, archivePassword.value)
       if (!ok) {
         archiveDecryptFailed.value = '解压失败，请检查压缩包密码是否正确'
+        extractFailedStep.value = 0
+        Object.assign(extractSummary, { finishedAt: Date.now(), error: '密码校验未通过，解压已阻断' })
+        extractPhase.value = 'failed'
+        stopExtractTicker()
         Message.error('解压失败，请检查压缩包密码是否正确')
         return false
       }
@@ -1786,6 +1981,21 @@ ${stackArgs}
     decryptedArchives,
     extractedArchives,
     extractingArchive,
+    extractPhase,
+    extractFiles,
+    extractBytes,
+    extractTarget,
+    extractPercent,
+    extractCurrent,
+    extractSummary,
+    extractRunning,
+    extractVisibleFor,
+    isNodeExtracting,
+    isNodeExtractFailed,
+    extractStepIndex,
+    extractElapsedMs,
+    extractElapsedText,
+    resetExtractProgress,
     archiveDecryptVisible,
     archiveDecrypting,
     archivePassword,

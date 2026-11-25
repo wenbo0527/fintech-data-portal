@@ -27,9 +27,10 @@ import {
   buildPreviewRows,
   decryptArchive,
   extractArchiveContent,
+  listArchiveEntries,
   parseReviewDateFromFileName,
 } from '../mock/retroFiles'
-import type { RetroFile, RetroTreeNode, ProcessedFileRecord, PreviewRow } from '../mock/retroFiles'
+import type { RetroFile, RetroTreeNode, ProcessedFileRecord, PreviewRow, ArchiveExtractProgress } from '../mock/retroFiles'
 import { getBacktrackProduct, listBacktrackProducts } from '../mock/backtrackProducts'
 import type { BacktrackProduct } from '../mock/backtrackProducts'
 import { buildConsistencyDetails, summarizeConsistency, buildTripleRowCheck } from '../mock/validation'
@@ -213,9 +214,18 @@ export async function decryptArchivePackage(archiveKey: string, password: string
   return false
 }
 
-/** 解压压缩包并返回包内文件（R17：包内仍只接受 CSV） */
-export async function fetchArchiveContent(archiveKey: string): Promise<RetroTreeNode[]> {
-  if (useMock) return extractArchiveContent(archiveKey)
+/** 包内文件清单（解压前拿，用于先渲染待解压列表与总字节数） */
+export async function fetchArchiveManifest(archiveKey: string): Promise<RetroTreeNode[]> {
+  if (useMock) return Promise.resolve(listArchiveEntries(archiveKey))
+  return []
+}
+
+/** 解压压缩包并返回包内文件（R17：包内仍只接受 CSV），onProgress 逐段上报解压进展 */
+export async function fetchArchiveContent(
+  archiveKey: string,
+  onProgress?: (progress: ArchiveExtractProgress) => void,
+): Promise<RetroTreeNode[]> {
+  if (useMock) return extractArchiveContent(archiveKey, onProgress)
   return []
 }
 

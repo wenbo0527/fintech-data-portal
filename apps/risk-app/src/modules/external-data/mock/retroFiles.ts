@@ -758,13 +758,77 @@ export async function decryptArchive(archiveKey: string, password: string): Prom
 }
 
 /**
+ * 解压进度事件（R17）
+ * mock 侧按「包内文件逐个、单文件分多段」推进字节数，让页面进度条呈现真实增长过程，
+ * 而不是点一下就从 0 跳到 100。
+ */
+export interface ArchiveExtractProgress {
+  /** 当前正在解压的包内文件名 */
+  fileName: string
+  /** 当前文件序号（从 1 开始，与 listArchiveEntries 顺序一致） */
+  fileIndex: number
+  /** 包内文件总数 */
+  fileCount: number
+  /** 包内累计已解压字节数 */
+  extractedBytes: number
+  /** 包内待解压总字节数 */
+  totalBytes: number
+  /** 整体进度百分比（解压中最大给到 99，收尾由调用方置 100） */
+  percent: number
+}
+
+/**
+ * 包内文件清单（解压前即可拿到）
+ * 页面据此先渲染「待解压」文件列表，再随解压进度逐条翻成「解压中 / 已解压」
+ * @param archiveKey 压缩包节点 key
+ */
+export function listArchiveEntries(archiveKey: string): RetroTreeNode[] {
+  return (archiveContentCatalog[archiveKey] || []).map((n) => ({ ...n }))
+}
+
+/** 解压模拟的刷新粒度：单文件拆成 4 段推进 */
+const EXTRACT_TICKS = 4
+
+/** 单段等待时长（ms），整个包解压控制在 1~2s，够看清过程又不拖慢操作 */
+const EXTRACT_TICK_MS = 180
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
  * 解压压缩包并返回包内文件（R17：包内仍只接受 CSV）
  * @param archiveKey 压缩包节点 key
+ * @param onProgress 解压进度回调，逐段上报当前文件与累计字节数
  * @returns 包内文件节点列表
  */
-export async function extractArchiveContent(archiveKey: string): Promise<RetroTreeNode[]> {
-  await new Promise((r) => setTimeout(r, 500))
-  return (archiveContentCatalog[archiveKey] || []).map((n) => ({ ...n }))
+export async function extractArchiveContent(
+  archiveKey: string,
+  onProgress?: (progress: ArchiveExtractProgress) => void,
+): Promise<RetroTreeNode[]> {
+  const files = archiveContentCatalog[archiveKey] || []
+  if (!files.length) return []
+  const totalBytes = files.reduce((sum, f) => sum + (f.size || 0), 0)
+  let doneBytes = 0
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i]
+    const fileSize = file.size || 0
+    const chunk = Math.max(Math.round(fileSize / EXTRACT_TICKS), 1)
+    let fileBytes = 0
+    for (let t = 0; t < EXTRACT_TICKS; t++) {
+      await sleep(EXTRACT_TICK_MS)
+      fileBytes = Math.min(fileBytes + chunk, fileSize)
+      const extractedBytes = doneBytes + fileBytes
+      onProgress?.({
+        fileName: file.name,
+        fileIndex: i + 1,
+        fileCount: files.length,
+        extractedBytes,
+        totalBytes,
+        percent: totalBytes ? Math.min(99, Math.floor((extractedBytes / totalBytes) * 100)) : 99,
+      })
+    }
+    doneBytes += fileSize
+  }
+  return files.map((n) => ({ ...n }))
 }
 
 /** 按文件指纹（文件名 + 文件大小）查询历史落库批次 */

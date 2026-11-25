@@ -131,7 +131,8 @@
                         <template #icon><icon-refresh /></template>
                         刷新目录
                       </a-button>
-                      <a-tag v-if="extractedArchive" color="purple" size="medium">
+                      <a-tag v-if="extractRunning" color="arcoblue" size="medium">解压中 {{ extractPercent }}%</a-tag>
+                      <a-tag v-else-if="extractedArchive" color="purple" size="medium">
                         已解压：{{ extractedArchive.name }}
                       </a-tag>
                     </a-space>
@@ -158,7 +159,9 @@
                       @expand="onTreeExpand"
                     >
                       <template #title="node">
-                        <icon-folder v-if="node.data.nodeType === 'folder'" />
+                        <!-- 解压中：目录树就地挂 loading，上层目录一并命中，不用跳到右侧详情才能看进展 -->
+                        <icon-loading v-if="isNodeExtracting(node.data)" spin class="tree-node-extracting" />
+                        <icon-folder v-else-if="node.data.nodeType === 'folder'" />
                         <icon-archive v-else-if="node.data.nodeType === 'archive'" />
                         <icon-file v-else />
                         <span class="tree-node-name">{{ node.title }}</span>
@@ -168,10 +171,26 @@
                           size="small"
                         />
                         <a-tag
-                          v-if="node.data.nodeType === 'archive' && isArchiveExtracted(node.data)"
+                          v-if="isNodeExtracting(node.data)"
+                          size="small"
+                          color="arcoblue"
+                          class="tree-node-tag"
+                        >
+                          {{ node.data.nodeType === 'archive' ? `解压中 ${extractPercent}%` : '解压中' }}
+                        </a-tag>
+                        <a-tag
+                          v-else-if="isNodeExtractFailed(node.data)"
+                          size="small"
+                          color="red"
+                          class="tree-node-tag"
+                        >
+                          解压失败
+                        </a-tag>
+                        <a-tag
+                          v-else-if="node.data.nodeType === 'archive' && isArchiveExtracted(node.data)"
                           size="small"
                           color="purple"
-                          style="margin-left: 4px"
+                          class="tree-node-tag"
                         >
                           已解压
                         </a-tag>
@@ -237,9 +256,9 @@
 
                     <!-- 压缩包：解密 / 解压 / 包内文件 -->
                     <template v-if="selectedTreeNode.nodeType === 'archive'">
-                      <!-- 加密包：需先解密才能解压 -->
+                      <!-- 加密包：需先解密才能解压（解压过程面板出现时让位） -->
                       <a-alert
-                        v-if="selectedTreeNode.encrypted && !isArchiveDecrypted(selectedTreeNode)"
+                        v-if="selectedTreeNode.encrypted && !isArchiveDecrypted(selectedTreeNode) && !extractVisibleFor(selectedTreeNode)"
                         type="warning"
                         style="margin-bottom: 8px"
                       >
@@ -252,9 +271,63 @@
                         </template>
                       </a-alert>
 
-                      <!-- 未解压：提供解压入口 -->
+                      <!-- 解压过程：密码解密 → 逐文件解压 → 结构识别，进度实时刷新 -->
+                      <div v-if="extractVisibleFor(selectedTreeNode)" class="extract-panel">
+                        <div class="extract-panel-head">
+                          <span class="extract-panel-title">
+                            <icon-archive /> 解压 {{ extractTarget.name }}
+                          </span>
+                          <a-tag size="small" :color="extractPhaseColor">{{ extractPhaseLabel }}</a-tag>
+                        </div>
+
+                        <a-steps :current="extractStepCurrent" size="small" class="extract-steps">
+                          <a-step
+                            v-for="(label, idx) in extractPhaseSteps"
+                            :key="label"
+                            :title="label"
+                            :status="extractStepStatus(idx)"
+                          />
+                        </a-steps>
+
+                        <a-progress
+                          :percent="extractPercent / 100"
+                          :status="extractPhase === 'failed' ? 'warning' : 'normal'"
+                        />
+
+                        <div class="extract-meta">
+                          <span>当前文件：{{ extractCurrent.fileName || '—' }}</span>
+                          <span>文件 {{ extractCurrent.fileIndex }} / {{ extractCurrent.fileCount }}</span>
+                          <span class="mono">
+                            {{ formatFileSize(extractBytes.done) }} / {{ formatFileSize(extractBytes.total) }}
+                          </span>
+                          <span>速率 {{ extractSpeedText }}</span>
+                          <span>已耗时 {{ extractElapsedText }}</span>
+                        </div>
+
+                        <!-- 已解压完成时包内文件由下方表格列出，此处只在过程与失败时逐条跟进 -->
+                        <ul v-if="extractPhase !== 'done'" class="extract-file-list">
+                          <li v-for="f in extractFiles" :key="f.name" :class="['extract-file', `is-${f.status}`]">
+                            <icon-check-circle v-if="f.status === 'done'" class="extract-file-icon is-done" />
+                            <icon-loading v-else-if="f.status === 'doing'" class="extract-file-icon is-doing" />
+                            <span v-else class="extract-file-icon is-pending">·</span>
+                            <span class="extract-file-name">{{ f.name }}</span>
+                            <span class="extract-file-size mono">{{ formatFileSize(f.size) }}</span>
+                            <span class="extract-file-status">{{ extractFileStatusLabel(f.status) }}</span>
+                          </li>
+                        </ul>
+
+                        <a-alert v-if="extractPhase === 'done'" type="success" class="extract-result">
+                          {{ extractDoneSummary }}
+                        </a-alert>
+                        <a-alert v-else-if="extractPhase === 'failed'" type="error" class="extract-result">
+                          {{ extractSummary.error || '解压失败，请重新发起解压' }}
+                        </a-alert>
+                      </div>
+
+                      <!-- 未解压：提供解压入口（加密包需先解密，解压面板展示时不再重复给入口） -->
                       <a-alert
-                        v-else-if="!isArchiveExtracted(selectedTreeNode)"
+                        v-if="!extractVisibleFor(selectedTreeNode) && !isArchiveExtracted(selectedTreeNode)
+                          && (!selectedTreeNode.encrypted || isArchiveDecrypted(selectedTreeNode))"
                         type="info"
                         style="margin-bottom: 8px"
                       >
@@ -273,8 +346,8 @@
                       </a-alert>
 
                       <!-- 已解压：列出包内文件 -->
-                      <template v-else>
-                        <a-alert type="success" style="margin-bottom: 8px">
+                      <template v-if="isArchiveExtracted(selectedTreeNode)">
+                        <a-alert v-if="!extractVisibleFor(selectedTreeNode)" type="success" style="margin-bottom: 8px">
                           压缩包已解压，包内文件为 R17 允许的 CSV 格式，请展开左侧目录树选择包内文件拉取。
                         </a-alert>
                         <a-table :data="selectedTreeNode.children || []" :pagination="false" row-key="key" size="small">
@@ -1003,7 +1076,7 @@ import { Message } from '@arco-design/web-vue'
 import {
   IconSearch, IconSave, IconUpload, IconSafe, IconFindReplace, IconRefresh,
   IconEye, IconFile, IconSend, IconStorage, IconCheckCircle, IconExclamationCircleFill,
-  IconFolder, IconArchive, IconLock,
+  IconFolder, IconArchive, IconLock, IconLoading,
 } from '@arco-design/web-vue/es/icon'
 import SqlPreviewBlock from '../components/SqlPreviewBlock.vue'
 import { useBacktrackPersist } from '../composables/useBacktrackPersist'
@@ -1049,6 +1122,9 @@ const {
   agencies, selectedAgencyId, selectedAgency, pathCleanupNotice,
   dataSourceMode, sftpDir, retroTree, selectedTreeNode, extractedArchive, expandedKeys, onTreeExpand, fullFilePath, sftpParams,
   extractingArchive, archiveDecryptVisible, archiveDecrypting, archivePassword, archiveDecryptFailed,
+  extractPhase, extractFiles, extractBytes, extractTarget, extractPercent, extractCurrent, extractSummary,
+  extractRunning, extractVisibleFor, isNodeExtracting, isNodeExtractFailed, extractStepIndex,
+  extractElapsedMs, extractElapsedText,
   openArchiveDecrypt, confirmArchiveDecrypt, isArchiveDecrypted, isArchiveExtracted, extractArchive,
   querying, selectedFile, uploadFileList, uploadedFile,
   fileStructure, previewRows, previewColumns, activeFile,
@@ -1156,6 +1232,77 @@ const nodeTypeLabel = (type: RetroNodeType) =>
 /** 节点类型标签色 */
 const nodeTypeColor = (type: RetroNodeType) =>
   ({ folder: 'arcoblue', csv: 'green', archive: 'purple' })[type] || 'gray'
+
+/* ---------- 解压过程展示（R17/R19） ---------- */
+/** 解压阶段文案，面板右上角随阶段切换 */
+const EXTRACT_PHASE_LABEL: Record<string, string> = {
+  idle: '待解压',
+  decrypting: '密码解密中',
+  extracting: '解压中',
+  identifying: '结构识别中',
+  done: '解压完成',
+  failed: '解压失败',
+}
+
+/** 解压阶段标签色 */
+const EXTRACT_PHASE_COLOR: Record<string, string> = {
+  idle: 'gray',
+  decrypting: 'orange',
+  extracting: 'arcoblue',
+  identifying: 'arcoblue',
+  done: 'green',
+  failed: 'red',
+}
+
+const extractPhaseLabel = computed(() => EXTRACT_PHASE_LABEL[extractPhase.value] || extractPhase.value)
+const extractPhaseColor = computed(() => EXTRACT_PHASE_COLOR[extractPhase.value] || 'gray')
+
+/**
+ * 解压步骤标题：加密包多一格「密码解密」
+ * 与 composable 的 extractStepIndex（按加密包三格口径给出）保持同一套阶段
+ */
+const extractPhaseSteps = computed(() =>
+  selectedTreeNode.value?.encrypted
+    ? ['密码解密', '解压包内文件', '结构识别']
+    : ['解压包内文件', '结构识别'])
+
+/** 当前阶段在展示步骤里的下标（明文包整体前移一格） */
+const extractCurrentStepIdx = computed(() => {
+  const base = extractStepIndex.value
+  return selectedTreeNode.value?.encrypted ? base : Math.max(base - 1, 0)
+})
+
+/** a-steps 的 current 从 1 起 */
+const extractStepCurrent = computed(() => extractCurrentStepIdx.value + 1)
+
+/** 逐步骤状态：完成 / 进行中 / 未开始，失败时当前步骤标红 */
+const extractStepStatus = (idx: number) => {
+  const cur = extractCurrentStepIdx.value
+  if (extractPhase.value === 'done' || idx < cur) { return 'finish' }
+  if (idx > cur) { return 'wait' }
+  return extractPhase.value === 'failed' ? 'error' : 'process'
+}
+
+/** 包内文件解压状态文案 */
+const extractFileStatusLabel = (status: string) =>
+  ({ pending: '待解压', doing: '解压中', done: '已解压' })[status] || status
+
+/** 平均解压速率（已解压字节 / 已耗时），耗时不足 1s 时不展示避免数字乱跳 */
+const extractSpeedText = computed(() => {
+  const sec = extractElapsedMs.value / 1000
+  if (!extractRunning.value || sec < 1) { return '—' }
+  return `${formatFileSize(extractBytes.done / sec)}/s`
+})
+
+/** 解压完成摘要（单行 computed 拼接，避开模板换行带进来的多余空格） */
+const extractDoneSummary = computed(() => {
+  const parts = [
+    `包内 ${extractFiles.value.length} 个文件（可落库 CSV ${extractSummary.csvCount} 个）`,
+    `共 ${formatFileSize(extractBytes.total)}`,
+    `耗时 ${extractElapsedText.value}`,
+  ]
+  return `解压完成：${parts.join('，')}，已自动展开目录树，请选择包内 CSV 拉取。`
+})
 
 /* ---------- 落 Hive ---------- */
 const writing = ref(false)
@@ -1592,6 +1739,119 @@ const applyBatchFromRoute = async (backid: string) => {
 .tree-node-lock {
   margin-left: 4px;
   color: var(--orange-6);
+}
+
+/* 解压中的目录节点 loading（图标旋转 + 标签） */
+.tree-node-extracting {
+  color: rgb(var(--primary-6));
+}
+
+.tree-node-tag {
+  margin-left: 4px;
+}
+
+/* 解压过程面板：阶段 + 进度条 + 逐文件进展 */
+.extract-panel {
+  margin-bottom: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+  background: var(--color-fill-1);
+}
+
+.extract-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.extract-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-1);
+  word-break: break-all;
+}
+
+.extract-steps {
+  margin-bottom: 4px;
+}
+
+/* 指标行：当前文件 / 字节 / 速率 / 耗时 */
+.extract-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 2px 0 10px;
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
+.extract-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 168px;
+  overflow-y: auto;
+  border-top: 1px dashed var(--color-border-2);
+}
+
+.extract-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 2px;
+  font-size: 12px;
+  color: var(--color-text-3);
+  border-bottom: 1px solid var(--color-border-1);
+}
+
+.extract-file:last-child {
+  border-bottom: none;
+}
+
+.extract-file.is-doing {
+  color: var(--color-text-1);
+  background: var(--color-primary-light-1);
+}
+
+.extract-file.is-done {
+  color: var(--color-text-2);
+}
+
+.extract-file-icon {
+  flex: none;
+  width: 14px;
+  text-align: center;
+}
+
+.extract-file-icon.is-done {
+  color: var(--green-6);
+}
+
+.extract-file-icon.is-doing {
+  color: rgb(var(--primary-6));
+}
+
+.extract-file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.extract-file-size {
+  flex: none;
+}
+
+.extract-file-status {
+  flex: none;
+  width: 48px;
+  text-align: right;
 }
 
 .persist-card {

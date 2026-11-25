@@ -86,28 +86,14 @@
               </div>
             </a-form-item>
 
-            <!-- 观测日期范围：单次 / 周期共用的时间窗口 -->
-            <a-row :gutter="16" v-if="createMode === CREATE_MODES.SINGLE">
-              <a-col :span="12">
-                <a-form-item label="观测日期范围" :extra="createMode === CREATE_MODES.SINGLE ? '定义本次回溯的时间范围' : ''">
-                  <a-range-picker
-                    v-model="observeForm.dateRange"
-                    style="width: 100%"
-                    format="YYYY-MM-DD"
-                    :placeholder="['开始日期', '结束日期']"
-                  />
-                </a-form-item>
-              </a-col>
-              <!-- 模块A P0：推理入参特征文件落库勾选项 -->
-              <a-col :span="12">
-                <a-form-item label=" ">
-                  <a-checkbox v-model="observeForm.featurePersist">
-                    推理入参入库
-                  </a-checkbox>
-                  <div class="field-hint" style="margin-top:4px;">勾选后，本次回溯的推理入参特征文件将写入推理结果表，供后续追溯与复用</div>
-                </a-form-item>
-              </a-col>
-            </a-row>
+            <!-- 模块A P0：推理入参特征文件落库勾选项 -->
+            <!-- 回溯时间窗口不单独设项：样本数据在步骤三的 SQL 条件里用 dt 区间界定，重复录入只会两处不一致 -->
+            <a-form-item v-if="createMode === CREATE_MODES.SINGLE">
+              <a-checkbox v-model="observeForm.featurePersist">
+                推理入参入库
+              </a-checkbox>
+              <div class="field-hint" style="margin-top:4px;">勾选后，本次回溯的推理入参特征文件将写入推理结果表，供后续追溯与复用</div>
+            </a-form-item>
         </a-form>
         </a-collapse-item>
 
@@ -1214,8 +1200,8 @@ const onSingleModelToggle = (val) => {
 }
 // ============ 回溯任务配置：新增字段 END ============
 
-// 观测日期
-const observeForm = ref({ observeDate: '', dateRange: [], featurePersist: false })
+// 观测配置（时间窗口由样本 SQL 的 dt 条件界定，不在此重复录入）
+const observeForm = ref({ featurePersist: false })
 
 // SQL 预览
 const baseSQL = computed(() => {
@@ -1542,8 +1528,6 @@ const prefillFromCopy = async (copyFromId) => {
     sampleForm.value.tableNameInput = cfg.table || ''
     sampleForm.value.sqlWhere = cfg.sqlWhere || ''
 
-    observeForm.value.dateRange = Array.isArray(cfg.dateRange) ? cfg.dateRange : []
-
     if (sampleForm.value.tableNameInput) {
       await handleTableValidate()
     }
@@ -1621,7 +1605,6 @@ const prefillFromCopy = async (copyFromId) => {
       sampleForm.value.kangarooTaskId = ''
       sampleForm.value.taskStartDate = null
       sampleForm.value.taskEndDate = null
-      observeForm.value.dateRange = []
     }
   } catch (e) {
     Message.error('复制任务初始化失败')
@@ -1786,8 +1769,6 @@ const handleSubmit = async () => {
       table: sampleForm.value.tableNameInput,
       sourceType: sampleForm.value.sourceType,
       mode: sampleForm.value.mode,
-      observeDate: observeForm.value.observeDate,
-      dateRange: observeForm.value.dateRange || [],
       serviceName: modelForm.value.serviceName,
       version: modelForm.value.selectedVersion,
       // 模型产物文件：拉取成功后随任务下发，详情页只读回显
@@ -1845,9 +1826,6 @@ const handleSubmit = async () => {
 
 const handleModeChange = (mode) => {
   sampleForm.value.mode = mode
-  if (mode === CREATE_MODES.PERIODIC) {
-    observeForm.value.dateRange = []
-  }
 }
 
 const handleCancel = () => {

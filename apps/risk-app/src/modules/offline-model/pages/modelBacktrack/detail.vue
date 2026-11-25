@@ -39,10 +39,8 @@
                   {{ detail.config?.mode === 'periodic' ? '周期回溯' : '单次回溯' }}
                 </a-tag>
               </a-descriptions-item>
-              <a-descriptions-item label="观测日期范围">
-                {{ formatRange(detail.config?.dateRange) }}
-              </a-descriptions-item>
-              <a-descriptions-item label="推理入参入库" :span="2">
+              <!-- 时间窗口不再单独回显：回溯区间以步骤三的样本 SQL 条件为准 -->
+              <a-descriptions-item label="推理入参入库">
                 <a-tag :color="detail.config?.featurePersist ? 'green' : 'gray'">
                   {{ detail.config?.featurePersist ? '已勾选（入参将落库）' : '未勾选' }}
                 </a-tag>

@@ -35,6 +35,16 @@
 
 - [migration/JS-TS-MIGRATION.md](migration/JS-TS-MIGRATION.md) — JS/TS 双版本清单 + P2 拆分任务
 
+### 2026-11 架构治理轮（当前进展看这里）
+
+- [architecture/cleanup-plan-2026-11.md](architecture/cleanup-plan-2026-11.md) — 全仓冗余扫描 + 整洁优化方案（§10 = DEC-01 归属裁定）
+- [architecture/dec01-migration-checklist-2026-11.md](architecture/dec01-migration-checklist-2026-11.md) — T0–T6 台账与批次数字（dca→dfd 闭包 66/29,888 → 0）
+- [architecture/migration-roadmap-2026-11.md](architecture/migration-roadmap-2026-11.md) — 后续处理路线图
+- [architecture/deploy-prefix-2026-11.md](architecture/deploy-prefix-2026-11.md) — 部署前缀口径、现网实测、portal-app 定性
+- 视图：[architecture/entry-points-2026-11.dot](architecture/entry-points-2026-11.dot)（入口）· [boot-flow-2026-11.dot](architecture/boot-flow-2026-11.dot)（启动链路）· [dependency-gap-2026-11.dot](architecture/dependency-gap-2026-11.dot)（依赖缺口）
+- 闸门：`pnpm verify:dec01` · `pnpm verify:entry-registry` · `bash scripts/check-base-consistency.sh`
+- ⚠️ [architecture/overview.md](architecture/overview.md) 是 2026-09 版，其中「应用清单 / 部署」两节已被上面几份取代
+
 ## 📋 P0-P1 改造进度
 
 | 阶段 | 任务 | 状态 | commit |
@@ -48,18 +58,25 @@
 | P1-6 | 文档体系重建 | ✅ | （本次提交） |
 | P1-8 | README 重写（3.3K → 11K） | ✅ | `b6eb7990` |
 | P1-9 | 测试文件清理 + 子应用测试目录 | ✅ | `5cc90914` |
-| P1-10 | CI/CD 优化（6 阶段质量门） | ✅ | `be4fb2f9` |
+| P1-10 | CI/CD 优化（当时 6 阶段质量门；现为 7 个 job，typecheck 那格是假绿，见 CONTRIBUTING §5.3） | ✅ | `be4fb2f9` |
 | P2-1 | 质量基线报告（持续运营起点） | ✅ | （本次） |
 
 ## 🗂 各目录文件清单
 
 ### architecture/
 ```
-overview.md                          # 原 ARCHITECTURE.md
+overview.md                          # 原 ARCHITECTURE.md（2026-09 版，部署一节已过时）
 README.md                            # 架构治理说明（从 架构治理/README.md 移入）
 架构治理路线图.md                     # 治理路径规划
 项目精简架构图.md                     # 精简架构图
 详情页信息清单.md                     # 详情页字段清单
+cleanup-plan-2026-11.md              # 2026-11 冗余扫描与整洁优化方案（§10 DEC-01）
+dec01-migration-checklist-2026-11.md # DEC-01 / T0–T6 迁移台账
+migration-roadmap-2026-11.md         # 后续处理路线图
+deploy-prefix-2026-11.md             # 部署前缀口径与现网实测
+entry-points-2026-11.dot             # 入口视图（2 真入口 / 4 伪清单）
+boot-flow-2026-11.dot                # 启动链路视图
+dependency-gap-2026-11.dot           # 依赖缺口视图
 设计/
   2026-06-24-技术设计-变量全生命周期（变量中心）-v1.0.md
 ```
@@ -117,7 +134,7 @@ legacy-root/                         # P0-1 临时归档（与 archive/legacy-do
 
 - 仓库根 [`README.md`](../README.md) — 项目总入口
 - 设计原则与规范源 [.trae/documents/产品设计/数字社区项目整理规划.md](../.trae/documents/产品设计/数字社区项目整理规划.md)
-- 冻结的旧主应用 [archive/legacy-src/DEPRECATED.md](archive/legacy-src/DEPRECATED.md)
+- 冻结的旧主应用 [../archive/legacy-src/DEPRECATED.md](../archive/legacy-src/DEPRECATED.md)
 
 ---
 

@@ -1,6 +1,6 @@
 # CONTRIBUTING.md · 数字社区项目开发指南
 
-> **版本**: v1.0 · 2026-08-10 拍板 · 任务 TASK-20260810-607A63EF 落地
+> **版本**: v1.1 · 2026-08-10 拍板 · 2026-11-23 按仓库实际状态更正（钩子、端口、部署命令、覆盖率口径、失效链接）
 > **维护**: data_community_doc（PM WBS L5 收口）
 > **读者**: 数字社区研发团队 2 全体 + 新人 onboarding
 
@@ -13,7 +13,7 @@
 | 工具 | 版本 | 备注 |
 |:---|:---|:---|
 | **Node.js** | >= 18.0.0 | 项目 `engines.node >= 18.0.0` |
-| **pnpm** | 9.15.4 | `npm i -g pnpm@9.15.4` |
+| **pnpm** | 9.15.4 | `packageManager` 字段锁定；`npm i -g pnpm@9.15.4` |
 | **Git** | >= 2.30 | worktree 支持 |
 
 ### 1.2 Clone + Install
@@ -23,7 +23,7 @@
 git clone git@github.com:wenbo0527/fintech-data-portal.git
 cd fintech-data-portal
 
-# 2. 安装依赖（自动激活 Husky hooks）
+# 2. 安装依赖
 pnpm install
 
 # 3. 验证安装
@@ -31,18 +31,30 @@ pnpm --version  # 应输出 9.15.4
 node --version  # 应 >= 18
 ```
 
+> ⚠️ 更正：**本仓库没有任何 git 钩子**。没有 `.husky/`，`package.json` 里没有 husky /
+> lint-staged / simple-git-hooks 依赖，`core.hooksPath` 未设置，`.git/hooks` 里除 `.sample`
+> 外为空。旧文档写的「pnpm install 自动激活 Husky」「commit-msg 自动校验」不成立 ——
+> 提交规范与 lint 目前**全靠自觉 + CI**，见 §3.2、§5.3。
+
 ### 1.3 Dev 启动
 
 ```bash
-# 启动所有子应用（dev server）
+# 一键启动 6 个活跃子应用（scripts/dev-with-subapps.js 的固定集合）
 pnpm run dev
 
 # 启动指定子应用
-pnpm --filter mkt-app dev
-pnpm --filter risk-app dev
+pnpm --filter mkt-app dev              # :5177
+pnpm --filter data-community-app dev   # :5185
 ```
 
-打开 `http://localhost:3000`（portal-shell 主入口）。
+打开 **`http://localhost:5185/data-community/`**（数据社区门户，功能最全的入口）。
+其余端口：horizontal-canvas 5175 · risk 5176 · mkt 5177 · dex 5180 · touch 5181。
+
+> 更正：`localhost:3000` 是 `portal-app`（一个 0 跳转的视觉首页，**不是** portal-shell）。
+> portal-shell 是独立外部仓库，不在本仓库内，需单独 clone 后 `npm run dev`；
+> 它的 dev 没有 `.env.development`，会退回源码里的兜底常量直接 iframe 现网（`fix/registry-point-to-merged-apps`
+> 分支上是 `https://118.196.79.130:8443`，main 上仍是 `http://118.196.79.130`），
+> 因此本地起 shell ≠ 联调本地子应用。
 
 ---
 
@@ -128,7 +140,8 @@ chore(deps): 升级 Husky 到 v9
 
 12 个支持的 type：feat / fix / refactor / docs / chore / hotfix / test / build / ci / style / perf / revert
 
-Husky v9 commit-msg hook 自动校验（PR #14 已落地）。
+> ⚠️ **没有任何自动校验**：无 husky、无 git 钩子、CI 里也没有 commit-lint job（7 个 job 见 §5.3）。
+> 写错格式的 commit 不会被拦下，历史里因此混着 `feat(scripts+docs):` 这类复合 scope。靠 review 兜。
 
 ### 3.3 分支命名规约（必填）
 
@@ -145,7 +158,7 @@ chore/bump-vite-5.4
 
 6 个标准前缀：feat / fix / refactor / docs / chore / hotfix
 
-详见 [`docs/BRANCH_NAMING.md`](docs/BRANCH_NAMING.md)。
+详见 [`docs/governance/BRANCH_NAMING.md`](docs/governance/BRANCH_NAMING.md)（旧链接 `docs/BRANCH_NAMING.md` 已不存在）。
 
 ### 3.4 TypeScript 严格模式
 
@@ -161,11 +174,26 @@ interface RiskVariable {
 const config: any = { ... };
 ```
 
-### 3.5 ESLint 配置
+### 3.5 ESLint 与格式化
 
-- 配置文件：`.eslintrc.byted.json`（项目根）
-- 必跑：`pnpm lint:check`（hook 自动跑）
-- 测试：`pnpm lint:check --fix`
+- 配置文件：**`.eslintrc.json`**（根，P1-1 已把 4 份合并为 1 份）+ `.eslintignore`
+- 忽略名单要点：4 个归档应用（`apps/{asset,dfd,admin,dmt}-app/`）**整体不 lint**；
+  冻结树 `archive/legacy-src/` 仍在扫描范围（所以有专门的 `pnpm lint:archive`）；
+  `*.config.ts`（含各 app 的 vite 配置）、`public/`、根级 `src/mock/` 也被忽略
+- 检查：`pnpm lint:check`（不带 --fix）；修：`pnpm lint`（带 `--fix`）
+- 分域扫描：`pnpm lint:apps` / `pnpm lint:packages` / `pnpm lint:archive`
+- ⚠️ 没有 hook 会替你跑，提交前自己跑一次；从被忽略的应用拷文件进权威应用时，
+  它会带进一批此前不受约束的报错（本轮 T4 每批都清到 0 error，可参考其做法）
+
+### 3.6 归属与入口约束（2026-11 治理后新增，改这几类文件前必读）
+
+- **同一能力以 `data-community-app` / `mkt-app` 为准**（DEC-01），且语义是「先并入再退役」：
+  非权威侧若更完整，必须先并入，不允许直接丢弃。变量 / 特征 / 离线模型归 `risk-app`；
+  「陪跑计划」保留，实现仍待从 `archive/legacy-src/` 迁入 `risk-app`。
+- **vite alias 必须与文件同批迁移**：先删 alias 会构建失败。dca 的 alias 表还服务于
+  被它编译的**其他应用源码**（含 CSS `@import`），只看 dca 自己的 import 会误判成死别名。
+- 改入口 / 前缀 / 端口 / 域字典后必须跑：`pnpm verify:entry-registry`（R1–R7）、
+  `pnpm verify:dec01`、`bash scripts/check-base-consistency.sh`；三者都带 selftest 或控制探针。
 
 ---
 
@@ -181,11 +209,22 @@ const config: any = { ... };
 | **Responsive** | `pnpm test:responsive` | 响应式测试 |
 | **Mock 纯净度** | `node apps/mkt-app/scripts/check-mock-purity.mjs` | 守护真实 API 调用 |
 
-### 4.2 测试规范
+### 4.2 测试规范与真实覆盖
 
-- 新功能必带单元测试（覆盖率 ≥ 80%）
-- 关键路径必带 E2E 测试
-- 修复 bug 必带回归测试
+规范要求：新功能必带单元测试、关键路径必带 E2E、修 bug 必带回归测试。
+
+现状必须一起看，否则「覆盖率 ≥ 80%」会被误读：
+
+- `tests/` 有 50 个 spec 文件，而 `apps/*/src` + `packages/*/src` 共 **2,154 个源文件**。
+- 仓库里最近的 `coverage/coverage-final.json` 生成于 **2026-08-02**，只覆盖 **17 个文件 / 3,546 条语句**，
+  在这份极小分母上是 89.3% —— **对全仓的分母不到 1%**。它未被 git 跟踪，也不能代表今天的状态。
+- `vitest.config.ts` 把 `@` 和 `~` 都指向根级 `./src`，而 **`src/` 已不存在**（2026-09 冻结时移到
+  `archive/legacy-src/`）。因此任何 `import '@/...'` 的单测都解析到空气目录 —— 要么测的是 mock，
+  要么根本跑不到断言。改测试前先把别名指到具体子应用。
+- E2E 用例里仍有 `https://118.196.79.130:8443` 与 `/home/discovery/*` 这类旧入口硬编码，
+  对应 DEC-01 之前的信息架构，跑通与否不代表本地代码状态。
+
+结论：**别把「80%」当成已达标**，它是目标值；真实门槛目前是 CI 的 lint + unit + e2e 能否跑过。
 
 ---
 
@@ -198,29 +237,42 @@ const config: any = { ... };
 | **Production** | 8443 | `https://118.196.79.130:8443/` | 手动（main 分支）|
 | **Staging** | 8444 | `https://118.196.79.130:8444/` | develop 分支 |
 
-### 5.2 部署流程
+### 5.2 部署流程（按 `scripts/deploy.sh` 实际签名）
 
 ```bash
-# Production 部署（手动）
-ssh <deploy-server>
-cd /opt/deploy/data_community
-./deploy.sh production  # 符号链接原子切换 + 健康检查
+# 用法：scripts/deploy.sh <nginx_path> [<app_dir>] [--staging]
+#   nginx_path = 线上挂载前缀；app_dir 默认取 "${nginx_path}-app"
+bash scripts/deploy.sh data-community            # apps/data-community-app → /var/www/html/data-community
+bash scripts/deploy.sh risk risk-app             # 显式指定目录名
+bash scripts/deploy.sh mkt                       # 生产（8443）
 
-# Staging 部署（develop 自动）
-./deploy.sh staging  # STAGING_CONFIRM 安全门
+# Staging（8444，独立目录 /var/www/staging，必须显式确认）
+STAGING_CONFIRM=yes bash scripts/deploy.sh mkt --staging
 
-# 回滚
-./rollback.sh  # 保留前 N 个版本
+# 回滚：不带哈希只列可用版本，带哈希才切符号链接
+bash scripts/rollback.sh mkt                    # 列出 mkt 的历史版本
+bash scripts/rollback.sh mkt abc1234            # 回滚到 abc1234
 ```
+
+脚本做的事：进 `apps/<app_dir>` 构建 → 若远程是真实目录先迁成 legacy → rsync 到
+`<nginx_path>-<git短哈希>` 版本目录（不带 `--delete`）→ 修权限 → 切换前健康检查 →
+`ln -sfn` 原子切链接 → 切换后健康检查，失败即回滚 → 只保留最近 5 个版本。
+
+> 健康检查是**深校验**：不光看 index 的 HTTP 200，还要抓出 entry chunk 的实际请求 URL，
+> 要求 200 且 `content-type` 含 javascript —— 因为 SPA 兜底会让任何路径都返回 200（HTML），
+> 2026-10-27 的 HC 白屏事故就是这么漏掉的。前置条件是 `root@118.196.79.130` 免密 ssh。
 
 ### 5.3 部署清单
 
-- [ ] CI 全部通过（lint + typecheck + test + build）
-- [ ] PR 已 review + approve（CODEOWNERS 自动分配）
-- [ ] PR 已 merge 到 main
-- [ ] 部署脚本可成功执行
-- [ ] 回滚方案明确
-- [ ] 监控告警已配置
+- [ ] CI 7 个 job 通过：lint / typecheck / unit / e2e / jscpd / security / base-consistency
+      —— 但 **typecheck 目前是假绿**：`tsconfig.typecheck.json` 的 `include` 只覆盖
+      `archive/legacy-src/**`，活跃应用 0 行进入检查，别把它当类型质量门用
+- [ ] 本地跑过 `pnpm lint:check`（没有 hook 会替你跑）
+- [ ] 改过归属/入口/前缀/端口则跑 `pnpm verify:dec01` 与 `pnpm verify:entry-registry`
+- [ ] 顶层 `pnpm build` 已禁用（src/ 冻结），构建按应用走 `pnpm --filter <app> build`
+- [ ] PR 已 review + approve（CODEOWNERS 自动分配）并 merge 到 main
+- [ ] 回滚方案明确（`scripts/rollback.sh <app>`，保留 5 版本）
+- [ ] 部署前后各一次健康检查通过（含 entry chunk content-type）
 
 ---
 
@@ -270,12 +322,17 @@ cd /opt/deploy/data_community
 
 ### 7.1 项目级文档
 
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — 架构总览（本任务落地）
-- [`README.md`](README.md) — 项目说明
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — 架构详细版（5785B · 10 章节）
-- [`docs/BRANCH_NAMING.md`](docs/BRANCH_NAMING.md) — 分支命名规约
-- [`docs/BRANCH_CLEANUP.md`](docs/BRANCH_CLEANUP.md) — 分支清理 SOP
-- [`src/DEPRECATED.md`](src/DEPRECATED.md) — 主应用冻结声明
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — 架构总览（v1.1，2026-11-23 实测刷新）
+- [`README.md`](README.md) — 项目说明（含实测子应用矩阵）
+- [`docs/architecture/deploy-prefix-2026-11.md`](docs/architecture/deploy-prefix-2026-11.md) — 部署前缀口径与现网实测
+- [`docs/architecture/cleanup-plan-2026-11.md`](docs/architecture/cleanup-plan-2026-11.md) — 冗余扫描与整洁优化方案（§10 = DEC-01）
+- [`docs/architecture/dec01-migration-checklist-2026-11.md`](docs/architecture/dec01-migration-checklist-2026-11.md) — T0–T6 迁移台账
+- [`docs/architecture/overview.md`](docs/architecture/overview.md) — 架构详细版（2026-09 版，部署一节以 ARCHITECTURE.md 为准）
+- [`docs/governance/BRANCH_NAMING.md`](docs/governance/BRANCH_NAMING.md) · [`docs/governance/BRANCH_CLEANUP.md`](docs/governance/BRANCH_CLEANUP.md) · [`docs/governance/BRANCH_RETIREMENT_PLAN.md`](docs/governance/BRANCH_RETIREMENT_PLAN.md) — 分支命名 / 清理 / 退役
+- [`archive/legacy-src/DEPRECATED.md`](archive/legacy-src/DEPRECATED.md) — 主应用冻结声明
+
+> 旧版本这里列的 `docs/ARCHITECTURE.md`、`docs/BRANCH_NAMING.md`、`docs/BRANCH_CLEANUP.md`、
+> `src/DEPRECATED.md` 四个路径**都已不存在**（P1-6 文档重组后搬迁过），链接已在上面修正。
 
 ### 7.2 GitHub 配置
 
@@ -291,4 +348,4 @@ cd /opt/deploy/data_community
 
 ---
 
-*数字社区研发团队 2 · v1.0 · 2026-08-10 拍板生效 · TASK-20260810-607A63EF 落地 · v1.8 SOP 合规*
+*数字社区研发团队 2 · v1.1 · 2026-08-10 拍板生效（TASK-20260810-607A63EF）· 2026-11-23 按仓库实际状态更正*

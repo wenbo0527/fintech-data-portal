@@ -27,6 +27,12 @@ exclude_reason() {
       echo "      /report/ 是 proxy_pass 到 5187 端口的独立 Trae 项目，非本应用）"
       echo "      → 待其真正上线时必须先设 base，否则重演 HC 白屏"
       return 0 ;;
+    portal-app)
+      echo "  ⏭️  portal-app：未部署 prod，定性为视觉首页/演示稿而非入口"
+      echo "      （2026-11-23 裁定：src/pages/Home.vue 零跳转、不在 dev 编排、无 registry 条目；"
+      echo "       现网 /portal/ 是 /home/ 即 portal-shell 的字节级重复挂载，与本应用无关）"
+      echo "      → 若将来真要上线：先回收 /portal/ 这个重复 location，再把 base 设为 '/portal/' 并删除本豁免"
+      return 0 ;;
   esac
   return 1
 }

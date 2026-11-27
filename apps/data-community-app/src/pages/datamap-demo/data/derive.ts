@@ -1,5 +1,9 @@
 import { BusinessConceptStore } from '@mock-shared/business-concept-store'
 import { TableCatalogStore, type LogicalTable } from '@/mock-dca/shared/table-catalog-store'
+import {
+  EXTRA_ENTITIES, EXTRA_RELATIONS, EXTRA_TABLES, ENTITY_ALIASES, ENTITY_OVERRIDES,
+  PRODUCT_MAPPING as SUPPLEMENT_PRODUCTS, PRODUCT_NOTE
+} from './supplement'
 
 export type DemoTier = 'recommended' | 'fallback' | 'tech'
 export type DemoRelationType = 'sequence' | 'associate' | 'contain' | 'flow'
@@ -20,6 +24,8 @@ export interface DemoEntity {
   registryStatus: 'draft' | 'submitted' | 'approved' | 'deprecated'
   /** [scale] 11179-6 管理状态 */
   manageStatus: 'active' | 'under_review' | 'pending_update' | 'retired'
+  /** 展示别名（与 SPEC 命名统一用，如 授信合同→协议），不改仓库 code */
+  alias?: string
 }
 
 export interface DemoRelation {
@@ -43,8 +49,10 @@ export interface DemoTable {
   fieldCount: number
   lastUpdated: string
   reason: string
-  /** element = 仓库既有「实体→数据要素→表」关联；name = 按中文名/标签归类；null = 未归类 */
-  linkSource: 'element' | 'name' | null
+  /** element = 仓库既有「实体→数据要素→表」关联；name = 按名称/标签归类；supplement = 增补层；null = 未归类 */
+  linkSource: 'element' | 'name' | 'supplement' | null
+  /** 增补表的字段（catalog 外的表才有，catalog 表走 fieldsOfTable 的 CatalogField） */
+  fields?: Array<{ name: string, type: string, cn: string, sensitivity: 'public' | 'internal' | 'sensitive' | 'restricted' }>
   /** 仓库既有业务域（交易域/风控域/用户域/营销域/产品域/财务域），用于视角派生 */
   bizDomain: string
   tags: string[]
@@ -78,7 +86,9 @@ export function viewHit (t: DemoTable, view: DemoView): boolean {
   if (view === 'all') {return true}
   const tagText = t.tags.join(',')
   if (view === 'biz') {return t.bizDomain === '交易域'}
-  if (view === 'risk') {return t.bizDomain === '风控域' || RISK_TAGS.test(tagText)}
+  if (view === 'risk') {
+    return t.bizDomain === '风控域' || RISK_TAGS.test(tagText) || /授信|支用|借据|还款|逾期|贷后/.test(t.cnName)
+  }
   if (view === 'market') {return t.bizDomain === '营销域' || MARKET_TAGS.test(tagText)}
   return t.layer === 'ODS' || TECH_TAGS.test(tagText)
 }
@@ -90,12 +100,12 @@ export function viewHit (t: DemoTable, view: DemoView): boolean {
  *   2) 给表打以「产品:字节」形式的 tag。
  * 在拿到业务清单前不要在 UI 里编产品名。
  */
-export const PRODUCT_MAPPING: Record<string, string[]> = {}
+export { PRODUCT_MAPPING, PRODUCT_NOTE } from './supplement'
 
 export const PRODUCT_TAG_PREFIX = '产品:'
 
 export function productOf (table: Pick<DemoTable, 'name' | 'tags'>): string[] {
-  const mapped = PRODUCT_MAPPING[table.name] ?? []
+  const mapped = SUPPLEMENT_PRODUCTS[table.name] ?? []
   const tagged = table.tags
     .filter(t => t.startsWith(PRODUCT_TAG_PREFIX))
     .map(t => t.slice(PRODUCT_TAG_PREFIX.length))
@@ -193,19 +203,20 @@ export function deriveEntities (): DemoEntity[] {
     stageId: e.domainCode,
     entityCode: ENTITY_CODES[e.code] ?? e.code,
     registryStatus: 'approved',
-    manageStatus: 'active'
-  }))
+    manageStatus: 'active',
+    alias: ENTITY_ALIASES[e.code]
+  })).concat(EXTRA_ENTITIES).sort((a, b) => a.order - b.order)
 }
 
 export function deriveRelations (): DemoRelation[] {
-  return BusinessConceptStore.getRelations().map(r => ({
+  return (BusinessConceptStore.getRelations().map(r => ({
     id: r.code,
     src: r.sourceEntityCode,
     dst: r.targetEntityCode,
     type: RELATION_TYPE_MAP[r.type] ?? 'associate',
     label: r.name,
     description: r.description
-  }))
+  }))).concat(EXTRA_RELATIONS)
 }
 
 function elementLinkIndex (): Map<string, string> {
@@ -226,7 +237,7 @@ function tierOf (t: LogicalTable): DemoTier {
 
 export function deriveTables (): DemoTable[] {
   const linked = elementLinkIndex()
-  return TableCatalogStore.all().map(t => {
+  const base: DemoTable[] = TableCatalogStore.all().map(t => {
     const byElement = linked.get(t.name)
     const byName = byElement ? undefined : NAME_RULES.find(([re, , skipDomain]) => re.test(t.cnName) && t.domain !== skipDomain)?.[1]
     const byTag = byElement || byName ? undefined : TAG_RULES.find(([tag]) => t.tags.includes(tag))?.[1]
@@ -253,6 +264,10 @@ export function deriveTables (): DemoTable[] {
       recommendReason: `${t.usageGuide || t.businessCaliber || t.description}（口径已上线 · ${t.updateFrequency}粒度 · ${t.layer}层）`
     }
   })
+  const withOverrides = base.map(t => ENTITY_OVERRIDES[t.name]
+    ? { ...t, entityId: ENTITY_OVERRIDES[t.name], linkSource: 'name' as const }
+    : t)
+  return [...withOverrides, ...EXTRA_TABLES]
 }
 
 export function countByView (list: DemoTable[], view: DemoView): number {
@@ -281,6 +296,16 @@ export function unclassifiedTables (tables: DemoTable[] = deriveTables()): DemoT
 }
 
 export function fieldsOfTable (name: string) {
+  const extra = EXTRA_TABLES.find(x => x.name === name)
+  if (extra?.fields) {
+    return extra.fields.map(f => ({
+      name: f.name,
+      cn: f.cn,
+      type: f.type,
+      sensitivity: f.sensitivity,
+      isPk: /_no$|_id$/.test(f.name) && f.name !== 'cust_name'
+    }))
+  }
   const t = TableCatalogStore.byName(name)
   if (!t) {return []}
   return t.fields.map(f => ({

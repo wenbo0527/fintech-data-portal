@@ -44,7 +44,7 @@
         >
           <a-option v-for="t in tagOptions" :key="t.tag" :value="t.tag">{{ t.tag }}（{{ t.count }}）</a-option>
         </a-select>
-        <a-tooltip :content="prodOptions.length ? '按产品筛选' : '产品标签未接入：在 derive.ts 的 PRODUCT_MAPPING 填「表→产品」，或给表打「产品:字节」标签后自动出现'">
+        <a-tooltip :content="prodOptions.length ? PRODUCT_NOTE : '产品标签未接入：在 supplement.ts 的 PRODUCT_MAPPING 填「表→产品」，或给表打「产品:字节」标签后自动出现'">
           <a-select
             v-model="prodSel"
             multiple
@@ -154,7 +154,11 @@
 
       <template v-else-if="activeEntity">
         <a-descriptions :column="1" size="small" class="dm-desc">
-          <a-descriptions-item label="实体">{{ activeEntity.name }}（{{ activeEntity.id }}）</a-descriptions-item>
+          <a-descriptions-item label="实体">
+            {{ activeEntity.name }}
+            <a-tag v-if="activeEntity.alias" size="small" color="arcoblue">统一命名：{{ activeEntity.alias }}</a-tag>
+            <span class="dm-muted">（{{ activeEntity.id }}）</span>
+          </a-descriptions-item>
           <a-descriptions-item label="稳定标识">
             <code class="dm-code">{{ activeEntity.entityCode }}</code>
             <span class="dm-muted"> 注册 {{ activeEntity.registryStatus }} · 管理 {{ activeEntity.manageStatus }}</span>
@@ -271,7 +275,7 @@ import { relations as relationState } from '../data/relation-store'
 import {
   deriveEntities, deriveTables, deriveStages, entitiesOfStage, stageIdOf, tablesOfEntity, fieldsOfTable, entityName,
   viewHit, viewCountsOf, countByView, VIEW_LABELS, tagCounts, productOptions, productOf, matchesFilter,
-  sortTables, DOMAIN_LABELS, IMPLICIT_RULES, type TableFilter, type TableSort,
+  sortTables, DOMAIN_LABELS, IMPLICIT_RULES, PRODUCT_NOTE, type TableFilter, type TableSort,
   TIER_LABELS, TIER_COLORS, type DemoEntity, type DemoTable, type DemoView, type DemoRelationType
 } from '../data/derive'
 

@@ -20,6 +20,7 @@ const APP = path.join(ROOT, 'apps/data-community-app')
 const CONCEPT = path.join(APP, 'src/mock/shared/business-concept-store.ts')
 const CATALOG = path.join(APP, 'src/mock/shared/table-catalog-store.ts')
 const DERIVE = path.join(APP, 'src/pages/datamap-demo/data/derive.ts')
+const SUPP = path.join(APP, 'src/pages/datamap-demo/data/supplement.ts')
 
 const read = (p) => { try { return fs.readFileSync(p, 'utf8') } catch { return '' } }
 
@@ -33,14 +34,23 @@ const CALIBER = /(口径|粒度|汇总|宽表|明细|指标|验证)/
 const concept = read(CONCEPT)
 const catalog = read(CATALOG)
 const derive = read(DERIVE)
+const supp = read(SUPP)
 
-const entities = [...concept.matchAll(/code: '(ENT\d+)', name: '([^']+)', domainCode: '([A-Z0-9]+)'/g)]
-  .map(m => ({ id: m[1], name: m[2], domain: m[3] }))
+const entities = [
+  ...concept.matchAll(/code: '(ENT\d+)', name: '([^']+)', domainCode: '([A-Z0-9]+)'/g),
+  ...supp.matchAll(/code: '(ENT\d+)', name: '([^']+)', domainCode: '([A-Z0-9]+)'/g)
+].map(m => ({ id: m[1], name: m[2], domain: m[3] }))
 
-const relations = [...concept.matchAll(/code: '(REL\d+)'[\s\S]{0,120}?sourceEntityCode: '(ENT\d+)', targetEntityCode: '(ENT\d+)'/g)]
-  .map(m => ({ id: m[1], src: m[2], dst: m[3] }))
+const relations = [
+  ...concept.matchAll(/code: '(REL\d+)'[\s\S]{0,120}?sourceEntityCode: '(ENT\d+)', targetEntityCode: '(ENT\d+)'/g),
+  ...supp.matchAll(/id: '(REL\d+)'[\s\S]{0,120}?sourceEntityCode: '(ENT\d+)', targetEntityCode: '(ENT\d+)'/g)
+].map(m => ({ id: m[1], src: m[2], dst: m[3] }))
 
-const tables = catalog.split(/\n {2}\{ name: '/).slice(1).map(b => {
+// 增补表的显式归属修正（如 dwd_loan_drawdown → 支用申请）
+const overrides = {}
+for (const m of supp.matchAll(/^\s*(\w+): '(ENT\d+)'/gm)) { overrides[m[1]] = m[2] }
+
+const parseTables = (text) => text.split(/\n\s+\{ name: '/).slice(1).map(b => {
   const g = (re) => { const m = b.match(re); return m ? m[1] : null }
   return {
     name: b.slice(0, b.indexOf("'")),
@@ -52,6 +62,8 @@ const tables = catalog.split(/\n {2}\{ name: '/).slice(1).map(b => {
     owner: g(/owner: '([^']*)'/)
   }
 })
+
+const tables = [...parseTables(catalog), ...parseTables(supp)]
 
 const tierOf = (t) => {
   if (t.status !== 'online') {return 'tech'}
@@ -126,11 +138,12 @@ if (ruleIds.length < 3) {
 /* R6 核心实体覆盖（数据边界，WARN 而非 FAIL） */
 const CORE = [
   { id: 'ENT003', name: '授信申请', re: /授信申请|申请增量/ },
-  { id: 'ENT004', name: '授信合同', re: /授信合同|合同/ },
+  { id: 'ENT004', name: '授信合同', re: /授信合同|合同|授信分析|授信指标|授信决策/ },
   { id: 'ENT005', name: '支用申请', re: /支用申请/ },
   { id: 'ENT006', name: '支用单', re: /提款|支用|放款|贷款余额/ }
 ]
-const coverage = CORE.map(c => ({ ...c, n: tables.filter(t => c.re.test(t.cnName || '')).length }))
+const tablesOf = (c) => tables.filter(t => (overrides[t.name] === c.id) || (!overrides[t.name] && c.re.test(t.cnName || '')))
+const coverage = CORE.map(c => ({ ...c, n: tablesOf(c).length }))
 const thin = coverage.filter(c => c.n === 0)
 if (thin.length) {
   add('R6', 'WARN', `核心实体无对应表：${thin.map(c => `${c.name}(${c.id})`).join(', ')} —— 仓库权威目录的真实缺口，见 spec §3.6，不得编表补齐`)
@@ -145,6 +158,18 @@ if (missing.length) {
   add('R7', 'FAIL', `[scale] 字段被删或改名：${missing.join(', ')}（C-9 禁止因 Demo 用不上而删除）`)
 } else {
   add('R7', 'PASS', `[scale] 字段齐备：${SCALE_FIELDS.join(' / ')}`)
+}
+
+/* R8 产品示例归属标注（v2 ④：产品维度必须有数据，且必须标注示例性质） */
+const productBlock = (supp.match(/export const PRODUCT_MAPPING[\s\S]*?\n\}/) || [''])[0]
+const productCount = [...productBlock.split('\n').slice(1)].filter(l => /^\s*\w+: \[/.test(l)).length
+const hasNote = /PRODUCT_NOTE\s*=/.test(supp) && /示例归属/.test(supp)
+if (!productCount) {
+  add('R8', 'FAIL', '产品归属为空（v2 要求产品维度可用）')
+} else if (!hasNote) {
+  add('R8', 'FAIL', '产品归属缺少「示例归属」标注（不得伪装成业务确认数据）')
+} else {
+  add('R8', 'PASS', `${productCount} 张表有示例产品归属，且已标注「待业务确认」`)
 }
 
 /* 输出 */

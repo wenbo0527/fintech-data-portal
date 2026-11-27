@@ -36,21 +36,21 @@ pnpm --filter data-community-app dev      # 或根目录 pnpm dev（6 应用编�
 `data/derive.ts` 只读两个既有 store，不复制任何表名/字段：
 
 - 实体与关系：`@mock-shared/business-concept-store`（ENT001–ENT008、REL001–REL008，关系已是带类型二元边）。
-- 表与字段：`@/mock-dca/shared/table-catalog-store`（45 张 `LogicalTable`，字段含中文名与敏感度）。
-- 三档标签派生规则：`DWS+online` = 推荐（6 张）；`DWD+online` = 明细兜底（7 张）；其余 = 技术维护（32 张，默认折叠）。
+- 表与字段：`@/mock-dca/shared/table-catalog-store`（45 张 `LogicalTable`，字段含中文名与敏感度）+ `data/supplement.ts` 增补借据 2 张真实表。
+- 三档标签派生规则：`DWS+online` = 推荐（6 张）；`DWD+online` = 明细兜底（9 张）；其余 = 技术维护（32 张，默认折叠）；共 47 张。
 - 推荐理由取既有 `description`，不新编文案。
 - 视角由 `bizDomain + layer + tags` 派生（同一张表可命中多个视角）：
   业务=交易域；风险=风控域或 反欺诈/预警/风控 标签；市场=营销域或 营销/埋点/点击；技术=ODS 或 贴源/实时/Kafka/HBase/Doris。
 - **产品维度目前无数据**：45 张表 0 条产品归属（只有 5 个数据要素标了 relatedProduct，4 条是「所有产品」）。
   `derive.ts` 已留 `PRODUCT_MAPPING` 空表 + `productOf()` 接口，等业务给「表→产品」清单后填入即可，UI 不编产品名。
 - 表→实体归属：优先用仓库既有「实体→数据要素→`relatedResource.table`」关联（4 张），
-  其余按中文名/标签规则归类（20 张），**命中不了的 21 张如实标未归类**，不硬塞。
+  其余按中文名/标签规则归类（20 张），**命中不了的 20 张如实标未归类**，不硬塞。
   风控域的「用户风险评分」按域排除，避免误归客户实体。
-- 关系维护（`data/relation-store.ts`）：以仓库 8 条为基线，本地增删改存 localStorage；
+- 关系维护（`data/relation-store.ts`）：以 10 条（仓库 8 + 增补 2）为基线，本地增删改存 localStorage；
   「候选」= 实体自带 `coreRelations` 与现有关系的差集（当前 10 条），一键补齐即可，不编关系。
   正式维护页 `management/business-concept/relation-graph` 目前**未接线**（新增只弹提示、
   删除无 handler、store 无 relation CRUD），本页的新增/删除/重置逻辑可直接搬过去。
-- **产品筛选两条路径（任选其一即可生效，UI 不用改）**：
+- **产品筛选（当前为示例归属，待业务确认）**：
   ① 在 `derive.ts` 的 `PRODUCT_MAPPING` 填「表名 → 产品数组」（如 `dwd_credit_apply: ['字节']`）；
   ② 给表打形如 `产品:字节` 的 tag。
   `productOf()` 取两者并集；当前两处都为空，故产品下拉显示「产品（待接入）」并禁用 —— **不编产品名**。
@@ -91,7 +91,7 @@ pnpm --filter data-community-app dev      # 或根目录 pnpm dev（6 应用编�
 
 ## 验证
 
-Playwright 实测 49 项全过（环节层 6 域 / 6 边、实体层 8 节点 / 8 边、环节→实体下钻、拖动后 transform 不变、面包屑往返、
+Playwright 实测 51 项全过（环节层 6 域 / 6 边、实体层 8 节点 / 8 边、环节→实体下钻、拖动后 transform 不变、面包屑往返、
 高亮变淡、空态、三页签、视角切换与抽屉分组、关系维护增删改与持久化、无 console error / pageerror）。
 门禁：`pnpm lint:check`、`pnpm --filter data-community-app build`、`pnpm verify:entry-registry`、
 `bash scripts/check-base-consistency.sh`。

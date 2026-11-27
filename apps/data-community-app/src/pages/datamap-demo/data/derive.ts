@@ -12,6 +12,8 @@ export interface DemoEntity {
   domain: 'risk' | 'market' | 'common'
   description: string
   order: number
+  /** 仓库实体自带的业务域编码（DOM001 客户域 … DOM006 贷后域），用于「大环节」分组 */
+  stageId: string
 }
 
 export interface DemoRelation {
@@ -121,7 +123,8 @@ export function deriveEntities (): DemoEntity[] {
     kind: /申请|记录|计划/.test(e.name) ? 'event' : 'entity',
     domain: RISK_DOMAINS.has(e.domainCode) ? 'risk' : 'common',
     description: e.description,
-    order: i + 1
+    order: i + 1,
+    stageId: e.domainCode
   }))
 }
 
@@ -230,4 +233,38 @@ export const TIER_COLORS: Record<DemoTier, 'green' | 'arcoblue' | 'gray'> = {
   recommended: 'green',
   fallback: 'arcoblue',
   tech: 'gray'
+}
+
+/** 大环节：直接用仓库实体自带的业务域编码分组，六个域各有实体 */
+export const STAGE_LABELS: Record<string, string> = {
+  DOM001: '客户域',
+  DOM002: '账户域',
+  DOM003: '授信域',
+  DOM004: '支用域',
+  DOM005: '还款域',
+  DOM006: '贷后域',
+  DOM007: '产品域',
+  DOM008: '风控域'
+}
+
+export interface DemoStage {
+  id: string
+  name: string
+  entityIds: string[]
+}
+
+export function deriveStages (): DemoStage[] {
+  const map = new Map<string, string[]>()
+  deriveEntities().forEach(e => {
+    map.set(e.stageId, [...(map.get(e.stageId) ?? []), e.id])
+  })
+  return [...map.entries()].map(([id, entityIds]) => ({ id, name: STAGE_LABELS[id] ?? id, entityIds }))
+}
+
+export function entitiesOfStage (stageId: string): DemoEntity[] {
+  return deriveEntities().filter(e => e.stageId === stageId)
+}
+
+export function stageIdOf (entityId: string): string | undefined {
+  return deriveEntities().find(e => e.id === entityId)?.stageId
 }

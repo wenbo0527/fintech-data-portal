@@ -2,13 +2,20 @@
   <div class="dm-graphview">
     <div class="dm-head">
       <a-breadcrumb>
-        <a-breadcrumb-item class="dm-crumb-root" @click="backToChain">授信支用链</a-breadcrumb-item>
+        <a-breadcrumb-item class="dm-crumb-root" @click="backToStages">授信支用链</a-breadcrumb-item>
+        <a-breadcrumb-item v-if="activeStageId">
+          <span class="dm-crumb-link" @click="backToStageEntities">{{ activeStageName }}</span>
+        </a-breadcrumb-item>
         <a-breadcrumb-item v-if="activeEntity">{{ activeEntity.name }}</a-breadcrumb-item>
         <a-breadcrumb-item v-if="activeTable">{{ activeTable.name }}</a-breadcrumb-item>
       </a-breadcrumb>
       <a-space class="dm-legend" :size="10" wrap>
         <a-radio-group v-model="view" type="button" size="mini">
           <a-radio v-for="v in VIEW_OPTIONS" :key="v" :value="v">{{ VIEW_LABELS[v] }}</a-radio>
+        </a-radio-group>
+        <a-radio-group v-model="levelModel" type="button" size="mini">
+          <a-radio value="stage">环节</a-radio>
+          <a-radio value="entity">实体</a-radio>
         </a-radio-group>
         <a-radio-group v-model="rankdir" type="button" size="mini">
           <a-radio value="TB">纵向</a-radio>
@@ -19,6 +26,9 @@
 
     <div class="dm-subhead">
       <a-space :size="8" wrap>
+        <a-tag :color="level === 'stage' ? 'arcoblue' : 'gray'">
+          {{ level === 'stage' ? '环节视图 · 点击环节下钻' : `实体视图${activeStageName ? ' · ' + activeStageName : ''}` }}
+        </a-tag>
         <a-tag color="green">推荐表 {{ tierCount.recommended }}</a-tag>
         <a-tag color="arcoblue">明细兜底 {{ tierCount.fallback }}</a-tag>
         <a-tag color="gray">技术维护 {{ tierCount.tech }}</a-tag>
@@ -32,15 +42,15 @@
       <div class="dm-graph-host">
       <RelationGraph
         ref="graphRef"
-        :entities="entities"
-        :relations="relations"
-        :tables="tables"
+        :nodes="graphNodes"
+        :edges="graphEdges"
         :rankdir="rankdir"
-        :view="view"
         @node-click="onNodeClick"
       />
       </div>
-      <div class="dm-hint">点击实体查看推荐表 · 拖拽画布平移 · Ctrl/⌘ + 滚轮缩放 · 节点只读不可拖动</div>
+      <div class="dm-hint">
+        {{ level === 'stage' ? '点击环节下钻到实体 → 点实体看推荐表' : '点击实体查看推荐表 · 面包屑可返回环节' }} · 拖拽画布平移 · Ctrl/⌘ + 滚轮缩放 · 节点只读不可拖动
+      </div>
     </div>
 
     <a-drawer
@@ -187,14 +197,15 @@ import AssetCard from '@dca-components/common/AssetCard.vue'
 import RelationGraph from './RelationGraph.vue'
 import { relations as relationState } from '../data/relation-store'
 import {
-  deriveEntities, deriveRelations, deriveTables, tablesOfEntity, fieldsOfTable, entityName,
+  deriveEntities, deriveTables, deriveStages, entitiesOfStage, stageIdOf, tablesOfEntity, fieldsOfTable, entityName,
   viewHit, viewCountsOf, countByView, VIEW_LABELS,
-  TIER_LABELS, TIER_COLORS, type DemoEntity, type DemoTable, type DemoView
+  TIER_LABELS, TIER_COLORS, type DemoEntity, type DemoTable, type DemoView, type DemoRelationType
 } from '../data/derive'
 
 const entities = deriveEntities()
 const relations = computed(() => relationState.value)
 const tables = deriveTables()
+const stages = deriveStages()
 
 const VIEW_KEYS: DemoView[] = ['biz', 'risk', 'market', 'tech']
 const VIEW_OPTIONS: DemoView[] = ['all', ...VIEW_KEYS]
@@ -205,6 +216,80 @@ const activeEntity = ref<DemoEntity | null>(null)
 const activeTable = ref<DemoTable | null>(null)
 const rankdir = ref<'TB' | 'LR'>('TB')
 const view = ref<DemoView>('all')
+const level = ref<'stage' | 'entity'>('stage')
+const activeStageId = ref<string | null>(null)
+const activeStageName = computed(() => stages.find(s => s.id === activeStageId.value)?.name ?? '')
+const levelModel = computed({
+  get: () => level.value,
+  set: (v: string) => {
+    level.value = v === 'entity' ? 'entity' : 'stage'
+    activeStageId.value = null
+    closeDrawer()
+  }
+})
+
+const stageGraph = computed(() => {
+  const nodes = stages.map(s => {
+    const ents = entitiesOfStage(s.id)
+    const list = ents.flatMap(e => tablesOfEntity(e.id, tables))
+    const hit = view.value === 'all' ? null : countByView(list, view.value)
+    return {
+      id: `STAGE:${s.id}`,
+      title: s.name,
+      sub: hit === null ? `${ents.length} 实体 · ${list.length} 张表` : `${ents.length} 实体 · 本视角 ${hit}/${list.length} 张`,
+      kind: 'stage' as const,
+      inView: hit === null || hit > 0
+    }
+  })
+  const agg = new Map<string, { source: string, target: string, label: string, type: DemoRelationType, count: number }>()
+  relations.value.forEach(r => {
+    const a = stageIdOf(r.src)
+    const b = stageIdOf(r.dst)
+    if (!a || !b || a === b) {return}
+    const key = [a, b].sort().join('|')
+    const cur = agg.get(key)
+    if (cur) {
+      cur.count += 1
+      cur.label = `${cur.count} 条关系`
+      return
+    }
+    agg.set(key, { source: `STAGE:${a}`, target: `STAGE:${b}`, label: r.label, type: r.type, count: 1 })
+  })
+  const edges = [...agg.entries()].map(([key, v]) => ({
+    id: `SE:${key}`,
+    source: v.source,
+    target: v.target,
+    label: v.label,
+    type: v.type
+  }))
+  return { nodes, edges }
+})
+
+const scopeEntities = computed(() => activeStageId.value ? entitiesOfStage(activeStageId.value) : entities)
+
+const entityGraph = computed(() => {
+  const inScope = new Set(scopeEntities.value.map(e => e.id))
+  const nodes = scopeEntities.value.map(e => {
+    const total = tablesOfEntity(e.id, tables).length
+    const hit = view.value === 'all' ? null : viewCountsOf(e.id, tables)[view.value]
+    return {
+      id: e.id,
+      title: e.name,
+      sub: hit === null
+        ? `${e.kind === 'event' ? '事件' : '实体'} · ${total} 张表`
+        : `${e.kind === 'event' ? '事件' : '实体'} · 本视角 ${hit}/${total}`,
+      kind: e.kind,
+      inView: hit === null || hit > 0
+    }
+  })
+  const edges = relations.value
+    .filter(r => inScope.has(r.src) && inScope.has(r.dst))
+    .map(r => ({ id: r.id, source: r.src, target: r.dst, label: r.label, type: r.type }))
+  return { nodes, edges }
+})
+
+const graphNodes = computed(() => (level.value === 'stage' ? stageGraph.value.nodes : entityGraph.value.nodes))
+const graphEdges = computed(() => (level.value === 'stage' ? stageGraph.value.edges : entityGraph.value.edges))
 
 const entityTables = computed(() => activeEntity.value ? tablesOfEntity(activeEntity.value.id, tables) : [])
 const visibleTables = computed(() => entityTables.value.filter(t => t.tier !== 'tech'))
@@ -254,26 +339,43 @@ function toggleView (v: DemoView) {
   view.value = view.value === v ? 'all' : v
 }
 
-function onNodeClick (entityId: string) {
-  if (!entityId) {
-    drawerVisible.value = false
-    activeEntity.value = null
-    activeTable.value = null
+function onNodeClick (id: string) {
+  if (!id) {
+    closeDrawer()
     return
   }
-  activeEntity.value = entities.find(e => e.id === entityId) ?? null
+  if (id.startsWith('STAGE:')) {
+    activeStageId.value = id.slice('STAGE:'.length)
+    level.value = 'entity'
+    closeDrawer()
+    return
+  }
+  activeEntity.value = entities.find(e => e.id === id) ?? null
   activeTable.value = null
   drawerVisible.value = true
 }
 
-watch(drawerVisible, () => nextTick(() => graphRef.value?.fit()))
-
-function backToChain () {
+function closeDrawer () {
   drawerVisible.value = false
   activeEntity.value = null
   activeTable.value = null
+}
+
+function backToStages () {
+  closeDrawer()
+  activeStageId.value = null
+  level.value = 'stage'
   graphRef.value?.reset()
 }
+
+function backToStageEntities () {
+  closeDrawer()
+  level.value = 'entity'
+  graphRef.value?.reset()
+}
+
+watch(drawerVisible, () => nextTick(() => graphRef.value?.fit()))
+watch([level, activeStageId, view], () => nextTick(() => graphRef.value?.fit()))
 </script>
 
 <style scoped>
@@ -290,7 +392,8 @@ function backToChain () {
   justify-content: space-between;
   padding: 10px 12px;
 }
-.dm-crumb-root {
+.dm-crumb-root,
+.dm-crumb-link {
   cursor: pointer;
   color: var(--dca-brand-primary, #165dff);
 }

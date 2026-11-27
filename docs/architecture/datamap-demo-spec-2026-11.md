@@ -266,3 +266,9 @@ Playwright 扩到 **26 项**且全过（新增：视角切换改标签、贷后�
 候选 = 实体 `coreRelations` 与现有 8 条的差集（实测 **10 条**），一键补齐后图从 8 条边变 9 条、刷新保持。
 同时发现正式维护页 `management/business-concept/relation-graph` 未接线（`handleCreateSubmit` 只 `Message.success`、
 删除按钮无 handler、store 无 relation CRUD），已在页面与 README 如实标注。Playwright 现为 **33 项**全过。
+
+**第四轮（大环节下钻）**：把 8 个实体按仓库自带的 `domainCode` 聚成 6 个环节（客户域/账户域/授信域/支用域/还款域/贷后域），
+环节层显示 `N 实体 · M 张表`、跨域边按关系聚合（同一域对多条关系合并为 `N 条关系`）；
+点环节下钻到该域实体，面包屑「授信支用链」回退；顶部新增「环节/实体」视图切换，实体视图保留全链 8 节点。
+`RelationGraph` 重构为通用 nodes/edges 渲染器（视角淡化与高亮由传入的 `inView` 控制）。
+Playwright 现为 **38 项**全过（新增：环节层 6 域/6 边、点环节得 2 实体、面包屑出现并回退、实体视图 8 节点）。

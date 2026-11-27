@@ -6,23 +6,35 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { Graph } from '@antv/x6'
 import dagre from '@dagrejs/dagre'
-import { viewCountsOf, type DemoEntity, type DemoRelation, type DemoTable, type DemoView } from '../data/derive'
+import type { DemoRelationType } from '../data/derive'
+
+export interface GraphNode {
+  id: string
+  title: string
+  sub: string
+  kind: 'stage' | 'entity' | 'event'
+  /** false = 当前视角未命中，淡化但保留 */
+  inView: boolean
+}
+
+export interface GraphEdge {
+  id: string
+  source: string
+  target: string
+  label: string
+  type: DemoRelationType
+}
 
 const props = defineProps<{
-  entities: DemoEntity[]
-  relations: DemoRelation[]
-  tables: DemoTable[]
+  nodes: GraphNode[]
+  edges: GraphEdge[]
   rankdir?: 'TB' | 'LR'
-  view?: DemoView
 }>()
 
-const emit = defineEmits<{ (e: 'node-click', entityId: string): void }>()
+const emit = defineEmits<{ (e: 'node-click', id: string): void }>()
 
 const container = ref<HTMLElement>()
 const graph = ref<Graph | null>(null)
-
-const NODE_W = 190
-const NODE_H = 64
 
 const EDGE_COLORS: Record<string, string> = {
   sequence: '#165dff',
@@ -31,56 +43,46 @@ const EDGE_COLORS: Record<string, string> = {
   flow: '#ff7d00'
 }
 
-function countOf (id: string) {
-  return props.tables.filter(t => t.entityId === id).length
+const NODE_STYLE: Record<GraphNode['kind'], { w: number, h: number, fill: string, stroke: string }> = {
+  stage: { w: 214, h: 68, fill: '#f7f8fa', stroke: '#4e5969' },
+  entity: { w: 190, h: 64, fill: '#f2f7ff', stroke: '#165dff' },
+  event: { w: 190, h: 64, fill: '#fff7e8', stroke: '#ff7d00' }
 }
 
 function buildData () {
-  const view = props.view ?? 'all'
-  const nodes = props.entities.map(e => {
-    const n = countOf(e.id)
-    const event = e.kind === 'event'
-    const hit = view === 'all' ? null : viewCountsOf(e.id, props.tables)[view]
-    const second = hit === null
-      ? `${event ? '事件' : '实体'} · ${n} 张表`
-      : `${event ? '事件' : '实体'} · 本视角 ${hit}/${n} 张`
+  const nodes = props.nodes.map(n => {
+    const style = NODE_STYLE[n.kind]
     return {
-      id: e.id,
+      id: n.id,
       shape: 'rect',
-      width: NODE_W,
-      height: NODE_H,
+      width: style.w,
+      height: style.h,
       attrs: {
-        body: {
-          fill: event ? '#fff7e8' : '#f2f7ff',
-          stroke: event ? '#ff7d00' : '#165dff',
-          strokeWidth: 1.6,
-          rx: 10,
-          ry: 10
-        },
+        body: { fill: style.fill, stroke: style.stroke, strokeWidth: 1.6, rx: 10, ry: 10 },
         label: {
-          text: `${e.name}\n${second}`,
+          text: `${n.title}\n${n.sub}`,
           fill: '#1d2129',
-          fontSize: 13,
-          fontWeight: 500,
+          fontSize: n.kind === 'stage' ? 14 : 13,
+          fontWeight: n.kind === 'stage' ? 600 : 500,
           lineHeight: 18
         }
       },
-      data: { entityId: e.id }
+      data: { inView: n.inView }
     }
   })
-  const edges = props.relations.map(r => ({
-    id: r.id,
-    source: r.src,
-    target: r.dst,
+  const edges = props.edges.map(e => ({
+    id: e.id,
+    source: e.source,
+    target: e.target,
     attrs: {
       line: {
-        stroke: EDGE_COLORS[r.type] ?? '#c9cdd4',
+        stroke: EDGE_COLORS[e.type] ?? '#c9cdd4',
         strokeWidth: 1.4,
         strokeOpacity: 0.75,
         targetMarker: { name: 'block', size: 7 }
       }
     },
-    labels: [{ attrs: { label: { text: r.label, fill: '#4e5969', fontSize: 13 } } }]
+    labels: [{ attrs: { label: { text: e.label, fill: '#4e5969', fontSize: 13 } } }]
   }))
   return { nodes, edges }
 }
@@ -90,7 +92,7 @@ function layout () {
   const g = new dagre.graphlib.Graph()
   g.setGraph({ rankdir: props.rankdir ?? 'TB', nodesep: 32, ranksep: 76 })
   g.setDefaultEdgeLabel(() => ({}))
-  data.nodes.forEach(n => g.setNode(n.id, { width: NODE_W, height: NODE_H }))
+  data.nodes.forEach(n => g.setNode(n.id, { width: n.width, height: n.height }))
   data.edges.forEach(e => g.setEdge(e.source, e.target))
   dagre.layout(g)
   data.nodes.forEach(n => {
@@ -100,33 +102,29 @@ function layout () {
   return data
 }
 
-function inView (entityId: string) {
-  if (!props.view || props.view === 'all') {return true}
-  return viewCountsOf(entityId, props.tables)[props.view] > 0
-}
-
-function highlight (entityId: string | null) {
+function highlight (activeId: string | null) {
   const g = graph.value
   if (!g) {return}
   const keep = new Set<string>()
-  if (entityId) {
-    keep.add(entityId)
-    props.relations.forEach(r => {
-      if (r.src === entityId) {keep.add(r.dst)}
-      if (r.dst === entityId) {keep.add(r.src)}
+  if (activeId) {
+    keep.add(activeId)
+    props.edges.forEach(e => {
+      if (e.source === activeId) {keep.add(e.target)}
+      if (e.target === activeId) {keep.add(e.source)}
     })
   }
   g.getNodes().forEach(n => {
-    const visible = inView(n.id)
-    const focused = !entityId || keep.has(n.id)
+    const visible = n.getData()?.inView !== false
+    const focused = !activeId || keep.has(n.id)
     const op = !visible ? 0.28 : (focused ? 1 : 0.3)
     n.attr('body/opacity', op)
     n.attr('label/opacity', op)
   })
   g.getEdges().forEach(e => {
-    const bothInView = inView(e.getSourceCellId()) && inView(e.getTargetCellId())
-    const focused = !entityId || (keep.has(e.getSourceCellId()) && keep.has(e.getTargetCellId()))
-    e.attr('line/opacity', !bothInView ? 0.12 : (focused ? 1 : 0.2))
+    const sourceIn = g.getCellById(e.getSourceCellId())?.getData()?.inView !== false
+    const targetIn = g.getCellById(e.getTargetCellId())?.getData()?.inView !== false
+    const focused = !activeId || (keep.has(e.getSourceCellId()) && keep.has(e.getTargetCellId()))
+    e.attr('line/opacity', !(sourceIn && targetIn) ? 0.12 : (focused ? 1 : 0.2))
   })
 }
 
@@ -150,7 +148,7 @@ function initGraph () {
     }
   })
   graph.value.on('node:click', ({ node }) => {
-    const id = node.getData()?.entityId as string
+    const id = String(node.id)
     highlight(id)
     emit('node-click', id)
   })
@@ -185,7 +183,7 @@ function fit () {
 
 defineExpose({ reset, fit })
 
-watch(() => [props.entities, props.relations, props.tables, props.rankdir, props.view], render, { deep: true })
+watch(() => [props.nodes, props.edges, props.rankdir], render, { deep: true })
 
 onMounted(() => {
   initGraph()

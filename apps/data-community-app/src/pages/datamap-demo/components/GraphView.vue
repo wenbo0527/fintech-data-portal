@@ -1,0 +1,215 @@
+<template>
+  <div class="dm-graphview">
+    <div class="dm-head">
+      <a-breadcrumb>
+        <a-breadcrumb-item class="dm-crumb-root" @click="backToChain">授信支用链</a-breadcrumb-item>
+        <a-breadcrumb-item v-if="activeEntity">{{ activeEntity.name }}</a-breadcrumb-item>
+        <a-breadcrumb-item v-if="activeTable">{{ activeTable.name }}</a-breadcrumb-item>
+      </a-breadcrumb>
+      <a-space class="dm-legend" :size="12">
+        <a-tag color="green">推荐表 {{ tierCount.recommended }}</a-tag>
+        <a-tag color="arcoblue">明细兜底 {{ tierCount.fallback }}</a-tag>
+        <a-tag color="gray">技术维护 {{ tierCount.tech }}</a-tag>
+      </a-space>
+    </div>
+
+    <div class="dm-canvas" :class="{ 'dm-canvas--drawer': drawerVisible }">
+      <div class="dm-graph-host">
+      <RelationGraph
+        ref="graphRef"
+        :entities="entities"
+        :relations="relations"
+        :tables="tables"
+        @node-click="onNodeClick"
+      />
+      </div>
+      <div class="dm-hint">点击实体查看推荐表 · 拖拽画布平移 · Ctrl/⌘ + 滚轮缩放 · 节点只读不可拖动</div>
+    </div>
+
+    <a-drawer
+      v-model:visible="drawerVisible"
+      :width="440"
+      :footer="false"
+      :mask="false"
+      popup-container=".dm-graphview"
+      :title="drawerTitle"
+      unmount-on-close
+    >
+      <template v-if="activeTable">
+        <a-button size="small" type="text" @click="activeTable = null">
+          <template #icon><icon-left /></template>
+          返回推荐表
+        </a-button>
+        <a-descriptions :column="1" size="small" bordered class="dm-desc">
+          <a-descriptions-item label="表名">{{ activeTable.name }}</a-descriptions-item>
+          <a-descriptions-item label="中文名">{{ activeTable.cnName }}</a-descriptions-item>
+          <a-descriptions-item label="分层">{{ activeTable.layer }}</a-descriptions-item>
+          <a-descriptions-item label="责任人">{{ activeTable.owner }}</a-descriptions-item>
+          <a-descriptions-item label="口径">{{ activeTable.reason }}</a-descriptions-item>
+        </a-descriptions>
+        <a-divider orientation="left">字段（{{ fields.length }}）</a-divider>
+        <a-table :data="fields" :pagination="false" size="small" row-key="name">
+          <template #columns>
+            <a-table-column title="字段" data-index="name" />
+            <a-table-column title="中文" data-index="cn" />
+            <a-table-column title="类型" data-index="type" :width="90" />
+            <a-table-column title="分级" :width="90">
+              <template #cell="{ record }">
+                <a-tag size="small" :color="record.sensitivity === 'public' ? 'green' : 'orange'">
+                  {{ record.sensitivity }}
+                </a-tag>
+              </template>
+            </a-table-column>
+          </template>
+        </a-table>
+      </template>
+
+      <template v-else-if="activeEntity">
+        <a-descriptions :column="1" size="small" class="dm-desc">
+          <a-descriptions-item label="实体">{{ activeEntity.name }}（{{ activeEntity.id }}）</a-descriptions-item>
+          <a-descriptions-item label="说明">{{ activeEntity.description }}</a-descriptions-item>
+          <a-descriptions-item label="在册表">{{ entityTables.length }} 张</a-descriptions-item>
+        </a-descriptions>
+        <a-divider orientation="left">推荐与兜底</a-divider>
+        <a-empty v-if="!visibleTables.length" description="暂无在册表（仓库权威目录中该实体没有对应物理表）" />
+        <a-space v-else direction="vertical" fill :size="10">
+          <AssetCard
+            v-for="t in visibleTables"
+            :key="t.name"
+            :title="t.name"
+            :type="TIER_LABELS[t.tier]"
+            :type-color="TIER_COLORS[t.tier]"
+            :theme-color="TIER_COLORS[t.tier]"
+            :meta="`${t.cnName} · ${t.layer} · ${t.fieldCount} 字段`"
+            :description="t.reason"
+            :meta-lines="[`责任人 ${t.owner}`, `热度 ${t.heat}`, t.linkSource === 'element' ? '归属：要素关联' : '归属：按名称/标签归类']"
+            @click="activeTable = t"
+          />
+        </a-space>
+        <template v-if="techTables.length">
+          <a-divider orientation="left">技术维护（默认折叠）</a-divider>
+          <a-collapse :default-active-key="[]">
+            <a-collapse-item key="tech" :header="`${techTables.length} 张贴源/应用/维表与非上线表`">
+              <a-space direction="vertical" fill :size="8">
+                <AssetCard
+                  v-for="t in techTables"
+                  :key="t.name"
+                  :title="t.name"
+                  :type="t.layer"
+                  type-color="gray"
+                  theme-color="gray"
+                  :meta="`${t.cnName} · ${t.status}`"
+                  :description="t.reason"
+                  @click="activeTable = t"
+                />
+              </a-space>
+            </a-collapse-item>
+          </a-collapse>
+        </template>
+      </template>
+    </a-drawer>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, nextTick, ref, watch } from 'vue'
+import { IconLeft } from '@arco-design/web-vue/es/icon'
+import AssetCard from '@dca-components/common/AssetCard.vue'
+import RelationGraph from './RelationGraph.vue'
+import {
+  deriveEntities, deriveRelations, deriveTables, tablesOfEntity, fieldsOfTable,
+  TIER_LABELS, TIER_COLORS, type DemoEntity, type DemoTable
+} from '../data/derive'
+
+const entities = deriveEntities()
+const relations = deriveRelations()
+const tables = deriveTables()
+
+const graphRef = ref<InstanceType<typeof RelationGraph>>()
+const drawerVisible = ref(false)
+const activeEntity = ref<DemoEntity | null>(null)
+const activeTable = ref<DemoTable | null>(null)
+
+const entityTables = computed(() => activeEntity.value ? tablesOfEntity(activeEntity.value.id, tables) : [])
+const visibleTables = computed(() => entityTables.value.filter(t => t.tier !== 'tech'))
+const techTables = computed(() => entityTables.value.filter(t => t.tier === 'tech'))
+const fields = computed(() => activeTable.value ? fieldsOfTable(activeTable.value.name) : [])
+const drawerTitle = computed(() => activeTable.value ? activeTable.value.cnName : (activeEntity.value?.name ?? ''))
+const tierCount = computed(() => ({
+  recommended: tables.filter(t => t.tier === 'recommended').length,
+  fallback: tables.filter(t => t.tier === 'fallback').length,
+  tech: tables.filter(t => t.tier === 'tech').length
+}))
+
+function onNodeClick (entityId: string) {
+  if (!entityId) {
+    drawerVisible.value = false
+    activeEntity.value = null
+    activeTable.value = null
+    return
+  }
+  activeEntity.value = entities.find(e => e.id === entityId) ?? null
+  activeTable.value = null
+  drawerVisible.value = true
+}
+
+watch(drawerVisible, () => nextTick(() => graphRef.value?.fit()))
+
+function backToChain () {
+  drawerVisible.value = false
+  activeEntity.value = null
+  activeTable.value = null
+  graphRef.value?.reset()
+}
+</script>
+
+<style scoped>
+.dm-graphview {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 700px;
+}
+.dm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+.dm-crumb-root {
+  cursor: pointer;
+  color: var(--dca-brand-primary, #165dff);
+}
+.dm-canvas {
+  position: relative;
+  height: 620px;
+}
+.dm-canvas--drawer {
+  padding-right: 452px;
+}
+.dm-graph-host {
+  width: 100%;
+  height: 100%;
+}
+.dm-hint {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  font-size: 12px;
+  color: var(--dca-text-tertiary, #86909c);
+  background: rgba(255, 255, 255, 0.86);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.dm-desc {
+  margin-bottom: 8px;
+}
+/* 抽屉挂在本组件内且无遮罩，容器本身必须放行指针，否则面包屑与画布点不到 */
+.dm-graphview :deep(.arco-drawer-container) {
+  pointer-events: none;
+}
+.dm-graphview :deep(.arco-drawer) {
+  pointer-events: auto;
+}
+</style>

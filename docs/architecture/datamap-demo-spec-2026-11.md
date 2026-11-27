@@ -1,0 +1,206 @@
+# 数据地图新版 Demo · 按实际项目改写后的施工规格（2026-11-23）
+
+> 本文件是外部 SPEC《数据地图 Demo 实施规格》的**本地化改写版**。原 SPEC 不假设项目形态，
+> 本版把每一条都落到 `apps/data-community-app`（下称 dca）的既有实现上。
+> **总原则：零新增 npm 依赖、零新增 mock 数据、不改任何既有组件；只新写必要的薄壳。**
+> 原 SPEC 的宪法层 C-1…C-7 全部保留，下文逐条给出本仓库的落点与冲突处置。
+
+---
+
+## 0. 相对原 SPEC 的 12 处替换（先看这张表）
+
+| # | 原 SPEC 要求 | 本仓库实际 | 改写后 |
+|:--|:--|:--|:--|
+| 1 | 分支判断（A 原地 / B 补依赖 / C 独立子应用） | Vue3+Vite+Arco+X6 **全部已在用** | **分支 A**，且连 B 的补依赖都不需要 |
+| 2 | 新增 `@antv/x6@2.x` + `@antv/layout` | 已装 **X6 1.35.1**、`x6-vue-shape 3.0.2`、`@dagrejs/dagre 1.1.8`（根 node_modules） | **不装任何包**；布局照抄 `LineageGraph` 的 dagre 手算，不用 `@antv/layout` |
+| 3 | 目录 `src/views/datamap-demo/` | dca 约定是 `src/pages/` | `src/pages/datamap-demo/` |
+| 4 | 主题变量 `--primary-6` | dca 用 `--dca-*`（45 个），`--dca-brand-primary: #165dff` 与 SPEC 同值 | 直接用 `--dca-*`，不引入第二套变量 |
+| 5 | 4 个 JSON：`entities/relations/tables/fields` | 两个 store 已含全部真实数据 | **不建 JSON**，改 1 个派生模块 `data/derive.ts` 读既有 store |
+| 6 | 8 实体 `E_CUSTOMER…E_OVERDUE`（含借据/逾期表现） | `business-concept-store` 已有 **8 实体 ENT001–ENT008**（客户/账户/授信申请/授信合同/支用申请/支用单/还款计划/贷后记录） | 用 `ENT00x` 作 `entity_id`；**「借据」在权威表目录中无对应表**，见 §3.4 缺口处置 |
+| 7 | 9 条二元关系需自行编写 | `BusinessRelation` 已是**带类型的二元边**（REL001…，7 种 type + cardinality） | 直接派生，不新编关系 |
+| 8 | `TableCard.vue` 新写 | `components-dca/common/AssetCard.vue`（349 行）props 完全覆盖，`themeColor` 恰好支持 `green/arcoblue/gray` | **直接用 AssetCard**，不新写卡片 |
+| 9 | `EntityCard.vue`（X6 Vue 节点） | `LineageNode.vue` 是血缘专用（上下游标签/展开按钮/跳转），改它违反 C-5 | 用 **X6 内置 `rect` + attrs**（照 `customer360/RelationshipGraph.vue:305` 写法），**不注册 Vue 节点、不新写组件** |
+| 10 | `RelationGraph.vue` 新写 | 已有 3 个 X6 图组件可抄骨架 | 新写 **~120 行薄容器**，只读配置抄 `LineageGraph`，节点构造抄 `RelationshipGraph` |
+| 11 | `OldExperience.vue` 复刻「说明留空」痛点页 | 现有 `pages/discovery/search/index.vue`（1,305 行）已是真实搜索页，45 张表都有说明 | **不复制痛点页**，改为「对照说明 + 直达现有搜索页」，避免演示失真（见 §7 待定 B） |
+| 12 | 3 页用路由串联 | dca 路由在 `router/index.ts`，且 `data-map-table` 被 **23 处深链**调用 | **只加 1 条路由**，3 段用页内条件渲染；不动菜单、不动那 23 处 |
+
+---
+
+## 1. 勘察结果（原 SPEC 第 1 章，逐项实测）
+
+| 项 | 结果 | 证据 |
+|:--|:--|:--|
+| 目标应用 | dca（数据地图现居地） | `router/index.ts:70` `discovery/data-map/table/:tableName` |
+| 框架 | Vue 3.4 + Vite 5 + TS | `apps/data-community-app/package.json` |
+| Arco | `^2.55.0`，**完整引入** | `src/main.ts:13` `app.use(ArcoVue)` + `:14` 图标 |
+| X6 | **1.35.1**（1.x，不是 2.x） | 根 `node_modules/@antv/x6/package.json` |
+| X6 既有用法 | 3 处：血缘图 540 行、客户360 关系图 678 行、业务概念关系图 458 行 | `pages/lineage/components/LineageGraph.vue`、`pages/customer360/components/RelationshipGraph.vue`、`pages/management/business-concept/BusinessRelationGraph.vue` |
+| 布局 | `@dagrejs/dagre` 1.1.8，手算坐标 + `fromJSON` | `LineageGraph.vue:327-345`、`:419` |
+| 只读配置先例 | `interacting: { nodeMovable:false, edgeMovable:false }` | `LineageGraph.vue:397` |
+| 状态 | Pinia 2.1 已装（C-1 例外允许复用；Demo 用 `ref` 即可） | `main.ts:12` |
+| 路由 | 单文件 `src/router/index.ts`；`discovery/data-map-v2` 未被占用 | 现有 discovery 子路由 20+ 条 |
+| 目录/别名 | `src/pages/`、`src/mock/`、`@/…`、`@/mock-dca`、`@mock-shared` | `vite.config.ts` alias 表 |
+| 主题 | `--dca-brand-primary: #165dff` | `src/styles-dca/tokens.css:39` |
+| 包管理 | pnpm 9.15.4，`.npmrc` 有 `shamefully-hoist=true` | 根 |
+| 真实数据 | **有**：45 张表 + 8 实体 + 类型化关系 | 见 §3 |
+
+**判定：分支 A（原地集成），零新增依赖。**
+
+---
+
+## 2. 复用清单（全部已存在，逐项给出处）
+
+| 需求 | 复用件 | 位置 | 说明 |
+|:--|:--|:--|:--|
+| 推荐表卡片（三色） | `AssetCard.vue` | `components-dca/common/AssetCard.vue`（349 行） | props：`title / type / typeColor / description / metaLines / tags / themeColor / count`；`themeColor` 支持 `green / arcoblue / gray` = SPEC 三色；`emit('click')` 已有 |
+| 页面骨架 | `PageContainer.vue`(40) / `PageBanner.vue`(195) / `PageHeader.vue` | `components-dca/common/` | 不新写布局壳 |
+| 状态/分层标签 | `StatusTag.vue`(17) 或 AssetCard 自带 `a-tag` | `components-dca/common/StatusTag.vue` | 需要字典色时传 `dictKey` |
+| 图容器只读配置 | `LineageGraph.vue:390-400` | 同左 | `connecting` 全关 + `selecting:false` + `interacting` 两键；本版按 C-2 补齐 7 键 |
+| dagre 布局 | `LineageGraph.vue:327-345` | 同左 | `new dagre.graphlib.Graph()` → `dagre.layout(g)` → 坐标写回 → `fromJSON` |
+| 节点构造（免 Vue 节点） | `RelationshipGraph.vue:305-345` | `pages/customer360/components/` | 内置 `shape:'circle'/'rect'` + `attrs.label`，`node.getData()` 取业务数据 |
+| 节点点击 → 抽屉 | `LineageGraph.vue:403-410` | 同左 | `graph.on('node:click')` → `drawerVisible=true`；含「点展开按钮不触发抽屉」的 `closest()` 防抖写法 |
+| 生命周期销毁 | `LineageGraph.vue:357 / :444` | 同左 | `graph.dispose()` |
+| 大数字对照 | `a-statistic` | 已在 6 个页面使用（`pages/metrics-center/dashboard.vue` 等） | Arco 完整引入，直接用 |
+| 表/字段口径派生 | `derivePublicInfo(t)` / `deriveFieldDetail(t, field)` | `mock/shared/table-catalog-store.ts:180 / :243` | 现成函数，含 PII 判定与四级目录，不重写 |
+| 统计数字 | `TableCatalogStore.stats()` | 同文件 `:729` | `total / online / avgQuality / byLayer / declaredTotal(752)` |
+
+**明确不复用（附理由，避免后人误合）**
+
+- `customer360/RelationshipGraph.vue` **不能直接 import**：它的 `interacting: { nodeMovable: true }`（`:262`）允许拖动节点，违反 C-2 只读铁律；改它又违反 C-5。→ 只抄它的节点构造写法。
+- `LineageNode.vue`（370 行）不作实体卡片：含上下游标签、左右展开按钮、点击跳表详情，语义是血缘不是业务实体；改它违反 C-5。
+- `BusinessRelationGraph.vue`（458 行）是**可编辑**的业务概念建模页（无 `interacting` 限制、带新增关系表单），与 Demo 的只读定位相反。
+
+---
+
+## 3. 数据派生（零新增 mock，对应原 SPEC 第 2 章）
+
+唯一新增文件：`src/pages/datamap-demo/data/derive.ts`（预计 ~90 行），**只读不写**两个既有 store。
+
+### 3.1 entities ← `BusinessConceptStore`
+`mock/shared/business-concept-store.ts` 的 8 个实体：
+`ENT001 客户 / ENT002 账户 / ENT003 授信申请 / ENT004 授信合同 / ENT005 支用申请 / ENT006 支用单 / ENT007 还款计划 / ENT008 贷后记录`。
+映射：`entity_id = code`、`entity_name = name`、`description = description`、`domain` 由 `domainCode`（DOM003 授信域 / DOM004 支用域 / DOM005 还款域）映射到 SPEC 的 `risk|market|common`。
+`entity_type`：仓库无此字段 → 按 `name` 含「申请/记录/计划」判 `event`，其余 `entity`（规则写进代码注释，可审计）。
+
+### 3.2 relations ← `BusinessRelation[]`
+已是严格二元 + 类型：`{ code, name, sourceEntityCode, targetEntityCode, type, description, cardinality }`，
+type 枚举 7 值（association/behavior/derivative/dependency/trigger/config/check）。
+映射到 SPEC 4 值：`derivative|trigger → sequence`、`association|config → associate`、`dependency → contain`、`behavior|check → flow`。
+**不新编边**；`label = name`（如「生成」「发起」），`description` 原样。
+
+### 3.3 tables ← `TableCatalogStore.all()`（45 张）
+实测分层：**ODS 15 / DWD 10 / DWS 8 / ADS 8 / DIM 4**；DWS 中 online **6** 张，DWD 中 online **7** 张。
+
+三档标签映射（SPEC 3 档 → 仓库 5 层）：
+
+| SPEC 档 | 规则（可审计） | 实测张数 | 颜色 |
+|:--|:--|:--|:--|
+| 推荐表 | `layer==='DWS' && status==='online'` | **6** | `green` |
+| 明细兜底 | `layer==='DWD' && status==='online'` | **7** | `arcoblue` |
+| 技术维护（默认折叠） | `ODS / ADS / DIM`，以及非 online 的 DWS/DWD | 其余 | `gray` |
+
+- `is_recommended` = 上表第一行规则，**不手填**。
+- `recommend_reason` = **取既有 `description`**（45 张全有）。注意：`businessCaliber / usageGuide` 只有 **2 张**表填了，不能当通用理由源。
+- `owner / field_count / last_updated` ← `owner / fields.length / onTime`，全部现成。
+- `table_layer` 保留仓库 5 层原值，另给 `tier` 字段表达三档，**不改既有枚举**。
+
+### 3.4 fields ← `LogicalTable.fields`
+`CatalogField` 已含 `[名, 类型, 中文, 敏感度]`；字段详情直接用 `deriveFieldDetail()`（含 PII 判定、四级业务目录），不重写。
+
+### 3.5 表 ↔ 实体归属（**唯一需要新写的判断**）
+仓库**没有**表→实体映射（只有 `DataElement.relatedEntityCode` 把指标/标签挂到实体）。
+处置：在 `derive.ts` 里写**关键词规则**，输入只用既有字段 `cnName / tags / domain`：
+
+```
+cnName 含「客户/用户」      → ENT001      cnName 含「授信申请」 → ENT003
+cnName 含「账户」           → ENT002      cnName 含「授信合同/合同」 → ENT004
+cnName 含「支用申请」       → ENT005      cnName 含「提款/支用/放款」 → ENT006
+cnName 含「还款」           → ENT007      cnName 含「贷后/逾期/催」 → ENT008
+```
+命中不了的表 **标 `entity_id: null` 并归入「未归类」折叠区**，不硬塞、不编表名（C-3）。
+
+### 3.6 必须如实告知的两个缺口
+1. **「借据」无表**：权威目录 45 张里没有借据明细表（`dwd_loan_detail / dwd_loan_daily` 只出现在 `mock/unified-query/database.ts` 与 `components-dca/unified-query/DetailDrawer.vue` 的库树里，不在 catalog）。`dws_loan_bal_daily`（贷款余额日汇总）是 **offline**。→ 用仓库实体 **ENT006 支用单** 承担该环，或在该实体抽屉里显示「暂无在册表」。**不得为凑数新增表名。**
+2. **核心实体凑不到 SPEC 要求的「各 3–5 张推荐表」**：严格 `DWS+online+heat≥80` 只有 **3 张**（`dws_risk_score` 95、`dws_metric_credit_rt` 88、`dws_repayment_plan` 82）。放宽到 `DWS+online` 是 6 张，仍不够 3 个核心实体各 3–5 张。→ 建议把 SPEC 的分布要求改为「**每实体至少 1 张推荐或 DWD 兜底；核心实体展示全部在册表并标注档位**」，而不是编表。
+
+---
+
+## 4. 目录、路由与隔离（C-5 落点）
+
+```
+apps/data-community-app/src/pages/datamap-demo/
+├── index.vue                 # 薄壳：a-tabs / 条件渲染切 3 段（~60 行）
+├── GraphView.vue             # 图 + 抽屉 + 面包屑（~180 行，抽屉内容用 AssetCard）
+├── CompareResult.vue         # a-statistic 左右对照（~70 行，数字来自 stats() + 实测变量）
+├── OldExperience.vue         # 对照说明 + 直达现有搜索页（~40 行，不复制 1,305 行）
+├── components/RelationGraph.vue  # ~120 行薄容器（只读 + dagre + 内置 rect 节点）
+├── data/derive.ts            # ~90 行派生（只读两个 store）
+└── README.md                 # 《本地集成说明》：入口、启动、如何换真实数据
+```
+
+- **新增代码合计约 560 行，全部在新目录**；既有文件只动 **1 处**：`router/index.ts` 加 1 条记录
+  `path: 'discovery/data-map-v2', name: 'data-map-v2'`（`data-map` 这个 name 未被占用，无冲突）。
+- **不动**：`MainLayout` 菜单、`roles.ts` / `SHORTCUT_REGISTRY` / `useCrossNav` 等派生注册表、
+  23 处 `data-map-table` 深链、任何既有组件、`.env`、vite 配置、全局样式变量。
+- 入口方式：URL 直达 `/data-community/discovery/data-map-v2`；新旧互链用页内 `router-link`
+  （新版页里放「看现状搜索页」，旧版**不加**任何指向新版的链接 → 旧版零改动）。
+- 若要在菜单里露出新版，那是改 `MainLayout`（公共组件），**超出 C-5，需单独批准**。
+
+---
+
+## 5. 任务清单（改写版 T1–T8，每步标注复用什么）
+
+| T | 动作 | 复用 | 新增 | 自检 |
+|:--|:--|:--|:--|:--|
+| T1 | 环境确认（**不装包**） | 根 node_modules 的 X6/dagre | 0 | `pnpm --filter data-community-app dev` 起得来；空画布 `new Graph()` 无报错 |
+| T2 | `data/derive.ts` | `TableCatalogStore` + `BusinessConceptStore` + `deriveFieldDetail` | ~90 行 | 派生出 8 实体 / ≥9 关系 / 45 表；三档计数 = 6/7/其余；未归类表可见 |
+| T3 | 旧体验对照段 | 现有 `discovery/search` 页 | ~40 行 | 能从新版一键跳到现状搜索页，看到 45 张表与真实说明 |
+| T4 | `RelationGraph.vue` | `LineageGraph` 只读配置 + dagre；`RelationshipGraph` 内置节点写法 | ~120 行 | 8 节点渲染；**拖不动**；Ctrl/⌘+滚轮缩放；`node:click` 打印 entityId |
+| T5 | 抽屉下钻 | `AssetCard` + `a-drawer` + `deriveFieldDetail` | ~180 行（GraphView） | 图→实体→推荐表→字段→面包屑返回全通 |
+| T6 | 高亮联动 | 自写 ~15 行（既有图组件无此实现） | 含在 T4/T5 | 点「授信合同」，直连节点保持亮度，其余 `opacity:0.25` |
+| T7 | 结果对照 | `a-statistic` + `TableCatalogStore.stats()` | ~70 行 | 左右两栏、数字绑定变量（不写死） |
+| T8 | 串联收尾 | `PageContainer` / `--dca-*` | ~60 行 + 1 条路由 | 三段走通；`pnpm lint:check`、`pnpm --filter data-community-app build`、`pnpm verify:entry-registry` 全过 |
+
+每完成一个 T 打一次 commit（分支 `feat/datamap-demo`）。
+
+---
+
+## 6. 验收（复用现成闸门，不新增测试框架）
+
+- [ ] `pnpm --filter data-community-app dev` 无报错，`/data-community/discovery/data-map-v2` 可达
+- [ ] 图 8 节点 / ≥9 边，**节点不可拖动、不可连线**（C-2）
+- [ ] 图→实体→推荐表→字段→返回 全链路通；高亮联动生效
+- [ ] 数据全部派生自两个 store，**无编造表名**；未归类/缺口如实显示
+- [ ] `git diff --stat` 确认既有文件只多 1 条路由记录（C-5）
+- [ ] `pnpm lint:check` 0 error；`pnpm --filter data-community-app build` 退出 0
+- [ ] `pnpm verify:entry-registry` 的 R6 能命中新路由（新路由被既有闸门覆盖，无需新写校验）
+- [ ] `bash scripts/check-base-consistency.sh` 退出 0
+- [ ] 浏览器实测（ golden path + 只读边界：尝试拖节点、尝试连线、缩放后返回）
+
+---
+
+## 7. 仍需你定的 3 件事
+
+**A. 「借据」这一环怎么处理？**
+① 用仓库既有实体 **ENT006 支用单** 替代（推荐，零新增、语义相符）；
+② 保留 SPEC 的「借据」名，但抽屉里如实显示「暂无在册表」；
+③ 把 `dwd_loan_detail / dwd_loan_daily` 从 unified-query 的库树 mock 引进 catalog（**会新增数据，违背本次「不引入新的」原则**，不推荐）。
+
+**B. 旧体验页怎么做？**
+① **对照说明 + 直达现有搜索页**（推荐：零复制、不失真，45 张表都有真实说明）；
+② 按原 SPEC 复刻「说明列留空 + 请自行判断」的痛点页（需新写 ~80 行，且与现状不符，演示时可能被指夸大）。
+
+**C. 要不要给 dca 的 `package.json` 补 3 条依赖声明？**
+`@antv/x6`、`@antv/x6-vue-shape`、`@dagrejs/dagre` 现在**未在 dca 声明**，靠根 `shamefully-hoist` 命中（与已登记的 `xlsx/dayjs` 同类问题）。
+① 补声明、版本沿用根上的 `1.35.1 / 3.0.2 / 1.1.8`，**不执行 install**（推荐，消除隐性依赖）；
+② 完全不动 `package.json`（最严格的「不引入新的」，但保留 hoist 风险）。
+
+---
+
+## 8. 已知风险（开工前必须知道）
+
+1. **工作区不干净**：dca 当前有 30+ 个未提交文件属并发批次（自助 DBA / 分级分类），且 `router/index.ts` 正是双方都会改的文件。C-5 要求干净起步 → 需先等并发批次落地，或从已推送的 tip 切 `feat/datamap-demo`。
+2. **X6 是 1.x**：原 SPEC 3.2 的 7 个 `interacting` 键在 1.35 均有效，但 `graph.layout()` 等 2.x API 不存在；一律按 `LineageGraph` 的 1.x 写法（dagre 手算 + `fromJSON`）。
+3. **依赖未声明**（见 §7 C）：换机器/关 hoist 就会解析失败。
+4. **新版与既有「业务概念关系图」功能相邻**：`management/business-concept/relation-graph` 已有一个可编辑的实体关系图。新版的差异必须写进 README：**面向取数的只读一条链下钻（图→实体→推荐表→字段）+ 新旧对照**，不是第二个建模视图。
+5. **DEC-01 归属**：数据地图属 dca 权威范围，本 Demo 落在 dca 合规；不得把代码放进 dfd/asset 等已摘出应用。

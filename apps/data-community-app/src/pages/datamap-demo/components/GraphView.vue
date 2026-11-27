@@ -32,7 +32,36 @@
         <a-tag color="green">推荐表 {{ tierCount.recommended }}</a-tag>
         <a-tag color="arcoblue">明细兜底 {{ tierCount.fallback }}</a-tag>
         <a-tag color="gray">技术维护 {{ tierCount.tech }}</a-tag>
-        <span v-if="view !== 'all'" class="dm-muted">
+        <a-select
+          v-model="tagSel"
+          multiple
+          size="mini"
+          placeholder="标签筛选"
+          allow-clear
+          :max-tag-count="2"
+          class="dm-filter"
+        >
+          <a-option v-for="t in tagOptions" :key="t.tag" :value="t.tag">{{ t.tag }}（{{ t.count }}）</a-option>
+        </a-select>
+        <a-tooltip :content="prodOptions.length ? '按产品筛选' : '产品标签未接入：在 derive.ts 的 PRODUCT_MAPPING 填「表→产品」，或给表打「产品:字节」标签后自动出现'">
+          <a-select
+            v-model="prodSel"
+            multiple
+            size="mini"
+            :placeholder="prodOptions.length ? '产品筛选' : '产品（待接入）'"
+            :disabled="!prodOptions.length"
+            allow-clear
+            :max-tag-count="1"
+            class="dm-filter dm-filter--product"
+          >
+            <a-option v-for="p in prodOptions" :key="p" :value="p">{{ p }}</a-option>
+          </a-select>
+        </a-tooltip>
+        <a-button v-if="filterActive" size="mini" type="text" @click="clearFilter">清除筛选</a-button>
+        <span v-if="filterActive" class="dm-muted">
+          筛后命中 {{ filteredCount }} / {{ tables.length }} 张（叠加高亮，不隐藏节点）
+        </span>
+        <span v-else-if="view !== 'all'" class="dm-muted">
           视角「{{ VIEW_LABELS[view] }}」命中 {{ viewHitCount }} 张 / 共 {{ tables.length }} 张（叠加高亮，不隐藏节点）
         </span>
       </a-space>
@@ -133,7 +162,7 @@
         <a-divider orientation="left">推荐与兜底{{ view === 'all' ? '' : ` · 视角「${VIEW_LABELS[view]}」` }}</a-divider>
         <a-empty
           v-if="!visibleInView.length"
-          :description="view === 'all' ? '暂无在册表（仓库权威目录中该实体没有对应物理表）' : `当前视角「${VIEW_LABELS[view]}」下没有推荐/兜底表（切回「全部」或在下方其他视角查看）`"
+          :description="emptyHint"
         />
         <a-space v-else direction="vertical" fill :size="10">
           <AssetCard
@@ -143,7 +172,11 @@
             :type="TIER_LABELS[t.tier]"
             :type-color="TIER_COLORS[t.tier]"
             :description="t.reason"
-            :meta-lines="[`${t.cnName} · ${t.layer} · ${t.fieldCount} 字段 · 热度 ${t.heat}`, `命中视角：${matchedViews(t).join(' / ') || '无'} · 责任人 ${t.owner}`]"
+            :meta-lines="[
+              `${t.cnName} · ${t.layer} · ${t.fieldCount} 字段 · 热度 ${t.heat}`,
+              `命中视角：${matchedViews(t).join(' / ') || '无'} · 责任人 ${t.owner}`,
+              tagLine(t)
+            ]"
             @click="activeTable = t"
           />
         </a-space>
@@ -167,9 +200,9 @@
           </a-collapse>
         </template>
         <template v-if="outViewTables.length">
-          <a-divider orientation="left">其他视角（当前视角未命中）</a-divider>
+          <a-divider orientation="left">未命中当前视角/筛选</a-divider>
           <a-collapse :default-active-key="[]">
-            <a-collapse-item key="out" :header="`${outViewTables.length} 张未命中「${VIEW_LABELS[view]}」视角的表`">
+            <a-collapse-item key="out" :header="outViewLabel">
               <a-space direction="vertical" fill :size="8">
                 <AssetCard
                   v-for="t in outViewTables"
@@ -198,7 +231,7 @@ import RelationGraph from './RelationGraph.vue'
 import { relations as relationState } from '../data/relation-store'
 import {
   deriveEntities, deriveTables, deriveStages, entitiesOfStage, stageIdOf, tablesOfEntity, fieldsOfTable, entityName,
-  viewHit, viewCountsOf, countByView, VIEW_LABELS,
+  viewHit, viewCountsOf, countByView, VIEW_LABELS, tagCounts, productOptions, productOf, matchesFilter, type TableFilter,
   TIER_LABELS, TIER_COLORS, type DemoEntity, type DemoTable, type DemoView, type DemoRelationType
 } from '../data/derive'
 
@@ -228,17 +261,42 @@ const levelModel = computed({
   }
 })
 
+const tagSel = ref<string[]>([])
+const prodSel = ref<string[]>([])
+const filter = computed<TableFilter>(() => ({ tags: tagSel.value, products: prodSel.value }))
+const filterActive = computed(() => tagSel.value.length > 0 || prodSel.value.length > 0)
+const tagOptions = tagCounts(tables)
+const prodOptions = productOptions(tables)
+const filteredCount = computed(() => tables.filter(t => matchesFilter(t, filter.value)).length)
+
+function passes (t: DemoTable) {
+  return matchesFilter(t, filter.value)
+}
+
+function clearFilter () {
+  tagSel.value = []
+  prodSel.value = []
+}
+
+/** 节点副标题：优先用筛选口径，其次视角口径，都没有时给全量 */
+function scopeLabel (matched: number, total: number) {
+  if (filterActive.value) {return `筛后 ${matched}/${total}`}
+  if (view.value !== 'all') {return `本视角 ${matched}/${total}`}
+  return `${total} 张表`
+}
+
 const stageGraph = computed(() => {
   const nodes = stages.map(s => {
     const ents = entitiesOfStage(s.id)
-    const list = ents.flatMap(e => tablesOfEntity(e.id, tables))
-    const hit = view.value === 'all' ? null : countByView(list, view.value)
+    const all = ents.flatMap(e => tablesOfEntity(e.id, tables))
+    const kept = filterActive.value ? all.filter(passes) : all
+    const matched = view.value === 'all' ? kept.length : kept.filter(t => viewHit(t, view.value)).length
     return {
       id: `STAGE:${s.id}`,
       title: s.name,
-      sub: hit === null ? `${ents.length} 实体 · ${list.length} 张表` : `${ents.length} 实体 · 本视角 ${hit}/${list.length} 张`,
+      sub: `${ents.length} 实体 · ${scopeLabel(matched, all.length)}`,
       kind: 'stage' as const,
-      inView: hit === null || hit > 0
+      inView: matched > 0
     }
   })
   const agg = new Map<string, { source: string, target: string, label: string, type: DemoRelationType, count: number }>()
@@ -270,16 +328,15 @@ const scopeEntities = computed(() => activeStageId.value ? entitiesOfStage(activ
 const entityGraph = computed(() => {
   const inScope = new Set(scopeEntities.value.map(e => e.id))
   const nodes = scopeEntities.value.map(e => {
-    const total = tablesOfEntity(e.id, tables).length
-    const hit = view.value === 'all' ? null : viewCountsOf(e.id, tables)[view.value]
+    const all = tablesOfEntity(e.id, tables)
+    const kept = filterActive.value ? all.filter(passes) : all
+    const matched = view.value === 'all' ? kept.length : kept.filter(t => viewHit(t, view.value)).length
     return {
       id: e.id,
       title: e.name,
-      sub: hit === null
-        ? `${e.kind === 'event' ? '事件' : '实体'} · ${total} 张表`
-        : `${e.kind === 'event' ? '事件' : '实体'} · 本视角 ${hit}/${total}`,
+      sub: `${e.kind === 'event' ? '事件' : '实体'} · ${scopeLabel(matched, all.length)}`,
       kind: e.kind,
-      inView: hit === null || hit > 0
+      inView: matched > 0
     }
   })
   const edges = relations.value
@@ -294,15 +351,24 @@ const graphEdges = computed(() => (level.value === 'stage' ? stageGraph.value.ed
 const entityTables = computed(() => activeEntity.value ? tablesOfEntity(activeEntity.value.id, tables) : [])
 const visibleTables = computed(() => entityTables.value.filter(t => t.tier !== 'tech'))
 const techTables = computed(() => entityTables.value.filter(t => t.tier === 'tech'))
-const visibleInView = computed(() => view.value === 'all'
-  ? visibleTables.value
-  : visibleTables.value.filter(t => viewHit(t, view.value)))
-const techInView = computed(() => view.value === 'all'
-  ? techTables.value
-  : techTables.value.filter(t => viewHit(t, view.value)))
-const outViewTables = computed(() => view.value === 'all'
+const inScopeHit = (t: DemoTable) => viewHit(t, view.value) && passes(t)
+const visibleInView = computed(() => visibleTables.value.filter(inScopeHit))
+const techInView = computed(() => techTables.value.filter(inScopeHit))
+const outViewTables = computed(() => (view.value === 'all' && !filterActive.value)
   ? []
-  : entityTables.value.filter(t => !viewHit(t, view.value)))
+  : entityTables.value.filter(t => !inScopeHit(t)))
+const outViewLabel = computed(() => filterActive.value
+  ? `${outViewTables.value.length} 张未命中当前标签/产品筛选的表`
+  : `${outViewTables.value.length} 张未命中「${VIEW_LABELS[view.value]}」视角的表`)
+const emptyHint = computed(() => {
+  if (activeEntity.value && !entityTables.value.length) {
+    return '暂无在册表（仓库权威目录中该实体没有对应物理表）'
+  }
+  const parts: string[] = []
+  if (filterActive.value) {parts.push('标签/产品筛选')}
+  if (view.value !== 'all') {parts.push(`视角「${VIEW_LABELS[view.value]}」`)}
+  return `当前${parts.join(' + ') || '条件'}下没有推荐/兜底表（可清除筛选或在下方折叠区查看）`
+})
 const entityViewCounts = computed(() => activeEntity.value ? viewCountsOf(activeEntity.value.id, tables) : null)
 const viewHitCount = computed(() => countByView(tables, view.value))
 const fields = computed(() => activeTable.value ? fieldsOfTable(activeTable.value.name) : [])
@@ -333,6 +399,15 @@ const neighborNames = computed(() => {
 
 function matchedViews (t: DemoTable) {
   return VIEW_KEYS.filter(v => viewHit(t, v)).map(v => VIEW_LABELS[v])
+}
+
+function tagLine (t: DemoTable) {
+  const products = productOf(t)
+  const tags = t.tags.filter(x => !x.startsWith('产品:'))
+  const parts: string[] = []
+  if (products.length) {parts.push(`产品：${products.join(' / ')}`)}
+  if (tags.length) {parts.push(`标签：${tags.join(' / ')}`)}
+  return parts.join(' · ') || '无标签'
 }
 
 function toggleView (v: DemoView) {
@@ -375,7 +450,7 @@ function backToStageEntities () {
 }
 
 watch(drawerVisible, () => nextTick(() => graphRef.value?.fit()))
-watch([level, activeStageId, view], () => nextTick(() => graphRef.value?.fit()))
+watch([level, activeStageId, view, tagSel, prodSel], () => nextTick(() => graphRef.value?.fit()))
 </script>
 
 <style scoped>
@@ -403,6 +478,12 @@ watch([level, activeStageId, view], () => nextTick(() => graphRef.value?.fit()))
 }
 .dm-view-chip {
   cursor: pointer;
+}
+.dm-filter {
+  width: 190px;
+}
+.dm-filter--product {
+  width: 160px;
 }
 .dm-canvas {
   position: relative;

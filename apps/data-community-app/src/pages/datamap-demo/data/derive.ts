@@ -69,13 +69,51 @@ export function viewHit (t: DemoTable, view: DemoView): boolean {
 
 /**
  * 产品归属：仓库当前没有任何表→产品映射（45 张表 0 条，只有 5 个数据要素标了
- * relatedProduct，其中 4 条是「所有产品」）。等业务提供清单后填这里即可，
- * 不要在 UI 里编产品名。
+ * relatedProduct，其中 4 条是「所有产品」）。两条路都可生效，任选其一：
+ *   1) 在这里填「表 → 产品」清单；
+ *   2) 给表打以「产品:字节」形式的 tag。
+ * 在拿到业务清单前不要在 UI 里编产品名。
  */
 export const PRODUCT_MAPPING: Record<string, string[]> = {}
 
-export function productOf (tableName: string): string[] {
-  return PRODUCT_MAPPING[tableName] ?? []
+export const PRODUCT_TAG_PREFIX = '产品:'
+
+export function productOf (table: Pick<DemoTable, 'name' | 'tags'>): string[] {
+  const mapped = PRODUCT_MAPPING[table.name] ?? []
+  const tagged = table.tags
+    .filter(t => t.startsWith(PRODUCT_TAG_PREFIX))
+    .map(t => t.slice(PRODUCT_TAG_PREFIX.length))
+  return [...new Set([...mapped, ...tagged])]
+}
+
+export function tagCounts (tables: DemoTable[]): Array<{ tag: string, count: number }> {
+  const m = new Map<string, number>()
+  tables.forEach(t => t.tags.forEach(tag => m.set(tag, (m.get(tag) ?? 0) + 1)))
+  return [...m.entries()]
+    .filter(([tag]) => !tag.startsWith(PRODUCT_TAG_PREFIX))
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
+}
+
+export function productOptions (tables: DemoTable[]): string[] {
+  const set = new Set<string>()
+  tables.forEach(t => productOf(t).forEach(p => set.add(p)))
+  return [...set].sort()
+}
+
+/** 多选筛选：产品之间 OR、标签之间 OR，两类之间 AND；都为空视为不过滤 */
+export interface TableFilter {
+  tags: string[]
+  products: string[]
+}
+
+export function matchesFilter (t: DemoTable, f: TableFilter): boolean {
+  if (f.tags.length && !f.tags.some(tag => t.tags.includes(tag))) {return false}
+  if (f.products.length) {
+    const ps = productOf(t)
+    if (!f.products.some(p => ps.includes(p))) {return false}
+  }
+  return true
 }
 
 const RISK_DOMAINS = new Set(['DOM003', 'DOM004', 'DOM005', 'DOM006', 'DOM008'])

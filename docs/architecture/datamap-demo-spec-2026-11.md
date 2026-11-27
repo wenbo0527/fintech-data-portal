@@ -17,7 +17,7 @@
 | 4 | 主题变量 `--primary-6` | dca 用 `--dca-*`（45 个），`--dca-brand-primary: #165dff` 与 SPEC 同值 | 直接用 `--dca-*`，不引入第二套变量 |
 | 5 | 4 个 JSON：`entities/relations/tables/fields` | 两个 store 已含全部真实数据 | **不建 JSON**，改 1 个派生模块 `data/derive.ts` 读既有 store |
 | 6 | 8 实体 `E_CUSTOMER…E_OVERDUE`（含借据/逾期表现） | `business-concept-store` 已有 **8 实体 ENT001–ENT008**（客户/账户/授信申请/授信合同/支用申请/支用单/还款计划/贷后记录） | 用 `ENT00x` 作 `entity_id`；**「借据」在权威表目录中无对应表**，见 §3.4 缺口处置 |
-| 7 | 9 条二元关系需自行编写 | `BusinessRelation` 已是**带类型的二元边**（REL001…，7 种 type + cardinality） | 直接派生，不新编关系 |
+| 7 | 9 条二元关系需自行编写 | `BusinessRelation` 已是**带类型的二元边**，实测 **8 条**（REL001–REL008，7 种 type + cardinality） | 直接派生这 8 条，不新编；与 SPEC 建议的 9 条差 1，见 §3.6 |
 | 8 | `TableCard.vue` 新写 | `components-dca/common/AssetCard.vue`（349 行）props 完全覆盖，`themeColor` 恰好支持 `green/arcoblue/gray` | **直接用 AssetCard**，不新写卡片 |
 | 9 | `EntityCard.vue`（X6 Vue 节点） | `LineageNode.vue` 是血缘专用（上下游标签/展开按钮/跳转），改它违反 C-5 | 用 **X6 内置 `rect` + attrs**（照 `customer360/RelationshipGraph.vue:305` 写法），**不注册 Vue 节点、不新写组件** |
 | 10 | `RelationGraph.vue` 新写 | 已有 3 个 X6 图组件可抄骨架 | 新写 **~120 行薄容器**，只读配置抄 `LineageGraph`，节点构造抄 `RelationshipGraph` |
@@ -88,6 +88,11 @@ type 枚举 7 值（association/behavior/derivative/dependency/trigger/config/ch
 映射到 SPEC 4 值：`derivative|trigger → sequence`、`association|config → associate`、`dependency → contain`、`behavior|check → flow`。
 **不新编边**；`label = name`（如「生成」「发起」），`description` 原样。
 
+实测 **8 条**，已串成完整一条链：
+`REL001 客户→账户(拥有)`、`REL002 客户→授信申请(发起)`、`REL003 授信申请→授信合同(生成)`、
+`REL004 客户→支用申请(发起)`、`REL005 授信合同→支用申请(支持)`、`REL006 支用申请→支用单(生成)`、
+`REL007 支用单→还款计划(生成)`、`REL008 还款计划→贷后记录(被监控)`。
+
 ### 3.3 tables ← `TableCatalogStore.all()`（45 张）
 实测分层：**ODS 15 / DWD 10 / DWS 8 / ADS 8 / DIM 4**；DWS 中 online **6** 张，DWD 中 online **7** 张。
 
@@ -119,9 +124,10 @@ cnName 含「还款」           → ENT007      cnName 含「贷后/逾期/催�
 ```
 命中不了的表 **标 `entity_id: null` 并归入「未归类」折叠区**，不硬塞、不编表名（C-3）。
 
-### 3.6 必须如实告知的两个缺口
+### 3.6 必须如实告知的三个缺口
 1. **「借据」无表**：权威目录 45 张里没有借据明细表（`dwd_loan_detail / dwd_loan_daily` 只出现在 `mock/unified-query/database.ts` 与 `components-dca/unified-query/DetailDrawer.vue` 的库树里，不在 catalog）。`dws_loan_bal_daily`（贷款余额日汇总）是 **offline**。→ 用仓库实体 **ENT006 支用单** 承担该环，或在该实体抽屉里显示「暂无在册表」。**不得为凑数新增表名。**
 2. **核心实体凑不到 SPEC 要求的「各 3–5 张推荐表」**：严格 `DWS+online+heat≥80` 只有 **3 张**（`dws_risk_score` 95、`dws_metric_credit_rt` 88、`dws_repayment_plan` 82）。放宽到 `DWS+online` 是 6 张，仍不够 3 个核心实体各 3–5 张。→ 建议把 SPEC 的分布要求改为「**每实体至少 1 张推荐或 DWD 兜底；核心实体展示全部在册表并标注档位**」，而不是编表。
+3. **关系是 8 条不是 9 条**：SPEC 建议 9 条边，仓库 `BusinessRelation` 实测 8 条（§3.2 已列全）。这 8 条已覆盖客户→授信→支用→还款→贷后整链，缺的是 SPEC 里的「授信→客户」「借据→协议」两条反向/旁支。→ **用 8 条**，不新编；若演示需要第 9 条，须由你指定业务含义后再加。
 
 ---
 
@@ -153,7 +159,7 @@ apps/data-community-app/src/pages/datamap-demo/
 | T | 动作 | 复用 | 新增 | 自检 |
 |:--|:--|:--|:--|:--|
 | T1 | 环境确认（**不装包**） | 根 node_modules 的 X6/dagre | 0 | `pnpm --filter data-community-app dev` 起得来；空画布 `new Graph()` 无报错 |
-| T2 | `data/derive.ts` | `TableCatalogStore` + `BusinessConceptStore` + `deriveFieldDetail` | ~90 行 | 派生出 8 实体 / ≥9 关系 / 45 表；三档计数 = 6/7/其余；未归类表可见 |
+| T2 | `data/derive.ts` | `TableCatalogStore` + `BusinessConceptStore` + `deriveFieldDetail` | ~90 行 | 派生出 8 实体 / 8 关系 / 45 表；三档计数 = 6/7/其余；未归类表可见 |
 | T3 | 旧体验对照段 | 现有 `discovery/search` 页 | ~40 行 | 能从新版一键跳到现状搜索页，看到 45 张表与真实说明 |
 | T4 | `RelationGraph.vue` | `LineageGraph` 只读配置 + dagre；`RelationshipGraph` 内置节点写法 | ~120 行 | 8 节点渲染；**拖不动**；Ctrl/⌘+滚轮缩放；`node:click` 打印 entityId |
 | T5 | 抽屉下钻 | `AssetCard` + `a-drawer` + `deriveFieldDetail` | ~180 行（GraphView） | 图→实体→推荐表→字段→面包屑返回全通 |
@@ -168,7 +174,7 @@ apps/data-community-app/src/pages/datamap-demo/
 ## 6. 验收（复用现成闸门，不新增测试框架）
 
 - [ ] `pnpm --filter data-community-app dev` 无报错，`/data-community/discovery/data-map-v2` 可达
-- [ ] 图 8 节点 / ≥9 边，**节点不可拖动、不可连线**（C-2）
+- [ ] 图 8 节点 / 8 边，**节点不可拖动、不可连线**（C-2）
 - [ ] 图→实体→推荐表→字段→返回 全链路通；高亮联动生效
 - [ ] 数据全部派生自两个 store，**无编造表名**；未归类/缺口如实显示
 - [ ] `git diff --stat` 确认既有文件只多 1 条路由记录（C-5）

@@ -165,12 +165,21 @@ importers:
 
   apps/data-community-app:
     dependencies:
+      '@antv/x6':
+        specifier: ^1.35.0
+        version: 1.35.1
+      '@antv/x6-vue-shape':
+        specifier: ^3.0.2
+        version: 3.0.2(@antv/x6@1.35.1)(vue@3.5.19(typescript@5.3.3))
       '@app/lineage-graph':
         specifier: workspace:*
         version: link:../../packages/lineage-graph
       '@arco-design/web-vue':
         specifier: ^2.55.0
         version: 2.57.0(vue@3.5.19(typescript@5.3.3))
+      '@dagrejs/dagre':
+        specifier: ^1.1.8
+        version: 1.1.8
       file-saver:
         specifier: ^2.0.5
         version: 2.0.5

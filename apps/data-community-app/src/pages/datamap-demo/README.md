@@ -10,7 +10,10 @@ pnpm --filter data-community-app dev      # 或根目录 pnpm dev（6 应用编�
 # 打开 http://localhost:5185/data-community/discovery/data-map-v2
 ```
 
-页内三个页签（条件渲染，不另加路由）：
+页内三个页签（条件渲染，不另加路由；支持 `?tab=old|graph|compare` 直达）：
+
+> 入口：旧版「数据发现门户首页」（`/discovery/overview`）横幅搜索框下方新增 **★ 主体关联** 卡片，
+> 点击直达本页关系图页签（`?tab=graph`）。旧版其余内容零改动。
 
 1. **① 现状对照** —— 不复制痛点页。展示权威目录真实统计（45 张在册 / 上线数 / 存量口径 752 / 平均质量分），
    并直达三个现状页：数据发现门户首页、全局搜索、表详情示例。

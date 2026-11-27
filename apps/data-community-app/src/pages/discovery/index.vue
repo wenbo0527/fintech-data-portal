@@ -31,6 +31,22 @@
           </a-button>
         </div>
 
+        <div class="entity-entry" @click="goEntityGraph">
+          <div class="entity-entry-icon"><icon-branch /></div>
+          <div class="entity-entry-text">
+            <div class="entity-entry-title">
+              主体关联
+              <a-tag size="small" color="arcoblue">新</a-tag>
+            </div>
+            <div class="entity-entry-desc">
+              按业务主体（客户 → 授信申请 → 授信合同 → 支用单 → 还款计划 → 贷后记录）看每条链路上有哪些表，支持风险/市场/技术视角切换
+            </div>
+          </div>
+          <a-button type="primary" size="small" class="entity-entry-btn">
+            打开关系图<template #icon><icon-right /></template>
+          </a-button>
+        </div>
+
         <div v-if="showAdvancedFilter" class="advanced-filter-panel">
           <a-row :gutter="16">
             <a-col :span="8">
@@ -301,8 +317,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, markRaw } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { Message } from '@arco-design/web-vue'
 import {
   IconSearch, IconRight, IconHeart, IconFilter,
@@ -312,8 +328,6 @@ import {
   IconBranch, IconLink, IconCommon, IconPlus
 } from '@arco-design/web-vue/es/icon'
 
-import { onMounted, markRaw } from 'vue'
-import { useRoute } from 'vue-router'
 import MissingTicketModal from '@/components-dca/common/MissingTicketModal.vue'
 import { useMissingTicket } from '@/composables/useMissingTicket'
 
@@ -343,19 +357,24 @@ onMounted(() => {
  * 所有跳转都通过这一个口子规范化。
  */
 const normalizePath = (raw: string): string => {
-  if (!raw) return ''
+  if (!raw) {return ''}
   let p = raw.trim()
   // 去掉子应用 BASE 前缀(/dca、/dca/)
   p = p.replace(/^\/dca\/?/, '/')
   // 确保以 / 开头（绝对路径，vue-router 需要绝对路径才能正确匹配）
-  if (!p.startsWith('/')) p = '/' + p
+  if (!p.startsWith('/')) {p = '/' + p}
   return p
 }
 
 const safePush = (path: string) => {
   const target = normalizePath(path)
-  if (!target) return
+  if (!target) {return}
   router.push(target)
+}
+
+// 主体关联入口：跳到新版数据地图的关系图页签（tab=graph），不替换本页任何内容
+const goEntityGraph = () => {
+  router.push({ name: 'data-map-v2', query: { tab: 'graph' } })
 }
 
 const searchForm = ref({ keyword: '', include: '', exclude: '', module: '' })
@@ -553,6 +572,15 @@ const goItem = (item: { path: string }) => safePush(item.path)
 .main-search-input :deep(.arco-input-wrapper) { border-radius: 30px; padding-left: 20px; background: #fff; }
 .main-search-input :deep(.arco-input-search-btn) { border-radius: 0 30px 30px 0; background: transparent; color: #165DFF; border-left: 1px solid #f2f3f5; }
 .action-btn { background: #fff; border: 1px solid #a9c5ff; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); color: #165DFF; }
+
+/* 主体关联入口：横幅下方独立一条，避免挤压搜索框 */
+.entity-entry { display: flex; align-items: center; gap: 14px; margin-top: 18px; padding: 14px 18px; width: 100%; max-width: 800px; background: rgba(255,255,255,0.92); border: 1px solid #a9c5ff; border-radius: 12px; box-shadow: 0 4px 12px rgba(22,93,255,0.10); cursor: pointer; transition: box-shadow .2s, transform .2s; }
+.entity-entry:hover { box-shadow: 0 6px 18px rgba(22,93,255,0.18); transform: translateY(-1px); }
+.entity-entry-icon { width: 38px; height: 38px; border-radius: 10px; background: #e8f3ff; color: #165DFF; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+.entity-entry-text { flex: 1; min-width: 0; }
+.entity-entry-title { font-size: 15px; font-weight: 600; color: #1d2129; display: flex; align-items: center; gap: 8px; }
+.entity-entry-desc { font-size: 12px; color: #86909c; margin-top: 2px; }
+.entity-entry-btn { flex-shrink: 0; }
 
 .advanced-filter-panel { margin-top: 16px; padding: 24px; background: #fff; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); width: 100%; max-width: 800px; border: 1px solid #e5e6eb; }
 .filter-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }

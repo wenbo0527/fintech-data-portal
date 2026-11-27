@@ -25,15 +25,19 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import PageContainer from '@/components-dca/common/PageContainer.vue'
 import PageHeader from '@/components-dca/common/PageHeader.vue'
 import OldExperience from './components/OldExperience.vue'
 import GraphView from './components/GraphView.vue'
 import CompareResult from './components/CompareResult.vue'
 
+const TABS = ['old', 'graph', 'compare']
+
+const route = useRoute()
 const router = useRouter()
-const tab = ref('graph')
+const fromQuery = String(route.query.tab ?? '')
+const tab = ref(TABS.includes(fromQuery) ? fromQuery : 'graph')
 
 function goDiscovery () {
   router.push({ name: 'discovery' })

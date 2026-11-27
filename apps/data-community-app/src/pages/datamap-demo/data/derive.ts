@@ -102,15 +102,15 @@ function elementLinkIndex (): Map<string, string> {
   const idx = new Map<string, string>()
   for (const el of BusinessConceptStore.getElements()) {
     const table = el.relatedResource?.table
-    if (table && !idx.has(table)) idx.set(table, el.relatedEntityCode)
+    if (table && !idx.has(table)) {idx.set(table, el.relatedEntityCode)}
   }
   return idx
 }
 
 function tierOf (t: LogicalTable): DemoTier {
-  if (t.status !== 'online') return 'tech'
-  if (t.layer === 'DWS') return 'recommended'
-  if (t.layer === 'DWD') return 'fallback'
+  if (t.status !== 'online') {return 'tech'}
+  if (t.layer === 'DWS') {return 'recommended'}
+  if (t.layer === 'DWD') {return 'fallback'}
   return 'tech'
 }
 
@@ -150,7 +150,7 @@ export function unclassifiedTables (tables: DemoTable[] = deriveTables()): DemoT
 
 export function fieldsOfTable (name: string) {
   const t = TableCatalogStore.byName(name)
-  if (!t) return []
+  if (!t) {return []}
   return t.fields.map(f => ({
     name: f.name,
     cn: f.cnName || f.description,
@@ -161,7 +161,7 @@ export function fieldsOfTable (name: string) {
 }
 
 export function entityName (id: string | null): string {
-  if (!id) return '未归类'
+  if (!id) {return '未归类'}
   return BusinessConceptStore.getEntities().find(e => e.code === id)?.name ?? id
 }
 

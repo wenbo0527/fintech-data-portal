@@ -75,6 +75,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '表详情' }
       },
       {
+        path: 'discovery/data-map-v2',
+        name: 'data-map-v2',
+        component: () => import('../pages/datamap-demo/index.vue'),
+        meta: { title: '数据地图新版 Demo' }
+      },
+      {
         path: 'discovery/credit',
         name: 'credit',
         component: () => import('../pages/credit/index.vue'),

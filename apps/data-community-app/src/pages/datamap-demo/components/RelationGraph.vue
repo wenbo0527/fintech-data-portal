@@ -12,6 +12,7 @@ const props = defineProps<{
   entities: DemoEntity[]
   relations: DemoRelation[]
   tables: DemoTable[]
+  rankdir?: 'TB' | 'LR'
 }>()
 
 const emit = defineEmits<{ (e: 'node-click', entityId: string): void }>()
@@ -19,44 +20,61 @@ const emit = defineEmits<{ (e: 'node-click', entityId: string): void }>()
 const container = ref<HTMLElement>()
 const graph = ref<Graph | null>(null)
 
-const NODE_W = 176
-const NODE_H = 56
+const NODE_W = 190
+const NODE_H = 64
+
+const EDGE_COLORS: Record<string, string> = {
+  sequence: '#165dff',
+  associate: '#86909c',
+  contain: '#722ed1',
+  flow: '#ff7d00'
+}
 
 function countOf (id: string) {
   return props.tables.filter(t => t.entityId === id).length
 }
 
 function buildData () {
-  const nodes = props.entities.map(e => ({
-    id: e.id,
-    shape: 'rect',
-    width: NODE_W,
-    height: NODE_H,
-    attrs: {
-      body: {
-        fill: '#ffffff',
-        stroke: e.kind === 'event' ? '#ff7d00' : '#165dff',
-        strokeWidth: 1.5,
-        rx: 8,
-        ry: 8
+  const nodes = props.entities.map(e => {
+    const n = countOf(e.id)
+    const event = e.kind === 'event'
+    return {
+      id: e.id,
+      shape: 'rect',
+      width: NODE_W,
+      height: NODE_H,
+      attrs: {
+        body: {
+          fill: event ? '#fff7e8' : '#f2f7ff',
+          stroke: event ? '#ff7d00' : '#165dff',
+          strokeWidth: 1.6,
+          rx: 10,
+          ry: 10
+        },
+        label: {
+          text: `${e.name}\n${event ? '事件' : '实体'} · ${n} 张表`,
+          fill: '#1d2129',
+          fontSize: 13,
+          fontWeight: 500,
+          lineHeight: 18
+        }
       },
-      label: {
-        text: `${e.name}（${countOf(e.id)}）`,
-        fill: '#1d2129',
-        fontSize: 13,
-        fontWeight: 500
-      }
-    },
-    data: { entityId: e.id }
-  }))
+      data: { entityId: e.id }
+    }
+  })
   const edges = props.relations.map(r => ({
     id: r.id,
     source: r.src,
     target: r.dst,
     attrs: {
-      line: { stroke: '#c9cdd4', strokeWidth: 1.2, targetMarker: { name: 'block', size: 6 } }
+      line: {
+        stroke: EDGE_COLORS[r.type] ?? '#c9cdd4',
+        strokeWidth: 1.4,
+        strokeOpacity: 0.75,
+        targetMarker: { name: 'block', size: 7 }
+      }
     },
-    labels: [{ attrs: { label: { text: r.label, fill: '#86909c', fontSize: 11 } } }]
+    labels: [{ attrs: { label: { text: r.label, fill: '#4e5969', fontSize: 13 } } }]
   }))
   return { nodes, edges }
 }
@@ -64,7 +82,7 @@ function buildData () {
 function layout () {
   const data = buildData()
   const g = new dagre.graphlib.Graph()
-  g.setGraph({ rankdir: 'TB', nodesep: 40, ranksep: 60 })
+  g.setGraph({ rankdir: props.rankdir ?? 'TB', nodesep: 32, ranksep: 76 })
   g.setDefaultEdgeLabel(() => ({}))
   data.nodes.forEach(n => g.setNode(n.id, { width: NODE_W, height: NODE_H }))
   data.edges.forEach(e => g.setEdge(e.source, e.target))
@@ -153,7 +171,7 @@ function fit () {
 
 defineExpose({ reset, fit })
 
-watch(() => [props.entities, props.relations, props.tables], render, { deep: true })
+watch(() => [props.entities, props.relations, props.tables, props.rankdir], render, { deep: true })
 
 onMounted(() => {
   initGraph()

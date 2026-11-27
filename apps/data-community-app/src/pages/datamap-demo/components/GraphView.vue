@@ -7,6 +7,10 @@
         <a-breadcrumb-item v-if="activeTable">{{ activeTable.name }}</a-breadcrumb-item>
       </a-breadcrumb>
       <a-space class="dm-legend" :size="12">
+        <a-radio-group v-model="rankdir" type="button" size="mini">
+          <a-radio value="TB">纵向</a-radio>
+          <a-radio value="LR">横向</a-radio>
+        </a-radio-group>
         <a-tag color="green">推荐表 {{ tierCount.recommended }}</a-tag>
         <a-tag color="arcoblue">明细兜底 {{ tierCount.fallback }}</a-tag>
         <a-tag color="gray">技术维护 {{ tierCount.tech }}</a-tag>
@@ -20,6 +24,7 @@
         :entities="entities"
         :relations="relations"
         :tables="tables"
+        :rankdir="rankdir"
         @node-click="onNodeClick"
       />
       </div>
@@ -43,7 +48,10 @@
         <a-descriptions :column="1" size="small" bordered class="dm-desc">
           <a-descriptions-item label="表名">{{ activeTable.name }}</a-descriptions-item>
           <a-descriptions-item label="中文名">{{ activeTable.cnName }}</a-descriptions-item>
-          <a-descriptions-item label="分层">{{ activeTable.layer }}</a-descriptions-item>
+          <a-descriptions-item label="档位">
+            <a-tag size="small" :color="TIER_COLORS[activeTable.tier]">{{ TIER_LABELS[activeTable.tier] }}</a-tag>
+            <span class="dm-muted"> {{ activeTable.layer }} · 热度 {{ activeTable.heat }}</span>
+          </a-descriptions-item>
           <a-descriptions-item label="责任人">{{ activeTable.owner }}</a-descriptions-item>
           <a-descriptions-item label="口径">{{ activeTable.reason }}</a-descriptions-item>
         </a-descriptions>
@@ -62,6 +70,11 @@
             </a-table-column>
           </template>
         </a-table>
+        <div class="dm-table-foot">
+          <router-link :to="{ name: 'data-map-table', params: { tableName: activeTable.name } }">
+            <a-button type="outline" size="small">在现状表详情中打开（旧版 7 Tab）</a-button>
+          </router-link>
+        </div>
       </template>
 
       <template v-else-if="activeEntity">
@@ -69,6 +82,17 @@
           <a-descriptions-item label="实体">{{ activeEntity.name }}（{{ activeEntity.id }}）</a-descriptions-item>
           <a-descriptions-item label="说明">{{ activeEntity.description }}</a-descriptions-item>
           <a-descriptions-item label="在册表">{{ entityTables.length }} 张</a-descriptions-item>
+          <a-descriptions-item label="分层">
+            <a-space :size="6" wrap>
+              <a-tag v-for="d in layerDist" :key="d.layer" size="small" color="gray">{{ d.layer }} {{ d.count }}</a-tag>
+            </a-space>
+          </a-descriptions-item>
+          <a-descriptions-item label="直连实体">
+            <a-space :size="6" wrap>
+              <a-tag v-for="n in neighborNames" :key="n.id" size="small" color="arcoblue">{{ n.label }}</a-tag>
+              <span v-if="!neighborNames.length" class="dm-muted">无</span>
+            </a-space>
+          </a-descriptions-item>
         </a-descriptions>
         <a-divider orientation="left">推荐与兜底</a-divider>
         <a-empty v-if="!visibleTables.length" description="暂无在册表（仓库权威目录中该实体没有对应物理表）" />
@@ -79,10 +103,8 @@
             :title="t.name"
             :type="TIER_LABELS[t.tier]"
             :type-color="TIER_COLORS[t.tier]"
-            :theme-color="TIER_COLORS[t.tier]"
-            :meta="`${t.cnName} · ${t.layer} · ${t.fieldCount} 字段`"
             :description="t.reason"
-            :meta-lines="[`责任人 ${t.owner}`, `热度 ${t.heat}`, t.linkSource === 'element' ? '归属：要素关联' : '归属：按名称/标签归类']"
+            :meta-lines="[`${t.cnName} · ${t.layer} · ${t.fieldCount} 字段 · 热度 ${t.heat}`, `责任人 ${t.owner} · ${t.linkSource === 'element' ? '归属：要素关联' : '归属：按名称/标签归类'}`]"
             @click="activeTable = t"
           />
         </a-space>
@@ -97,8 +119,7 @@
                   :title="t.name"
                   :type="t.layer"
                   type-color="gray"
-                  theme-color="gray"
-                  :meta="`${t.cnName} · ${t.status}`"
+                  :meta="`${t.cnName} · ${t.layer} · ${t.fieldCount} 字段 · ${t.status}`"
                   :description="t.reason"
                   @click="activeTable = t"
                 />
@@ -117,7 +138,7 @@ import { IconLeft } from '@arco-design/web-vue/es/icon'
 import AssetCard from '@dca-components/common/AssetCard.vue'
 import RelationGraph from './RelationGraph.vue'
 import {
-  deriveEntities, deriveRelations, deriveTables, tablesOfEntity, fieldsOfTable,
+  deriveEntities, deriveRelations, deriveTables, tablesOfEntity, fieldsOfTable, entityName,
   TIER_LABELS, TIER_COLORS, type DemoEntity, type DemoTable
 } from '../data/derive'
 
@@ -129,6 +150,7 @@ const graphRef = ref<InstanceType<typeof RelationGraph>>()
 const drawerVisible = ref(false)
 const activeEntity = ref<DemoEntity | null>(null)
 const activeTable = ref<DemoTable | null>(null)
+const rankdir = ref<'TB' | 'LR'>('TB')
 
 const entityTables = computed(() => activeEntity.value ? tablesOfEntity(activeEntity.value.id, tables) : [])
 const visibleTables = computed(() => entityTables.value.filter(t => t.tier !== 'tech'))
@@ -140,6 +162,24 @@ const tierCount = computed(() => ({
   fallback: tables.filter(t => t.tier === 'fallback').length,
   tech: tables.filter(t => t.tier === 'tech').length
 }))
+const layerDist = computed(() => {
+  const m = new Map<string, number>()
+  entityTables.value.forEach(t => m.set(t.layer, (m.get(t.layer) ?? 0) + 1))
+  return [...m.entries()].map(([layer, count]) => ({ layer, count }))
+})
+const neighborNames = computed(() => {
+  if (!activeEntity.value) {return []}
+  const id = activeEntity.value.id
+  const seen = new Set<string>()
+  const out: Array<{ id: string, label: string }> = []
+  relations.forEach(r => {
+    const other = r.src === id ? r.dst : (r.dst === id ? r.src : null)
+    if (!other || seen.has(other)) {return}
+    seen.add(other)
+    out.push({ id: other, label: `${entityName(other)}（${r.label}）` })
+  })
+  return out
+})
 
 function onNodeClick (entityId: string) {
   if (!entityId) {
@@ -204,6 +244,13 @@ function backToChain () {
 }
 .dm-desc {
   margin-bottom: 8px;
+}
+.dm-muted {
+  color: var(--dca-text-tertiary, #86909c);
+}
+.dm-table-foot {
+  margin-top: 12px;
+  text-align: right;
 }
 /* 抽屉挂在本组件内且无遮罩，容器本身必须放行指针，否则面包屑与画布点不到 */
 .dm-graphview :deep(.arco-drawer-container) {

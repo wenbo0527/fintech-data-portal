@@ -1,7 +1,8 @@
 <template>
-  <div class="dm-graphview">
+  <div class="dm-graphview" :class="{ 'dm-graphview--drawer': drawerVisible }">
     <div class="dm-head">
       <a-breadcrumb>
+        <a-breadcrumb-item>{{ domainCrumb }}</a-breadcrumb-item>
         <a-breadcrumb-item class="dm-crumb-root" @click="backToStages">授信支用链</a-breadcrumb-item>
         <a-breadcrumb-item v-if="activeStageId">
           <span class="dm-crumb-link" @click="backToStageEntities">{{ activeStageName }}</span>
@@ -57,6 +58,22 @@
             <a-option v-for="p in prodOptions" :key="p" :value="p">{{ p }}</a-option>
           </a-select>
         </a-tooltip>
+        <a-select
+          v-model="layerSel"
+          multiple
+          size="mini"
+          placeholder="分层筛选"
+          allow-clear
+          :max-tag-count="1"
+          class="dm-filter dm-filter--layer"
+        >
+          <a-option v-for="l in layerOptions" :key="l" :value="l">{{ l }}</a-option>
+        </a-select>
+        <a-select v-model="sortBy" size="mini" class="dm-filter dm-filter--sort">
+          <a-option value="tier">排序：推荐优先</a-option>
+          <a-option value="heat">排序：热度</a-option>
+          <a-option value="updated">排序：更新时间</a-option>
+        </a-select>
         <a-button v-if="filterActive" size="mini" type="text" @click="clearFilter">清除筛选</a-button>
         <span v-if="filterActive" class="dm-muted">
           筛后命中 {{ filteredCount }} / {{ tables.length }} 张（叠加高亮，不隐藏节点）
@@ -87,6 +104,7 @@
       :width="440"
       :footer="false"
       :mask="false"
+      :esc-to-close="false"
       popup-container=".dm-graphview"
       :title="drawerTitle"
       unmount-on-close
@@ -101,10 +119,16 @@
           <a-descriptions-item label="中文名">{{ activeTable.cnName }}</a-descriptions-item>
           <a-descriptions-item label="档位">
             <a-tag size="small" :color="TIER_COLORS[activeTable.tier]">{{ TIER_LABELS[activeTable.tier] }}</a-tag>
-            <span class="dm-muted"> {{ activeTable.layer }} · 热度 {{ activeTable.heat }}</span>
+            <span class="dm-muted"> {{ activeTable.layer }} · {{ activeTable.freq }} · 热度 {{ activeTable.heat }}</span>
           </a-descriptions-item>
-          <a-descriptions-item label="责任人">{{ activeTable.owner }}</a-descriptions-item>
-          <a-descriptions-item label="口径">{{ activeTable.reason }}</a-descriptions-item>
+          <a-descriptions-item label="维护人">{{ activeTable.owner }}</a-descriptions-item>
+          <a-descriptions-item label="同步">
+            <a-tag size="small" :color="activeTable.syncStatus === 'synced' ? 'green' : (activeTable.syncStatus === 'stale' ? 'orange' : 'red')">
+              {{ activeTable.syncStatus === 'synced' ? '已同步' : (activeTable.syncStatus === 'stale' ? '待复核' : '同步异常') }}
+            </a-tag>
+            <span class="dm-muted"> 上次复核 {{ activeTable.lastVerifiedAt || '—' }}</span>
+          </a-descriptions-item>
+          <a-descriptions-item label="口径">{{ activeTable.recommendReason }}</a-descriptions-item>
         </a-descriptions>
         <a-divider orientation="left">字段（{{ fields.length }}）</a-divider>
         <a-table :data="fields" :pagination="false" size="small" row-key="name">
@@ -131,6 +155,10 @@
       <template v-else-if="activeEntity">
         <a-descriptions :column="1" size="small" class="dm-desc">
           <a-descriptions-item label="实体">{{ activeEntity.name }}（{{ activeEntity.id }}）</a-descriptions-item>
+          <a-descriptions-item label="稳定标识">
+            <code class="dm-code">{{ activeEntity.entityCode }}</code>
+            <span class="dm-muted"> 注册 {{ activeEntity.registryStatus }} · 管理 {{ activeEntity.manageStatus }}</span>
+          </a-descriptions-item>
           <a-descriptions-item label="说明">{{ activeEntity.description }}</a-descriptions-item>
           <a-descriptions-item label="在册表">{{ entityTables.length }} 张</a-descriptions-item>
           <a-descriptions-item label="分层">
@@ -158,6 +186,12 @@
               <span v-if="!neighborNames.length" class="dm-muted">无</span>
             </a-space>
           </a-descriptions-item>
+          <a-descriptions-item label="隐含常识">
+            <div v-if="!entityRules.length" class="dm-muted">该实体暂无登记的业务常识</div>
+            <div v-for="r in entityRules" :key="r.id" class="dm-rule">
+              <span class="dm-muted">{{ r.id }}</span> {{ r.text }}
+            </div>
+          </a-descriptions-item>
         </a-descriptions>
         <a-divider orientation="left">推荐与兜底{{ view === 'all' ? '' : ` · 视角「${VIEW_LABELS[view]}」` }}</a-divider>
         <a-empty
@@ -171,14 +205,19 @@
             :title="t.name"
             :type="TIER_LABELS[t.tier]"
             :type-color="TIER_COLORS[t.tier]"
-            :description="t.reason"
+            :description="t.recommendReason"
             :meta-lines="[
-              `${t.cnName} · ${t.layer} · ${t.fieldCount} 字段 · 热度 ${t.heat}`,
-              `命中视角：${matchedViews(t).join(' / ') || '无'} · 责任人 ${t.owner}`,
-              tagLine(t)
+              `${t.cnName} · ${t.layer} · ${t.freq} · ${t.fieldCount} 字段 · 热度 ${t.heat}`,
+              `维护人 ${t.owner} · 上次复核 ${t.lastVerifiedAt || '—'}`,
+              `命中视角：${matchedViews(t).join(' / ') || '无'} · ${tagLine(t)}`
             ]"
             @click="activeTable = t"
-          />
+          >
+            <template #actions>
+              <a-tag v-if="t.syncStatus === 'stale'" size="small" color="orange">待复核</a-tag>
+              <a-tag v-else-if="t.syncStatus === 'broken'" size="small" color="red">同步异常</a-tag>
+            </template>
+          </AssetCard>
         </a-space>
         <template v-if="techInView.length">
           <a-divider orientation="left">技术维护（默认折叠）</a-divider>
@@ -231,7 +270,8 @@ import RelationGraph from './RelationGraph.vue'
 import { relations as relationState } from '../data/relation-store'
 import {
   deriveEntities, deriveTables, deriveStages, entitiesOfStage, stageIdOf, tablesOfEntity, fieldsOfTable, entityName,
-  viewHit, viewCountsOf, countByView, VIEW_LABELS, tagCounts, productOptions, productOf, matchesFilter, type TableFilter,
+  viewHit, viewCountsOf, countByView, VIEW_LABELS, tagCounts, productOptions, productOf, matchesFilter,
+  sortTables, DOMAIN_LABELS, IMPLICIT_RULES, type TableFilter, type TableSort,
   TIER_LABELS, TIER_COLORS, type DemoEntity, type DemoTable, type DemoView, type DemoRelationType
 } from '../data/derive'
 
@@ -263,19 +303,24 @@ const levelModel = computed({
 
 const tagSel = ref<string[]>([])
 const prodSel = ref<string[]>([])
+const layerSel = ref<string[]>([])
+const sortBy = ref<TableSort>('tier')
 const filter = computed<TableFilter>(() => ({ tags: tagSel.value, products: prodSel.value }))
-const filterActive = computed(() => tagSel.value.length > 0 || prodSel.value.length > 0)
+const filterActive = computed(() => tagSel.value.length > 0 || prodSel.value.length > 0 || layerSel.value.length > 0)
 const tagOptions = tagCounts(tables)
 const prodOptions = productOptions(tables)
-const filteredCount = computed(() => tables.filter(t => matchesFilter(t, filter.value)).length)
+const layerOptions = [...new Set(tables.map(t => t.layer))].sort()
+const filteredCount = computed(() => tables.filter(passes).length)
 
 function passes (t: DemoTable) {
+  if (layerSel.value.length && !layerSel.value.includes(t.layer)) {return false}
   return matchesFilter(t, filter.value)
 }
 
 function clearFilter () {
   tagSel.value = []
   prodSel.value = []
+  layerSel.value = []
 }
 
 /** 节点副标题：优先用筛选口径，其次视角口径，都没有时给全量 */
@@ -352,8 +397,8 @@ const entityTables = computed(() => activeEntity.value ? tablesOfEntity(activeEn
 const visibleTables = computed(() => entityTables.value.filter(t => t.tier !== 'tech'))
 const techTables = computed(() => entityTables.value.filter(t => t.tier === 'tech'))
 const inScopeHit = (t: DemoTable) => viewHit(t, view.value) && passes(t)
-const visibleInView = computed(() => visibleTables.value.filter(inScopeHit))
-const techInView = computed(() => techTables.value.filter(inScopeHit))
+const visibleInView = computed(() => sortTables(visibleTables.value.filter(inScopeHit), sortBy.value))
+const techInView = computed(() => sortTables(techTables.value.filter(inScopeHit), sortBy.value))
 const outViewTables = computed(() => (view.value === 'all' && !filterActive.value)
   ? []
   : entityTables.value.filter(t => !inScopeHit(t)))
@@ -369,6 +414,10 @@ const emptyHint = computed(() => {
   if (view.value !== 'all') {parts.push(`视角「${VIEW_LABELS[view.value]}」`)}
   return `当前${parts.join(' + ') || '条件'}下没有推荐/兜底表（可清除筛选或在下方折叠区查看）`
 })
+const domainCrumb = computed(() => activeEntity.value ? DOMAIN_LABELS[activeEntity.value.domain] : '风险域')
+const entityRules = computed(() => activeEntity.value
+  ? IMPLICIT_RULES.filter(r => r.entityIds.includes(activeEntity.value!.id))
+  : [])
 const entityViewCounts = computed(() => activeEntity.value ? viewCountsOf(activeEntity.value.id, tables) : null)
 const viewHitCount = computed(() => countByView(tables, view.value))
 const fields = computed(() => activeTable.value ? fieldsOfTable(activeTable.value.name) : [])
@@ -450,7 +499,7 @@ function backToStageEntities () {
 }
 
 watch(drawerVisible, () => nextTick(() => graphRef.value?.fit()))
-watch([level, activeStageId, view, tagSel, prodSel], () => nextTick(() => graphRef.value?.fit()))
+watch([level, activeStageId, view, tagSel, prodSel, layerSel], () => nextTick(() => graphRef.value?.fit()))
 </script>
 
 <style scoped>
@@ -485,11 +534,31 @@ watch([level, activeStageId, view, tagSel, prodSel], () => nextTick(() => graphR
 .dm-filter--product {
   width: 160px;
 }
+.dm-filter--layer {
+  width: 150px;
+}
+.dm-filter--sort {
+  width: 152px;
+}
+.dm-code {
+  background: rgba(0, 0, 0, 0.04);
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.dm-rule {
+  font-size: 12px;
+  line-height: 1.6;
+}
 .dm-canvas {
   position: relative;
   height: 620px;
 }
 .dm-canvas--drawer {
+  padding-right: 452px;
+}
+.dm-graphview--drawer .dm-head,
+.dm-graphview--drawer .dm-subhead {
   padding-right: 452px;
 }
 .dm-graph-host {

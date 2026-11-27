@@ -55,7 +55,12 @@ pnpm --filter data-community-app dev      # 或根目录 pnpm dev（6 应用编�
   ② 给表打形如 `产品:字节` 的 tag。
   `productOf()` 取两者并集；当前两处都为空，故产品下拉显示「产品（待接入）」并禁用 —— **不编产品名**。
 - **标签筛选**：多选，选项取自 45 张表的真实 `tags`（65 个，带计数），产品之间 OR、标签之间 OR、
-  两类之间 AND；筛选与视角叠加生效，命中 0 的节点淡化到 0.28 但不隐藏。
+  两类之间 AND；另有**分层筛选**（DWS/DWD/…）与**排序**（推荐优先 / 热度 / 更新时间）。
+  筛选与视角叠加生效，命中 0 的节点淡化到 0.28 但不隐藏。
+- **v2 预留字段**（C-9）：实体 `entityCode/registryStatus/manageStatus`，表 `syncStatus/lastVerifiedAt/usageHeat/recommendReason`。
+  卡片与抽屉已用上：维护人、上次复核、同步状态角标、口径（粒度+口径+场景）、实体稳定标识、隐含业务常识。
+- 数据质检：`pnpm verify:datamap-demo`（7 项，当前 6 PASS + 1 WARN=支用申请无表，属仓库真实缺口）；
+  语义规格见 [docs/architecture/datamap-demo-semantics-2026-11.md](../../../../../docs/architecture/datamap-demo-semantics-2026-11.md)。
 
 **换真实数据**：改上述两个 store 即可，本目录不需要动；派生规则集中在 `derive.ts` 顶部常量。
 
@@ -86,7 +91,7 @@ pnpm --filter data-community-app dev      # 或根目录 pnpm dev（6 应用编�
 
 ## 验证
 
-Playwright 实测 42 项全过（环节层 6 域 / 6 边、实体层 8 节点 / 8 边、环节→实体下钻、拖动后 transform 不变、面包屑往返、
+Playwright 实测 49 项全过（环节层 6 域 / 6 边、实体层 8 节点 / 8 边、环节→实体下钻、拖动后 transform 不变、面包屑往返、
 高亮变淡、空态、三页签、视角切换与抽屉分组、关系维护增删改与持久化、无 console error / pageerror）。
 门禁：`pnpm lint:check`、`pnpm --filter data-community-app build`、`pnpm verify:entry-registry`、
 `bash scripts/check-base-consistency.sh`。

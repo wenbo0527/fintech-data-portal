@@ -14,6 +14,12 @@ export interface DemoEntity {
   order: number
   /** 仓库实体自带的业务域编码（DOM001 客户域 … DOM006 贷后域），用于「大环节」分组 */
   stageId: string
+  /** [scale] 11179-5 稳定标识：名称可变、标识不变 */
+  entityCode: string
+  /** [scale] 11179-6 注册状态 */
+  registryStatus: 'draft' | 'submitted' | 'approved' | 'deprecated'
+  /** [scale] 11179-6 管理状态 */
+  manageStatus: 'active' | 'under_review' | 'pending_update' | 'retired'
 }
 
 export interface DemoRelation {
@@ -42,6 +48,16 @@ export interface DemoTable {
   /** 仓库既有业务域（交易域/风控域/用户域/营销域/产品域/财务域），用于视角派生 */
   bizDomain: string
   tags: string[]
+  /** 更新频率（每日/实时/每小时…），作为「粒度」口径的既有依据 */
+  freq: string
+  /** [scale] 与数仓同步状态（Demo 全部 synced，stale 时卡片显示「待复核」） */
+  syncStatus: 'synced' | 'stale' | 'broken'
+  /** [scale] 上次人工复核时间 */
+  lastVerifiedAt: string
+  /** [scale] 使用热度（Demo 置 0，接埋点后启用排序） */
+  usageHeat: number
+  /** 推荐理由：粒度 + 口径状态 + 适用场景（由既有字段组合，不编造） */
+  recommendReason: string
 }
 
 export const VIEW_LABELS: Record<DemoView, string> = {
@@ -154,6 +170,18 @@ const TAG_RULES: Array<[string, string]> = [
   ['账务', 'ENT002']
 ]
 
+/** [scale] 11179-5 稳定标识：语义中性、与展示名解耦（改名不改标识） */
+const ENTITY_CODES: Record<string, string> = {
+  ENT001: 'CUSTOMER',
+  ENT002: 'ACCOUNT',
+  ENT003: 'CREDIT.APPLY',
+  ENT004: 'CREDIT.CONTRACT',
+  ENT005: 'DRAW.APPLY',
+  ENT006: 'DRAW.ORDER',
+  ENT007: 'REPAY.PLAN',
+  ENT008: 'POSTLOAN.RECORD'
+}
+
 export function deriveEntities (): DemoEntity[] {
   return BusinessConceptStore.getEntities().map((e, i) => ({
     id: e.code,
@@ -162,7 +190,10 @@ export function deriveEntities (): DemoEntity[] {
     domain: RISK_DOMAINS.has(e.domainCode) ? 'risk' : 'common',
     description: e.description,
     order: i + 1,
-    stageId: e.domainCode
+    stageId: e.domainCode,
+    entityCode: ENTITY_CODES[e.code] ?? e.code,
+    registryStatus: 'approved',
+    manageStatus: 'active'
   }))
 }
 
@@ -214,7 +245,12 @@ export function deriveTables (): DemoTable[] {
       reason: t.description,
       linkSource: byElement ? 'element' : (byName || byTag ? 'name' : null),
       bizDomain: t.domain,
-      tags: t.tags
+      tags: t.tags,
+      freq: t.updateFrequency,
+      syncStatus: 'synced',
+      lastVerifiedAt: t.onTime ?? '',
+      usageHeat: 0,
+      recommendReason: `${t.usageGuide || t.businessCaliber || t.description}（口径已上线 · ${t.updateFrequency}粒度 · ${t.layer}层）`
     }
   })
 }
@@ -306,3 +342,40 @@ export function entitiesOfStage (stageId: string): DemoEntity[] {
 export function stageIdOf (entityId: string): string | undefined {
   return deriveEntities().find(e => e.id === entityId)?.stageId
 }
+
+export type TableSort = 'tier' | 'heat' | 'updated'
+
+/**
+ * 排序预留（3.7.1）：默认按「推荐 > 兜底 > 技术」再热度；
+ * by='heat' / 'updated' 供规模化后切排序，调用方只传参数、无需改结构。
+ */
+export function sortTables (list: DemoTable[], by: TableSort): DemoTable[] {
+  const rank: Record<DemoTier, number> = { recommended: 0, fallback: 1, tech: 2 }
+  const copy = [...list]
+  copy.sort((a, b) => {
+    if (by === 'heat') {return b.heat - a.heat || rank[a.tier] - rank[b.tier]}
+    if (by === 'updated') {return String(b.lastUpdated).localeCompare(String(a.lastUpdated)) || rank[a.tier] - rank[b.tier]}
+    return rank[a.tier] - rank[b.tier] || b.heat - a.heat
+  })
+  return copy
+}
+
+export const DOMAIN_LABELS: Record<DemoEntity['domain'], string> = {
+  risk: '风险域',
+  market: '市场域',
+  common: '通用域'
+}
+
+/** 隐性业务常识（v2 §2.5 Step 4）：图相对通用目录的价值，写进规则供页面与 T2.5 质检引用 */
+export interface ImplicitRule {
+  id: string
+  text: string
+  entityIds: string[]
+}
+
+export const IMPLICIT_RULES: ImplicitRule[] = [
+  { id: 'IR-1', text: '授信必然有对应协议：授信申请通过后生成授信合同，二者一一对应', entityIds: ['ENT003', 'ENT004'] },
+  { id: 'IR-2', text: '支用必有支用单：每次提款生成一张支用单，脱链即数据质量问题', entityIds: ['ENT005', 'ENT006'] },
+  { id: 'IR-3', text: '客户必有归属账户：客户与账户一一对应，缺失即客户主数据不全', entityIds: ['ENT001', 'ENT002'] },
+  { id: 'IR-4', text: '还款计划挂在支用单上，不直接挂客户', entityIds: ['ENT006', 'ENT007'] }
+]

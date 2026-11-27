@@ -30,6 +30,8 @@
     "verify:dec01:selftest": "node scripts/verify-dec01-retirement.js --selftest",
     "verify:entry-registry": "node scripts/verify-entry-registry.js",
     "verify:entry-registry:selftest": "node scripts/verify-entry-registry.js --selftest",
+    "verify:datamap-demo": "node scripts/verify-datamap-demo-data.js",
+    "verify:datamap-demo:selftest": "node scripts/verify-datamap-demo-data.js --selftest",
     "audit": "npm audit --audit-level high",
     "depcheck": "depcheck",
     "clean": "rimraf dist node_modules/.cache"

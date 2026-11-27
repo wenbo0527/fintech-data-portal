@@ -92,6 +92,7 @@ verify-*.js
 !scripts/verify-mock-column-consistency.js
 !scripts/verify-dec01-retirement.js
 !scripts/verify-entry-registry.js
+!scripts/verify-datamap-demo-data.js
 comprehensive-*.js
 update-imports.js
 if patch fails*

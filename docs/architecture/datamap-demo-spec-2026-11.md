@@ -112,17 +112,25 @@ type 枚举 7 值（association/behavior/derivative/dependency/trigger/config/ch
 ### 3.4 fields ← `LogicalTable.fields`
 `CatalogField` 已含 `[名, 类型, 中文, 敏感度]`；字段详情直接用 `deriveFieldDetail()`（含 PII 判定、四级业务目录），不重写。
 
-### 3.5 表 ↔ 实体归属（**唯一需要新写的判断**）
-仓库**没有**表→实体映射（只有 `DataElement.relatedEntityCode` 把指标/标签挂到实体）。
-处置：在 `derive.ts` 里写**关键词规则**，输入只用既有字段 `cnName / tags / domain`：
+### 3.5 表 ↔ 实体归属（**部分已有，其余派生**）
+更正：仓库**已有**一条「实体 → 数据要素 → 物理表」的关联链 ——
+`BusinessConceptStore.getEntityRelatedTables()` 与 `DataElement.relatedResource.table`
+（`business-concept-store.ts:187`），实测覆盖 **4 张表**（dwd_credit_apply / dwd_credit_contract /
+dws_credit_analysis / dws_repayment_plan）。`derive.ts` **优先用它**，不重写。
+
+其余表按 `cnName / tags / domain` 的关键词规则归类（实测 **20 张**），规则集中在 `derive.ts` 顶部：
 
 ```
-cnName 含「客户/用户」      → ENT001      cnName 含「授信申请」 → ENT003
-cnName 含「账户」           → ENT002      cnName 含「授信合同/合同」 → ENT004
-cnName 含「支用申请」       → ENT005      cnName 含「提款/支用/放款」 → ENT006
-cnName 含「还款」           → ENT007      cnName 含「贷后/逾期/催」 → ENT008
+cnName 含「授信申请/申请增量」 → ENT003     cnName 含「授信合同/合同」 → ENT004
+cnName 含「支用申请」          → ENT005     cnName 含「提款/支用/放款/贷款余额」 → ENT006
+cnName 含「还款/催回」         → ENT007     cnName 含「贷后/逾期/催收」 → ENT008
+cnName 含「账户」              → ENT002     cnName 含「客户/用户」→ ENT001（风控域除外）
+兜底：cnName 含「授信」→ ENT004；tags 含 授信/放款/余额/还款/催回/逾期/贷后/客户/账务 → 对应实体
 ```
-命中不了的表 **标 `entity_id: null` 并归入「未归类」折叠区**，不硬塞、不编表名（C-3）。
+
+「风控域除外」是实测加的：`dws_risk_score`（用户风险评分汇总表）若按「用户」归到客户实体是错的。
+命中不了的 **21 张标 `entityId: null`（未归类）**，不硬塞、不编表名（C-3）。
+每张表的卡片 meta 会标注归属来源（`要素关联` / `按名称/标签归类`），不假装精确映射。
 
 ### 3.6 必须如实告知的三个缺口
 1. **「借据」无表**：权威目录 45 张里没有借据明细表（`dwd_loan_detail / dwd_loan_daily` 只出现在 `mock/unified-query/database.ts` 与 `components-dca/unified-query/DetailDrawer.vue` 的库树里，不在 catalog）。`dws_loan_bal_daily`（贷款余额日汇总）是 **offline**。→ 用仓库实体 **ENT006 支用单** 承担该环，或在该实体抽屉里显示「暂无在册表」。**不得为凑数新增表名。**
@@ -210,3 +218,25 @@ apps/data-community-app/src/pages/datamap-demo/
 3. **依赖未声明**（见 §7 C）：换机器/关 hoist 就会解析失败。
 4. **新版与既有「业务概念关系图」功能相邻**：`management/business-concept/relation-graph` 已有一个可编辑的实体关系图。新版的差异必须写进 README：**面向取数的只读一条链下钻（图→实体→推荐表→字段）+ 新旧对照**，不是第二个建模视图。
 5. **DEC-01 归属**：数据地图属 dca 权威范围，本 Demo 落在 dca 合规；不得把代码放进 dfd/asset 等已摘出应用。
+
+---
+
+## 9. 实施记录（2026-11-23，T1–T8 已完成）
+
+提交序列：`cfd4294f`(T1 依赖声明) → `d84d03ae`(T2 派生) → `5e581d64`(lint) → `aa1f48c2`(T4 图)
+→ `4a1a956f`(T5/T6 抽屉+高亮) → `654ed39b`(T3 对照) → `10ea2365`(T7 结果) → `2d3355e1`(T8 串联+路由+README)。
+既有文件改动仅 `router/index.ts` +6 行与 `package.json`/`pnpm-lock.yaml` 的依赖声明。
+
+**实测（Playwright，20 项全过）**：8 节点 / 8 边；对节点做真实拖拽后 `transform` 不变（只读生效）；
+图→实体→推荐表→字段→面包屑返回全链路；高亮时 5 个非直连节点变淡；ENT005 空态；三页签；
+无 console error / pageerror。`vite build` 通过、eslint 0 error、两道既有闸门无新增失败。
+
+**实测抓出并修掉的两个真缺陷**（写进 README 防复发）：
+1. Arco 抽屉默认遮罩罩住整页，SPEC 要求的「点面包屑返回」点不到 → 改 `mask=false` +
+   `popup-container` 挂组件内 + 容器 `pointer-events:none` / 面板 `auto`。
+2. X6 把容器尺寸写成内联样式，`autoResize` 感知不到父级 padding 变化；且图内容高于容器时
+   底部节点点不到 → 去掉 autoResize，按无 padding 宿主 div 显式 `resize` + `zoomToFit`，
+   开/关抽屉让出右侧 452px 后重新适配。
+
+**派生实测数**：8 实体 / 8 关系 / 45 表；三档 6 推荐 / 7 兜底 / 32 技术；
+归属来源 4 要素关联 + 20 名称/标签 + 21 未归类。

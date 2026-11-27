@@ -261,3 +261,8 @@ apps/data-community-app/src/pages/datamap-demo/
 抽屉按视角分组并把未命中表折叠；产品维度按 §3.7 只留空接口。
 Playwright 扩到 **26 项**且全过（新增：视角切换改标签、贷后记录命中 3/3、未命中淡化不隐藏、
 抽屉视角分组、切回全部恢复口径）。
+
+**第三轮（关系维护）**：新增 `data/relation-store.ts`（localStorage 基线 + CRUD）与 ④ 关系维护页；
+候选 = 实体 `coreRelations` 与现有 8 条的差集（实测 **10 条**），一键补齐后图从 8 条边变 9 条、刷新保持。
+同时发现正式维护页 `management/business-concept/relation-graph` 未接线（`handleCreateSubmit` 只 `Message.success`、
+删除按钮无 handler、store 无 relation CRUD），已在页面与 README 如实标注。Playwright 现为 **33 项**全过。

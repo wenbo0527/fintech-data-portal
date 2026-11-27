@@ -92,10 +92,11 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { deriveEntities, deriveRelations, deriveTables, unclassifiedTables } from '../data/derive'
+import { deriveEntities, deriveTables, unclassifiedTables } from '../data/derive'
+import { relations as relationState } from '../data/relation-store'
 
 const entities = deriveEntities()
-const relations = deriveRelations()
+const relations = computed(() => relationState.value)
 const tables = deriveTables()
 
 const oldSteps = ref(6)
@@ -103,14 +104,14 @@ const oldMinutes = ref(12)
 const newSteps = ref(3)
 const newMinutes = ref(3)
 
-const structural = [
+const structural = computed(() => [
   { label: '业务实体', value: entities.length },
-  { label: '实体关系', value: relations.length },
+  { label: '实体关系', value: relations.value.length },
   { label: '在册表', value: tables.length },
   { label: '推荐表', value: tables.filter(t => t.tier === 'recommended').length },
   { label: '明细兜底', value: tables.filter(t => t.tier === 'fallback').length },
   { label: '未归类（如实展示）', value: unclassifiedTables(tables).length }
-]
+])
 
 const dropPct = computed(() => oldMinutes.value > 0
   ? Math.round((1 - newMinutes.value / oldMinutes.value) * 100)

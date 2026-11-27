@@ -25,6 +25,9 @@ pnpm --filter data-community-app dev      # 或根目录 pnpm dev（6 应用编�
    点面包屑「授信支用链」返回并复位视图；点节点高亮直连、其余变淡。
 3. **③ 结果对照** —— 步骤数/耗时为**待盲测填入的变量**（页内可直接改数），不是已实测结论；
    下方「结构事实」来自同一份权威目录。
+4. **④ 关系维护** —— 关系可增删、可重置、可导出 JSON；并把实体自带 `coreRelations`
+   与现有关系求差集，得到 **10 条可一键补齐的候选**（不编关系，只补「已声明但未建边」的）。
+   改动存 localStorage，刷新保留；关系图边数与结果对照的计数会同步变化。
 
 ## 数据从哪来（零新增 mock）
 
@@ -41,6 +44,10 @@ pnpm --filter data-community-app dev      # 或根目录 pnpm dev（6 应用编�
 - 表→实体归属：优先用仓库既有「实体→数据要素→`relatedResource.table`」关联（4 张），
   其余按中文名/标签规则归类（20 张），**命中不了的 21 张如实标未归类**，不硬塞。
   风控域的「用户风险评分」按域排除，避免误归客户实体。
+- 关系维护（`data/relation-store.ts`）：以仓库 8 条为基线，本地增删改存 localStorage；
+  「候选」= 实体自带 `coreRelations` 与现有关系的差集（当前 10 条），一键补齐即可，不编关系。
+  正式维护页 `management/business-concept/relation-graph` 目前**未接线**（新增只弹提示、
+  删除无 handler、store 无 relation CRUD），本页的新增/删除/重置逻辑可直接搬过去。
 
 **换真实数据**：改上述两个 store 即可，本目录不需要动；派生规则集中在 `derive.ts` 顶部常量。
 
@@ -71,7 +78,7 @@ pnpm --filter data-community-app dev      # 或根目录 pnpm dev（6 应用编�
 
 ## 验证
 
-Playwright 实测 26 项全过（8 节点 / 8 边、拖动后 transform 不变、下钻全链路、面包屑返回、
-高亮变淡、空态、三页签、视角切换与抽屉分组、无 console error / pageerror）。
+Playwright 实测 33 项全过（8 节点 / 8 边、拖动后 transform 不变、下钻全链路、面包屑返回、
+高亮变淡、空态、三页签、视角切换与抽屉分组、关系维护增删改与持久化、无 console error / pageerror）。
 门禁：`pnpm lint:check`、`pnpm --filter data-community-app build`、`pnpm verify:entry-registry`、
 `bash scripts/check-base-consistency.sh`。

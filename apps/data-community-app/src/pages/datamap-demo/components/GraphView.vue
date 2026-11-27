@@ -185,6 +185,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { IconLeft } from '@arco-design/web-vue/es/icon'
 import AssetCard from '@dca-components/common/AssetCard.vue'
 import RelationGraph from './RelationGraph.vue'
+import { relations as relationState } from '../data/relation-store'
 import {
   deriveEntities, deriveRelations, deriveTables, tablesOfEntity, fieldsOfTable, entityName,
   viewHit, viewCountsOf, countByView, VIEW_LABELS,
@@ -192,7 +193,7 @@ import {
 } from '../data/derive'
 
 const entities = deriveEntities()
-const relations = deriveRelations()
+const relations = computed(() => relationState.value)
 const tables = deriveTables()
 
 const VIEW_KEYS: DemoView[] = ['biz', 'risk', 'market', 'tech']
@@ -236,7 +237,7 @@ const neighborNames = computed(() => {
   const id = activeEntity.value.id
   const seen = new Set<string>()
   const out: Array<{ id: string, label: string }> = []
-  relations.forEach(r => {
+  relations.value.forEach(r => {
     const other = r.src === id ? r.dst : (r.dst === id ? r.src : null)
     if (!other || seen.has(other)) {return}
     seen.add(other)

@@ -18,6 +18,9 @@
         <a-tab-pane key="compare" title="③ 结果对照">
           <CompareResult v-if="tab === 'compare'" />
         </a-tab-pane>
+        <a-tab-pane key="admin" title="④ 关系维护">
+          <RelationAdmin v-if="tab === 'admin'" />
+        </a-tab-pane>
       </a-tabs>
     </div>
   </PageContainer>
@@ -31,8 +34,9 @@ import PageHeader from '@/components-dca/common/PageHeader.vue'
 import OldExperience from './components/OldExperience.vue'
 import GraphView from './components/GraphView.vue'
 import CompareResult from './components/CompareResult.vue'
+import RelationAdmin from './components/RelationAdmin.vue'
 
-const TABS = ['old', 'graph', 'compare']
+const TABS = ['old', 'graph', 'compare', 'admin']
 
 const route = useRoute()
 const router = useRouter()

@@ -3,6 +3,7 @@ import { TableCatalogStore, type LogicalTable } from '@/mock-dca/shared/table-ca
 
 export type DemoTier = 'recommended' | 'fallback' | 'tech'
 export type DemoRelationType = 'sequence' | 'associate' | 'contain' | 'flow'
+export type DemoView = 'all' | 'biz' | 'risk' | 'market' | 'tech'
 
 export interface DemoEntity {
   id: string
@@ -36,6 +37,43 @@ export interface DemoTable {
   reason: string
   /** element = 仓库既有「实体→数据要素→表」关联；name = 按中文名/标签归类；null = 未归类 */
   linkSource: 'element' | 'name' | null
+  /** 仓库既有业务域（交易域/风控域/用户域/营销域/产品域/财务域），用于视角派生 */
+  bizDomain: string
+  tags: string[]
+}
+
+export const VIEW_LABELS: Record<DemoView, string> = {
+  all: '全部',
+  biz: '业务',
+  risk: '风险',
+  market: '市场',
+  tech: '技术'
+}
+
+// 视角由既有 domain / layer / tags 派生，属于叠加标签而非互斥分区：
+// 一张表可同时命中多个视角（如 dwd_fraud_alert 既在风控域又是贴源表）
+const TECH_TAGS = /贴源|实时|Kafka|HBase|Doris/
+const RISK_TAGS = /反欺诈|预警|风控/
+const MARKET_TAGS = /营销|埋点|点击/
+
+export function viewHit (t: DemoTable, view: DemoView): boolean {
+  if (view === 'all') {return true}
+  const tagText = t.tags.join(',')
+  if (view === 'biz') {return t.bizDomain === '交易域'}
+  if (view === 'risk') {return t.bizDomain === '风控域' || RISK_TAGS.test(tagText)}
+  if (view === 'market') {return t.bizDomain === '营销域' || MARKET_TAGS.test(tagText)}
+  return t.layer === 'ODS' || TECH_TAGS.test(tagText)
+}
+
+/**
+ * 产品归属：仓库当前没有任何表→产品映射（45 张表 0 条，只有 5 个数据要素标了
+ * relatedProduct，其中 4 条是「所有产品」）。等业务提供清单后填这里即可，
+ * 不要在 UI 里编产品名。
+ */
+export const PRODUCT_MAPPING: Record<string, string[]> = {}
+
+export function productOf (tableName: string): string[] {
+  return PRODUCT_MAPPING[tableName] ?? []
 }
 
 const RISK_DOMAINS = new Set(['DOM003', 'DOM004', 'DOM005', 'DOM006', 'DOM008'])
@@ -133,9 +171,26 @@ export function deriveTables (): DemoTable[] {
       fieldCount: t.fields.length,
       lastUpdated: t.onTime ?? '',
       reason: t.description,
-      linkSource: byElement ? 'element' : (byName || byTag ? 'name' : null)
+      linkSource: byElement ? 'element' : (byName || byTag ? 'name' : null),
+      bizDomain: t.domain,
+      tags: t.tags
     }
   })
+}
+
+export function countByView (list: DemoTable[], view: DemoView): number {
+  return list.filter(t => viewHit(t, view)).length
+}
+
+export function viewCountsOf (entityId: string, tables: DemoTable[] = deriveTables()): Record<DemoView, number> {
+  const mine = tables.filter(t => t.entityId === entityId)
+  return {
+    all: mine.length,
+    biz: countByView(mine, 'biz'),
+    risk: countByView(mine, 'risk'),
+    market: countByView(mine, 'market'),
+    tech: countByView(mine, 'tech')
+  }
 }
 
 export function tablesOfEntity (entityId: string, tables: DemoTable[] = deriveTables()): DemoTable[] {

@@ -15,6 +15,8 @@ pnpm --filter data-community-app dev      # 或根目录 pnpm dev（6 应用编�
 1. **① 现状对照** —— 不复制痛点页。展示权威目录真实统计（45 张在册 / 上线数 / 存量口径 752 / 平均质量分），
    并直达三个现状页：数据发现门户首页、全局搜索、表详情示例。
 2. **② 关系图下钻** —— 8 个业务实体 + 8 条关系的只读 X6 图，支持**纵向/横向布局切换**；
+   顶部**视角**（全部 / 业务 / 风险 / 市场 / 技术）为叠加高亮：不删节点，未命中的淡化并写进节点第二行
+   （`本视角 1/4 张`）；抽屉里按视角分组，未命中表收进「其他视角」折叠。
    节点双行显示（名称 / 实体或事件 · 表数），边按关系类型着色。点实体开抽屉看「分层分布 + 直连实体 +
    推荐表 → 明细兜底 → 技术维护（折叠）」，点表卡片看字段（含分级），并可跳到旧版 7-Tab 表详情。
    点面包屑「授信支用链」返回并复位视图；点节点高亮直连、其余变淡。
@@ -29,6 +31,10 @@ pnpm --filter data-community-app dev      # 或根目录 pnpm dev（6 应用编�
 - 表与字段：`@/mock-dca/shared/table-catalog-store`（45 张 `LogicalTable`，字段含中文名与敏感度）。
 - 三档标签派生规则：`DWS+online` = 推荐（6 张）；`DWD+online` = 明细兜底（7 张）；其余 = 技术维护（32 张，默认折叠）。
 - 推荐理由取既有 `description`，不新编文案。
+- 视角由 `bizDomain + layer + tags` 派生（同一张表可命中多个视角）：
+  业务=交易域；风险=风控域或 反欺诈/预警/风控 标签；市场=营销域或 营销/埋点/点击；技术=ODS 或 贴源/实时/Kafka/HBase/Doris。
+- **产品维度目前无数据**：45 张表 0 条产品归属（只有 5 个数据要素标了 relatedProduct，4 条是「所有产品」）。
+  `derive.ts` 已留 `PRODUCT_MAPPING` 空表 + `productOf()` 接口，等业务给「表→产品」清单后填入即可，UI 不编产品名。
 - 表→实体归属：优先用仓库既有「实体→数据要素→`relatedResource.table`」关联（4 张），
   其余按中文名/标签规则归类（20 张），**命中不了的 21 张如实标未归类**，不硬塞。
   风控域的「用户风险评分」按域排除，避免误归客户实体。
@@ -62,7 +68,7 @@ pnpm --filter data-community-app dev      # 或根目录 pnpm dev（6 应用编�
 
 ## 验证
 
-Playwright 实测 20 项全过（8 节点 / 8 边、拖动后 transform 不变、下钻全链路、面包屑返回、
-高亮变淡、空态、三页签、无 console error / pageerror）。截图见会话记录。
+Playwright 实测 26 项全过（8 节点 / 8 边、拖动后 transform 不变、下钻全链路、面包屑返回、
+高亮变淡、空态、三页签、视角切换与抽屉分组、无 console error / pageerror）。
 门禁：`pnpm lint:check`、`pnpm --filter data-community-app build`、`pnpm verify:entry-registry`、
 `bash scripts/check-base-consistency.sh`。

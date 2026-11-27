@@ -6,13 +6,14 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { Graph } from '@antv/x6'
 import dagre from '@dagrejs/dagre'
-import type { DemoEntity, DemoRelation, DemoTable } from '../data/derive'
+import { viewCountsOf, type DemoEntity, type DemoRelation, type DemoTable, type DemoView } from '../data/derive'
 
 const props = defineProps<{
   entities: DemoEntity[]
   relations: DemoRelation[]
   tables: DemoTable[]
   rankdir?: 'TB' | 'LR'
+  view?: DemoView
 }>()
 
 const emit = defineEmits<{ (e: 'node-click', entityId: string): void }>()
@@ -35,9 +36,14 @@ function countOf (id: string) {
 }
 
 function buildData () {
+  const view = props.view ?? 'all'
   const nodes = props.entities.map(e => {
     const n = countOf(e.id)
     const event = e.kind === 'event'
+    const hit = view === 'all' ? null : viewCountsOf(e.id, props.tables)[view]
+    const second = hit === null
+      ? `${event ? '事件' : '实体'} · ${n} 张表`
+      : `${event ? '事件' : '实体'} · 本视角 ${hit}/${n} 张`
     return {
       id: e.id,
       shape: 'rect',
@@ -52,7 +58,7 @@ function buildData () {
           ry: 10
         },
         label: {
-          text: `${e.name}\n${event ? '事件' : '实体'} · ${n} 张表`,
+          text: `${e.name}\n${second}`,
           fill: '#1d2129',
           fontSize: 13,
           fontWeight: 500,
@@ -94,6 +100,11 @@ function layout () {
   return data
 }
 
+function inView (entityId: string) {
+  if (!props.view || props.view === 'all') {return true}
+  return viewCountsOf(entityId, props.tables)[props.view] > 0
+}
+
 function highlight (entityId: string | null) {
   const g = graph.value
   if (!g) {return}
@@ -106,13 +117,16 @@ function highlight (entityId: string | null) {
     })
   }
   g.getNodes().forEach(n => {
-    const on = !entityId || keep.has(n.id)
-    n.attr('body/opacity', on ? 1 : 0.25)
-    n.attr('label/opacity', on ? 1 : 0.25)
+    const visible = inView(n.id)
+    const focused = !entityId || keep.has(n.id)
+    const op = !visible ? 0.28 : (focused ? 1 : 0.3)
+    n.attr('body/opacity', op)
+    n.attr('label/opacity', op)
   })
   g.getEdges().forEach(e => {
-    const on = !entityId || (keep.has(e.getSourceCellId()) && keep.has(e.getTargetCellId()))
-    e.attr('line/opacity', on ? 1 : 0.15)
+    const bothInView = inView(e.getSourceCellId()) && inView(e.getTargetCellId())
+    const focused = !entityId || (keep.has(e.getSourceCellId()) && keep.has(e.getTargetCellId()))
+    e.attr('line/opacity', !bothInView ? 0.12 : (focused ? 1 : 0.2))
   })
 }
 
@@ -171,7 +185,7 @@ function fit () {
 
 defineExpose({ reset, fit })
 
-watch(() => [props.entities, props.relations, props.tables, props.rankdir], render, { deep: true })
+watch(() => [props.entities, props.relations, props.tables, props.rankdir, props.view], render, { deep: true })
 
 onMounted(() => {
   initGraph()
